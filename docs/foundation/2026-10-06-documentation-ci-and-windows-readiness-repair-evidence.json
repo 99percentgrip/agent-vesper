@@ -1,0 +1,727 @@
+{
+  "windows_format_follow_up": {
+    "run_id": 37423097009,
+    "head_sha": "dbd5fafb276c770bf26912165e7f61b2a524c7e4",
+    "conclusion": "success",
+    "job_id": 112136631149,
+    "log": "/tmp/vesper-release-readiness-format-native-job-112136631149.log",
+    "sha256": "3f8fa201c008037b82414cac427204d56ee0f797a3bb1c94e95b2ae489e6039a",
+    "scope": "Windows formatting/whitespace and 10 CI-policy regressions only; zero Rust functional cases rerun."
+  },
+  "production_base": "3df2feb69dc120b13d02a143f5df6aba8536d8d1",
+  "published_release_source": "7e837db36f4090e566ac1a7461b5b103b8649368",
+  "status": "All 145 native functional executions passed. The first Windows job failed only the added diagnostic formatting step due to CRLF checkout; retain that failure. Full corrected exact-main matrix pending before push. No new release authorized or created.",
+  "archive": "2026-10-06-documentation-ci-and-windows-readiness-repair-receipts.tar.gz",
+  "archive_sha256": "30baabc49d0360c13a5238f0996d1ad9768cb8bb51a32941ab1dce4f1dfaff8f",
+  "focused_native": {
+    "repo": "99percentgrip/agent-vesper-rrc-public-acceptance",
+    "run_id": 37422442222,
+    "head_sha": "3228a711c102e87aad5a71855aab7795b3362eef",
+    "conclusion": "failure",
+    "jobs": [
+      {
+        "job_id": 112134584193,
+        "name": "macos-intel",
+        "conclusion": "success",
+        "log": "/tmp/vesper-release-readiness-diagnostic-job-112134584193.log",
+        "sha256": "f8bd611234b5e719c8f0529be31c72b5239e8e37b20adbcd8968e9bc675fc78d",
+        "actual_test_results": [
+          {
+            "passed": 13,
+            "failed": 0,
+            "ignored": 0
+          },
+          {
+            "passed": 2,
+            "failed": 0,
+            "ignored": 0
+          },
+          {
+            "passed": 2,
+            "failed": 0,
+            "ignored": 0
+          },
+          {
+            "passed": 2,
+            "failed": 0,
+            "ignored": 0
+          },
+          {
+            "passed": 2,
+            "failed": 0,
+            "ignored": 0
+          },
+          {
+            "passed": 2,
+            "failed": 0,
+            "ignored": 0
+          },
+          {
+            "passed": 2,
+            "failed": 0,
+            "ignored": 0
+          },
+          {
+            "passed": 2,
+            "failed": 0,
+            "ignored": 0
+          },
+          {
+            "passed": 2,
+            "failed": 0,
+            "ignored": 0
+          },
+          {
+            "passed": 2,
+            "failed": 0,
+            "ignored": 0
+          },
+          {
+            "passed": 2,
+            "failed": 0,
+            "ignored": 0
+          },
+          {
+            "passed": 2,
+            "failed": 0,
+            "ignored": 0
+          },
+          {
+            "passed": 10,
+            "failed": 0,
+            "ignored": 0
+          },
+          {
+            "passed": 1,
+            "failed": 0,
+            "ignored": 0
+          },
+          {
+            "passed": 1,
+            "failed": 0,
+            "ignored": 0
+          },
+          {
+            "passed": 1,
+            "failed": 0,
+            "ignored": 0
+          },
+          {
+            "passed": 1,
+            "failed": 0,
+            "ignored": 0
+          },
+          {
+            "passed": 1,
+            "failed": 0,
+            "ignored": 0
+          },
+          {
+            "passed": 1,
+            "failed": 0,
+            "ignored": 0
+          },
+          {
+            "passed": 1,
+            "failed": 0,
+            "ignored": 0
+          },
+          {
+            "passed": 1,
+            "failed": 0,
+            "ignored": 0
+          },
+          {
+            "passed": 1,
+            "failed": 0,
+            "ignored": 0
+          },
+          {
+            "passed": 1,
+            "failed": 0,
+            "ignored": 0
+          }
+        ],
+        "rust_passed": 55,
+        "archived_log_sha256": "f0a94c09998b368f7451aad5908cdf02be20b696c01b33930a56b375e74cb2cb",
+        "named_causal_cases": [
+          "descendant_writing_after_leader_exit_is_cleaned",
+          "leader_exit_does_not_wait_for_descendant_held_pipe",
+          "held_pipe_fixture_allows_slow_startup_before_settlement",
+          "writer_fixture_allows_slow_startup_before_settlement",
+          "session_tests::timeout_is_bounded_quarantined_and_never_replayed"
+        ]
+      },
+      {
+        "job_id": 112134584330,
+        "name": "linux-x86_64",
+        "conclusion": "success",
+        "log": "/tmp/vesper-release-readiness-diagnostic-job-112134584330.log",
+        "sha256": "18bc89d59a85dfc802eb1c3e2b20f53f80956fc0ca9fe59e58ae7da2fffc7eed",
+        "actual_test_results": [
+          {
+            "passed": 13,
+            "failed": 0,
+            "ignored": 0
+          },
+          {
+            "passed": 2,
+            "failed": 0,
+            "ignored": 0
+          },
+          {
+            "passed": 2,
+            "failed": 0,
+            "ignored": 0
+          },
+          {
+            "passed": 2,
+            "failed": 0,
+            "ignored": 0
+          },
+          {
+            "passed": 2,
+            "failed": 0,
+            "ignored": 0
+          },
+          {
+            "passed": 2,
+            "failed": 0,
+            "ignored": 0
+          },
+          {
+            "passed": 2,
+            "failed": 0,
+            "ignored": 0
+          },
+          {
+            "passed": 2,
+            "failed": 0,
+            "ignored": 0
+          },
+          {
+            "passed": 2,
+            "failed": 0,
+            "ignored": 0
+          },
+          {
+            "passed": 2,
+            "failed": 0,
+            "ignored": 0
+          },
+          {
+            "passed": 2,
+            "failed": 0,
+            "ignored": 0
+          },
+          {
+            "passed": 2,
+            "failed": 0,
+            "ignored": 0
+          },
+          {
+            "passed": 10,
+            "failed": 0,
+            "ignored": 0
+          },
+          {
+            "passed": 1,
+            "failed": 0,
+            "ignored": 0
+          },
+          {
+            "passed": 1,
+            "failed": 0,
+            "ignored": 0
+          },
+          {
+            "passed": 1,
+            "failed": 0,
+            "ignored": 0
+          },
+          {
+            "passed": 1,
+            "failed": 0,
+            "ignored": 0
+          },
+          {
+            "passed": 1,
+            "failed": 0,
+            "ignored": 0
+          },
+          {
+            "passed": 1,
+            "failed": 0,
+            "ignored": 0
+          },
+          {
+            "passed": 1,
+            "failed": 0,
+            "ignored": 0
+          },
+          {
+            "passed": 1,
+            "failed": 0,
+            "ignored": 0
+          },
+          {
+            "passed": 1,
+            "failed": 0,
+            "ignored": 0
+          },
+          {
+            "passed": 1,
+            "failed": 0,
+            "ignored": 0
+          }
+        ],
+        "rust_passed": 55,
+        "archived_log_sha256": "43328b01d4422c53c615052bc44c7aad27797ba0f15641dad3097a0d6e6f5351",
+        "named_causal_cases": [
+          "descendant_writing_after_leader_exit_is_cleaned",
+          "leader_exit_does_not_wait_for_descendant_held_pipe",
+          "held_pipe_fixture_allows_slow_startup_before_settlement",
+          "writer_fixture_allows_slow_startup_before_settlement",
+          "session_tests::timeout_is_bounded_quarantined_and_never_replayed"
+        ]
+      },
+      {
+        "job_id": 112134584381,
+        "name": "windows-x86_64",
+        "conclusion": "failure",
+        "log": "/tmp/vesper-release-readiness-diagnostic-job-112134584381.log",
+        "sha256": "992cf3da6e83f2a81a32e01cf4069d4be600de0287094a34309109d6eecfff38",
+        "actual_test_results": [
+          {
+            "passed": 13,
+            "failed": 0,
+            "ignored": 0
+          },
+          {
+            "passed": 2,
+            "failed": 0,
+            "ignored": 0
+          },
+          {
+            "passed": 2,
+            "failed": 0,
+            "ignored": 0
+          },
+          {
+            "passed": 2,
+            "failed": 0,
+            "ignored": 0
+          },
+          {
+            "passed": 2,
+            "failed": 0,
+            "ignored": 0
+          },
+          {
+            "passed": 2,
+            "failed": 0,
+            "ignored": 0
+          },
+          {
+            "passed": 2,
+            "failed": 0,
+            "ignored": 0
+          },
+          {
+            "passed": 2,
+            "failed": 0,
+            "ignored": 0
+          },
+          {
+            "passed": 2,
+            "failed": 0,
+            "ignored": 0
+          },
+          {
+            "passed": 2,
+            "failed": 0,
+            "ignored": 0
+          },
+          {
+            "passed": 2,
+            "failed": 0,
+            "ignored": 0
+          },
+          {
+            "passed": 2,
+            "failed": 0,
+            "ignored": 0
+          }
+        ],
+        "rust_passed": 35,
+        "archived_log_sha256": "a1e6d8ab57ba7f22d7b5d7a066cdfb0285bd4f05b1f64f59e5ec24db36ad6852",
+        "named_causal_cases": [
+          "descendant_writing_after_leader_exit_is_cleaned",
+          "leader_exit_does_not_wait_for_descendant_held_pipe",
+          "held_pipe_fixture_allows_slow_startup_before_settlement",
+          "writer_fixture_allows_slow_startup_before_settlement"
+        ]
+      }
+    ]
+  },
+  "source_equivalence": {
+    "diagnostic_sha": "3228a711c102e87aad5a71855aab7795b3362eef",
+    "production_base": "3df2feb69dc120b13d02a143f5df6aba8536d8d1",
+    "exact_focused_paths": [
+      {
+        "path": "crates/vesper-agent/tests/command_settlement.rs",
+        "sha256": "f5fcf8cebb59297c9d981279d2fbfb249b302e1e40a135584e89d398da0acf6c"
+      },
+      {
+        "path": "crates/vesper-mcp/src/session.rs",
+        "sha256": "3236a7450ffc0253b6e9e93e084d6acd7d6fcf2d7a2e38eaa9957e3ebc732af8"
+      },
+      {
+        "path": "crates/vesper-mcp/src/session_tests.rs",
+        "sha256": "8b63a3648c57a889f6ac36b4984a1daf602813b3a9673141cff773524d580305"
+      },
+      {
+        "path": "scripts/test_release_gate.py",
+        "sha256": "e8eb2528b515e64dd3ad9b96efcf3ce85d1d7da223728dbedf3d7a0a391887e0"
+      },
+      {
+        "path": ".github/workflows/ci.yml",
+        "sha256": "3a44a86acb1471da1fd059f189920d53b484bbd0853d02df9597e2403ef1259d"
+      },
+      {
+        "path": ".github/workflows/msrv.yml",
+        "sha256": "dda4711bb3594829cd45dfb5d1ee32edebe7bf562a73f18654a91ed9e86bb348"
+      },
+      {
+        "path": ".github/workflows/platform-foundation.yml",
+        "sha256": "4b8a8c7ae72f1a347eedd29f76bacf79a69d30073d12a608221fbca53137c039"
+      },
+      {
+        "path": ".github/workflows/web-driver.yml",
+        "sha256": "a58e7b2f6bccbfb844023273c0fa72d4510ff95c27eef8e80ffb2eba890b1952"
+      }
+    ],
+    "differences": "Diagnostic lifecycle workflow and objective provenance are deliberately noncanonical. Report/DOX delivery updates may differ; focused implementation and four production workflow files are byte-identical.",
+    "all_remaining_tracked_inputs_equal": true,
+    "explicit_exclusions": [
+      "docs/**",
+      "**/AGENTS.md",
+      "AGENTS.md",
+      ".github/workflows/release-recovery-lifecycle-acceptance.yml"
+    ]
+  },
+  "receipts": [
+    {
+      "path": "vesper-release-documentation-closeout-collection.log",
+      "bytes": 4221,
+      "source_sha256": "52b782baf415bb648d8e0bcd6e343993878523644cf2e0b5d37c5c3b362eb88c",
+      "sha256": "52b782baf415bb648d8e0bcd6e343993878523644cf2e0b5d37c5c3b362eb88c"
+    },
+    {
+      "path": "vesper-release-documentation-closeout-five-target-foundation-job-112127036862.log",
+      "bytes": 238293,
+      "source_sha256": "f04f26c6acfc581bb9736db56ecd67821b8a3878c57f6eb3ffcc64b47ef25d0e",
+      "sha256": "ba2bbc4950ea09485a624ef26b88a952a434f1d6377a447c7855337fb26b4c51"
+    },
+    {
+      "path": "vesper-release-documentation-closeout-five-target-foundation-job-112127036958.log",
+      "bytes": 335202,
+      "source_sha256": "2ac646c0469103feb96acbce1ab4904e2a135f5261089f0c28e6df92916337b4",
+      "sha256": "57cb864dc40bc47d7f63a238b575663d86201070542f3202319d768a37f73084"
+    },
+    {
+      "path": "vesper-release-documentation-closeout-five-target-foundation-job-112127036995.log",
+      "bytes": 335090,
+      "source_sha256": "c4e3165bbb753c9fd3fc15f991e226a73bd5245a593429e513a78c1f758730d1",
+      "sha256": "5cf850c63f81646f2124fa82ca4b7955559d67fc0d74b3a6144e489a2a15d53a"
+    },
+    {
+      "path": "vesper-release-documentation-closeout-five-target-foundation-job-112127037028.log",
+      "bytes": 323642,
+      "source_sha256": "027b0e19deb7b576e768f054d00c2ca282a48e23d4cf30b4ff01f5d946fee700",
+      "sha256": "2d1f9c91ec55bdb60a67910647d3e470f43f058d1ebdefadd6cf60dedbfd467b"
+    },
+    {
+      "path": "vesper-release-documentation-closeout-five-target-foundation-job-112127037085.log",
+      "bytes": 338232,
+      "source_sha256": "78691fecc50c3453f2cbffd042572299f27ed41c9276348c12ea559e78da092d",
+      "sha256": "011ba32f914fcb9def1d956578ca82ea65249d8ae8bbc8e85ffcf6cd87cd3c4f"
+    },
+    {
+      "path": "vesper-release-documentation-closeout-five-target-foundation-jobs.json",
+      "bytes": 27817,
+      "source_sha256": "d24ad076e7ea1c41ac58c0eb4e0d804332634e813e034416db095ac0bc562e55",
+      "sha256": "d24ad076e7ea1c41ac58c0eb4e0d804332634e813e034416db095ac0bc562e55"
+    },
+    {
+      "path": "vesper-release-documentation-closeout-five-target-foundation-run.json",
+      "bytes": 14749,
+      "source_sha256": "edf3b71cf8cd03a8886fc5ce6376500ede44eb5a21c63ec0dc0dd23370435c00",
+      "sha256": "edf3b71cf8cd03a8886fc5ce6376500ede44eb5a21c63ec0dc0dd23370435c00"
+    },
+    {
+      "path": "vesper-release-documentation-closeout-matrix.json",
+      "bytes": 4221,
+      "source_sha256": "52b782baf415bb648d8e0bcd6e343993878523644cf2e0b5d37c5c3b362eb88c",
+      "sha256": "52b782baf415bb648d8e0bcd6e343993878523644cf2e0b5d37c5c3b362eb88c"
+    },
+    {
+      "path": "vesper-release-documentation-closeout-msrv-job-112127036765.log",
+      "bytes": 327435,
+      "source_sha256": "44617d99c4d67aca3c15b769871e84589a6b3b3061047173915662dc380eea5e",
+      "sha256": "9b3aeb73cb8f14fc1a0ec2900a1d1e1f3fe50b486a6039f35bbb91b7d2f50a3d"
+    },
+    {
+      "path": "vesper-release-documentation-closeout-msrv-jobs.json",
+      "bytes": 4254,
+      "source_sha256": "bf9805f2a8e82aaf587d05dc4a4309eb9b1bcf1222654961fa10b499ad1d32d8",
+      "sha256": "bf9805f2a8e82aaf587d05dc4a4309eb9b1bcf1222654961fa10b499ad1d32d8"
+    },
+    {
+      "path": "vesper-release-documentation-closeout-msrv-run.json",
+      "bytes": 14716,
+      "source_sha256": "15ac21ad15955740fe57df77b07e90adc9c58d883a76101b88a6a501967923b4",
+      "sha256": "15ac21ad15955740fe57df77b07e90adc9c58d883a76101b88a6a501967923b4"
+    },
+    {
+      "path": "vesper-release-documentation-closeout-pull-request-validation-job-112127036787.log",
+      "bytes": 289388,
+      "source_sha256": "029f28ef067fd8bb7524a52a911753a578c774901596663f65b7c6d1ed7066e2",
+      "sha256": "4c16a76607ac50dc42fb33845972019c37a97192c65c1c9c12263a3de03f6840"
+    },
+    {
+      "path": "vesper-release-documentation-closeout-pull-request-validation-job-112127036968.log",
+      "bytes": 359186,
+      "source_sha256": "9b7472a671a5f8a1d29d188b8ad1d63e989dd24aadaaea3e8f295d89cce19b50",
+      "sha256": "384af82cce6e16fcdf58126427fda09f46f9c0996e20634662f92cefe712e8bb"
+    },
+    {
+      "path": "vesper-release-documentation-closeout-pull-request-validation-jobs.json",
+      "bytes": 8005,
+      "source_sha256": "6aa5902ff53d34bcd29d92c1bdd9996d9e0c6ae3ba9f6c06dff951736569cb58",
+      "sha256": "6aa5902ff53d34bcd29d92c1bdd9996d9e0c6ae3ba9f6c06dff951736569cb58"
+    },
+    {
+      "path": "vesper-release-documentation-closeout-pull-request-validation-run.json",
+      "bytes": 14733,
+      "source_sha256": "06a1d0b0cb714e23827547029f64cc1120e197d15d550fce752dc12ad7514e31",
+      "sha256": "06a1d0b0cb714e23827547029f64cc1120e197d15d550fce752dc12ad7514e31"
+    },
+    {
+      "path": "vesper-release-documentation-closeout-web-driver-job-112127036646.log",
+      "bytes": 281535,
+      "source_sha256": "68a1e1a6699aacffbb033cef328d1ac808e4aeb088247e8173517bf5bb3cd447",
+      "sha256": "7bea379dce6454a9ad9780cc4cc0bad3bbf2613925e1c156db4e78057e293e9c"
+    },
+    {
+      "path": "vesper-release-documentation-closeout-web-driver-job-112127036823.log",
+      "bytes": 47548,
+      "source_sha256": "6832e9709b85a55693abb80da302f62569039556992a7b26952ac60acbf3c110",
+      "sha256": "fc7f391bfa252626b27f6de8adf1ec874d2160b37eba671b326748591c57aede"
+    },
+    {
+      "path": "vesper-release-documentation-closeout-web-driver-job-112127036882.log",
+      "bytes": 278152,
+      "source_sha256": "f274e84c92fdefbb8b71870f7477b0aa45365a13b8254a5dac438a747202bac3",
+      "sha256": "426cc753315de725913e96bca7283de486a20994042d56043ff0b6514405d6b3"
+    },
+    {
+      "path": "vesper-release-documentation-closeout-web-driver-jobs.json",
+      "bytes": 11774,
+      "source_sha256": "ba9579a77db188a3e2a927e94598d2aff31f38efb833f9f129409cfc302a1ccc",
+      "sha256": "ba9579a77db188a3e2a927e94598d2aff31f38efb833f9f129409cfc302a1ccc"
+    },
+    {
+      "path": "vesper-release-documentation-closeout-web-driver-run.json",
+      "bytes": 14726,
+      "source_sha256": "656f6cbf3d5d9cee6fc5066867129da16d9b54e30d90186040c0863344734a2e",
+      "sha256": "656f6cbf3d5d9cee6fc5066867129da16d9b54e30d90186040c0863344734a2e"
+    },
+    {
+      "path": "vesper-release-documentation-closeout-windows-first-failed.log",
+      "bytes": 238293,
+      "source_sha256": "f04f26c6acfc581bb9736db56ecd67821b8a3878c57f6eb3ffcc64b47ef25d0e",
+      "sha256": "ba2bbc4950ea09485a624ef26b88a952a434f1d6377a447c7855337fb26b4c51"
+    },
+    {
+      "path": "vesper-release-focused-cargo.rs",
+      "bytes": 978,
+      "source_sha256": "f207efd02909733796dfb9c26bc40e43ee0478bee5619412ff5614a9bf931855",
+      "sha256": "f207efd02909733796dfb9c26bc40e43ee0478bee5619412ff5614a9bf931855"
+    },
+    {
+      "path": "vesper-release-post-main-controller.rs",
+      "bytes": 10284,
+      "source_sha256": "832649b4fb49ce936f07fdb76089a3fc960fcf9190ed5c1c87e199b0541e179f",
+      "sha256": "832649b4fb49ce936f07fdb76089a3fc960fcf9190ed5c1c87e199b0541e179f"
+    },
+    {
+      "path": "vesper-release-readiness-build-evidence.py",
+      "bytes": 3814,
+      "source_sha256": "52785b598de46a52eae4f3f8a496b623d018f7273bb498fbf7943437ffeaf0ab",
+      "sha256": "52785b598de46a52eae4f3f8a496b623d018f7273bb498fbf7943437ffeaf0ab"
+    },
+    {
+      "path": "vesper-release-readiness-collect-diagnostic.py",
+      "bytes": 2052,
+      "source_sha256": "17c8d02409fe265a649cd97d3b3d93668f0babbc072b8eecf9cbefe75ffd349d",
+      "sha256": "17c8d02409fe265a649cd97d3b3d93668f0babbc072b8eecf9cbefe75ffd349d"
+    },
+    {
+      "path": "vesper-release-readiness-collect-format.py",
+      "bytes": 1416,
+      "source_sha256": "4af59441063f6d20b0683a5ef02afbe734cebe6f27b92e511a5a6f3367a786eb",
+      "sha256": "4af59441063f6d20b0683a5ef02afbe734cebe6f27b92e511a5a6f3367a786eb"
+    },
+    {
+      "path": "vesper-release-readiness-diagnostic-collection.log",
+      "bytes": 8182,
+      "source_sha256": "4635b98c59b0b23685783844fa4fdddb58c5fe3dc49908419730c999cb29261b",
+      "sha256": "4635b98c59b0b23685783844fa4fdddb58c5fe3dc49908419730c999cb29261b"
+    },
+    {
+      "path": "vesper-release-readiness-diagnostic-early-failure.log",
+      "bytes": 0,
+      "source_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "vesper-release-readiness-diagnostic-job-112134584193.log",
+      "bytes": 83067,
+      "source_sha256": "f8bd611234b5e719c8f0529be31c72b5239e8e37b20adbcd8968e9bc675fc78d",
+      "sha256": "f0a94c09998b368f7451aad5908cdf02be20b696c01b33930a56b375e74cb2cb"
+    },
+    {
+      "path": "vesper-release-readiness-diagnostic-job-112134584330.log",
+      "bytes": 70405,
+      "source_sha256": "18bc89d59a85dfc802eb1c3e2b20f53f80956fc0ca9fe59e58ae7da2fffc7eed",
+      "sha256": "43328b01d4422c53c615052bc44c7aad27797ba0f15641dad3097a0d6e6f5351"
+    },
+    {
+      "path": "vesper-release-readiness-diagnostic-job-112134584381.log",
+      "bytes": 189282,
+      "source_sha256": "992cf3da6e83f2a81a32e01cf4069d4be600de0287094a34309109d6eecfff38",
+      "sha256": "a1e6d8ab57ba7f22d7b5d7a066cdfb0285bd4f05b1f64f59e5ec24db36ad6852"
+    },
+    {
+      "path": "vesper-release-readiness-diagnostic-jobs.json",
+      "bytes": 12498,
+      "source_sha256": "884188a3337ee1b05870a5d9e225e9f4874710e3b490232c71d53e850f7ad1d3",
+      "sha256": "884188a3337ee1b05870a5d9e225e9f4874710e3b490232c71d53e850f7ad1d3"
+    },
+    {
+      "path": "vesper-release-readiness-diagnostic-matrix.json",
+      "bytes": 6404,
+      "source_sha256": "3184827e435d69a9aa724efac7d65ffed3ef24dd417a6728f8200032592c92ad",
+      "sha256": "3184827e435d69a9aa724efac7d65ffed3ef24dd417a6728f8200032592c92ad"
+    },
+    {
+      "path": "vesper-release-readiness-diagnostic-run.json",
+      "bytes": 16467,
+      "source_sha256": "899a5c035dc545ef8b2c5d4f1aa0152af865c2adadd36fdfaa5074f266a6132b",
+      "sha256": "899a5c035dc545ef8b2c5d4f1aa0152af865c2adadd36fdfaa5074f266a6132b"
+    },
+    {
+      "path": "vesper-release-readiness-diagnostic-source-equivalence.json",
+      "bytes": 1763,
+      "source_sha256": "bae6ce39d801696901798833a862ed8fb6778e44f5822feb269901d638708a24",
+      "sha256": "bae6ce39d801696901798833a862ed8fb6778e44f5822feb269901d638708a24"
+    },
+    {
+      "path": "vesper-release-readiness-diagnostic-windows-early.log",
+      "bytes": 189282,
+      "source_sha256": "992cf3da6e83f2a81a32e01cf4069d4be600de0287094a34309109d6eecfff38",
+      "sha256": "a1e6d8ab57ba7f22d7b5d7a066cdfb0285bd4f05b1f64f59e5ec24db36ad6852"
+    },
+    {
+      "path": "vesper-release-readiness-format-native-collection.log",
+      "bytes": 393,
+      "source_sha256": "4c22203b709a74eec3ca02cdcd8e10dfa9d67e18bf164478c3221f3d9acef145",
+      "sha256": "4c22203b709a74eec3ca02cdcd8e10dfa9d67e18bf164478c3221f3d9acef145"
+    },
+    {
+      "path": "vesper-release-readiness-format-native-job-112136631149.log",
+      "bytes": 22475,
+      "source_sha256": "3f8fa201c008037b82414cac427204d56ee0f797a3bb1c94e95b2ae489e6039a",
+      "sha256": "e9091a4cee59d0478cfa43b28e5e2710886d206a678ff2f4c41665db6313394d"
+    },
+    {
+      "path": "vesper-release-readiness-format-native-jobs.json",
+      "bytes": 3906,
+      "source_sha256": "421ec0ea384d10a7f75f5e6dc6c295fb2345f08f7f4a9ce3065aa7abf0facdba",
+      "sha256": "421ec0ea384d10a7f75f5e6dc6c295fb2345f08f7f4a9ce3065aa7abf0facdba"
+    },
+    {
+      "path": "vesper-release-readiness-format-native-proof.json",
+      "bytes": 409,
+      "source_sha256": "cdb0a1210a8a659e5750e759487b9d498b316e040ce9cf7e08cd2688e18e2ecb",
+      "sha256": "cdb0a1210a8a659e5750e759487b9d498b316e040ce9cf7e08cd2688e18e2ecb"
+    },
+    {
+      "path": "vesper-release-readiness-format-native-run.json",
+      "bytes": 16459,
+      "source_sha256": "5eb654c99bea15bde5d6826f9d871a34c52a4031875f66a8146649c8de534c84",
+      "sha256": "5eb654c99bea15bde5d6826f9d871a34c52a4031875f66a8146649c8de534c84"
+    },
+    {
+      "path": "vesper-release-readiness-format.log",
+      "bytes": 0,
+      "source_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "vesper-release-readiness-local-green.log",
+      "bytes": 1405,
+      "source_sha256": "d60123d1c4d9f50d2dba68075996ae1c1a883b64ae19d01f4c1e16e5421b99d4",
+      "sha256": "d60123d1c4d9f50d2dba68075996ae1c1a883b64ae19d01f4c1e16e5421b99d4"
+    },
+    {
+      "path": "vesper-release-readiness-local-red.log",
+      "bytes": 3939,
+      "source_sha256": "db9148672f7be0be6a5e466d47001c063f25924e6bae6bd6ec1b0879f8780b22",
+      "sha256": "db9148672f7be0be6a5e466d47001c063f25924e6bae6bd6ec1b0879f8780b22"
+    },
+    {
+      "path": "vesper-release-readiness-mcp-local-green.log",
+      "bytes": 3029,
+      "source_sha256": "084c74bcede29168c1dceb8a9a500512562310d1b8caddf3f9581f3f248108ef",
+      "sha256": "084c74bcede29168c1dceb8a9a500512562310d1b8caddf3f9581f3f248108ef"
+    },
+    {
+      "path": "vesper-release-readiness-mcp-local-red.log",
+      "bytes": 2220,
+      "source_sha256": "62ff42e73d6cbba816d6c448466ae626edb786302e6676e4fe231dabf33d87f7",
+      "sha256": "62ff42e73d6cbba816d6c448466ae626edb786302e6676e4fe231dabf33d87f7"
+    },
+    {
+      "path": "vesper-release-readiness-native-failed-main.json",
+      "bytes": 27116,
+      "source_sha256": "6a2c15ff08c734861e2f9b5fcb3edb3601ca277787050e9a3cddc2cf5b9fb558",
+      "sha256": "6a2c15ff08c734861e2f9b5fcb3edb3601ca277787050e9a3cddc2cf5b9fb558"
+    },
+    {
+      "path": "vesper-release-readiness-native-failed-main.log",
+      "bytes": 1604,
+      "source_sha256": "50d9e7b52cbdbb27a8033f8cc9aee0ad564d45969db755110a0b3e8d6b3ee816",
+      "sha256": "50d9e7b52cbdbb27a8033f8cc9aee0ad564d45969db755110a0b3e8d6b3ee816"
+    },
+    {
+      "path": "vesper-release-readiness-workflow-gate.log",
+      "bytes": 109,
+      "source_sha256": "b3422b145032ac3a56ce40c0e8bbe6f04030fe26a1ce1f5388afec7a5b7cbee0",
+      "sha256": "b3422b145032ac3a56ce40c0e8bbe6f04030fe26a1ce1f5388afec7a5b7cbee0"
+    },
+    {
+      "path": "vesper-release-windows-sse-native-linkage.json",
+      "bytes": 3934,
+      "source_sha256": "8d38e01320749a5b6548358201d749f41faab2a3768534b2187220a25c5452c9",
+      "sha256": "8d38e01320749a5b6548358201d749f41faab2a3768534b2187220a25c5452c9"
+    }
+  ],
+  "limits": [
+    "Windows MCP Unix-only suite not executed or counted.",
+    "Deliberately cancelled docs-triggered jobs are not passes.",
+    "Native controller observes manual source repair; no live-model repair efficacy claim.",
+    "Published v0.24.5 and its 111 frozen final receipts are unchanged."
+  ]
+}

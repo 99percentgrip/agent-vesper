@@ -1,5 +1,8 @@
 """Offline regression evidence for the actual publishing workflow's gate."""
 import copy
+import ast
+from pathlib import Path
+import re
 import unittest
 from release_gate import GateError, WORKFLOWS, inventory, verify
 
@@ -29,6 +32,10 @@ class GateTests(unittest.TestCase):
 
     def test_green_exact_attempt_selects_driver_run(self):
         self.assertEqual(verify(self.fetch, SHA)['web-driver.yml'], 13)
+
+    def test_filtered_documentation_commit_cannot_authorize_a_release(self):
+        self.runs['ci.yml'] = []
+        with self.assertRaises(GateError): verify(self.fetch, SHA)
 
     def test_earlier_success_cannot_hide_newer_failed_or_active_run(self):
         for status, conclusion in [('completed', 'failure'), ('in_progress', None)]:
@@ -75,6 +82,73 @@ class GateTests(unittest.TestCase):
         self.assertEqual(len(inventory(fetch,'jobs','jobs')),101)
         with self.assertRaises(GateError):
             inventory(lambda *_args, **_kw: dict(jobs=[], total_count=1),'jobs','jobs')
+
+
+class WorkflowTriggerTests(unittest.TestCase):
+    """Keep report-only pushes out of suites without excluding release inputs."""
+
+    def exclusions(self, workflow, event):
+        path = Path(__file__).resolve().parents[1] / '.github' / 'workflows' / workflow
+        header = path.read_text().split('\npermissions:', 1)[0]
+        block = re.search(r'^  ' + event + r':\n((?:^    .*\n|^      .*\n)*)',
+                          header, re.MULTILINE)
+        self.assertIsNotNone(block, (workflow, event))
+        self.assertIn('    paths-ignore:\n', block.group(1))
+        return [ast.literal_eval(line.strip()[2:]) for line in block.group(1).splitlines()
+                if line.startswith('      - ')]
+
+    @staticmethod
+    def matches(pattern, path):
+        # These controlled patterns use only literals, * and **. A **/ segment
+        # also matches zero directories, as GitHub's documented glob syntax does.
+        regex = ''
+        while pattern:
+            if pattern.startswith('**/'):
+                regex += '(?:.*/)?'
+                pattern = pattern[3:]
+            elif pattern.startswith('**'):
+                regex += '.*'
+                pattern = pattern[2:]
+            elif pattern.startswith('*'):
+                regex += '[^/]*'
+                pattern = pattern[1:]
+            else:
+                regex += re.escape(pattern[0])
+                pattern = pattern[1:]
+        return re.fullmatch(regex, path) is not None
+
+    def test_documentation_and_report_paths_are_excluded_consistently(self):
+        expected = ['README.md', 'AGENTS.md', '**/AGENTS.md', 'docs/**/*.md',
+                    'docs/foundation/*-evidence.json', 'docs/foundation/*-source.json',
+                    'docs/foundation/*-requirements.json',
+                    'docs/foundation/*-document-verification.json',
+                    'docs/foundation/*-receipts.tar.gz']
+        reports = ['README.md', 'AGENTS.md', 'docs/AGENTS.md',
+                   'docs/Agent_Vesper_Release_Recovery_Controller_PRD.md',
+                   'docs/foundation/2026-10-06-rrc-parity-production-release.md',
+                   *['docs/foundation/repair-' + suffix for suffix in
+                     ['evidence.json', 'source.json', 'requirements.json',
+                      'document-verification.json', 'receipts.tar.gz']]]
+        for workflow in WORKFLOWS:
+            for event in ['push', 'pull_request']:
+                patterns = self.exclusions(workflow, event)
+                self.assertEqual(patterns, expected)
+                self.assertTrue(all(any(self.matches(p, name) for p in patterns)
+                                    for name in reports), (workflow, event))
+
+    def test_executable_release_inputs_still_require_workflows(self):
+        inputs = ['Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml',
+                  'crates/vesper-agent/tests/command_settlement.rs',
+                  'fixtures/routing/corpus.jsonl', 'fixtures/README.md',
+                  'skills/work-unit-reporting/SKILL.md',
+                  'docs/foundation/release-objective-provenance.json',
+                  '.github/workflows/ci.yml', '.cargo/config.toml',
+                  'scripts/release_gate.py', 'registry/agent.json']
+        for workflow in WORKFLOWS:
+            for event in ['push', 'pull_request']:
+                patterns = self.exclusions(workflow, event)
+                self.assertFalse(any(self.matches(p, name) for p in patterns for name in inputs),
+                                 (workflow, event))
 
 
 if __name__ == '__main__': unittest.main()

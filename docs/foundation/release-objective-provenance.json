@@ -2,8 +2,8 @@
   "version": 1,
   "objective_id": "rrc-parity-source-integration-20261006",
   "objective_label": "RRC parity source integration for v0.24.5",
-  "variant_label": "Production parity source with isolated Windows SSE verification",
-  "variant_id": "rrc-parity-production-windows-sse-verified-source-20261006",
+  "variant_label": "Published v0.24.5 retained; documentation-trigger and command/MCP startup fixture correction",
+  "variant_id": "rrc-post-release-documentation-readiness-repair-20261006",
   "canonical_release_source": true,
   "supersedes": [
     "rrc-source-resolution-ux-repair-20260930",
@@ -14,10 +14,12 @@
     "rrc-parity-production-portable-governed-repair-20261006",
     "rrc-parity-production-host-ledger-fixture-20261006",
     "rrc-parity-production-isolated-openai-startup-20261006",
-    "rrc-parity-production-bounded-windows-sse-fixture-20261006"
+    "rrc-parity-production-bounded-windows-sse-fixture-20261006",
+    "rrc-parity-production-windows-sse-verified-source-20261006"
   ],
-  "completed_at": "2026-10-06T03:42:40.043811+00:00",
+  "completed_at": "2026-10-06T06:20:39.596821+00:00",
   "evidence_reports": [
-    "docs/foundation/2026-10-06-rrc-parity-production-release.md"
+    "docs/foundation/2026-10-06-rrc-parity-production-release.md",
+    "docs/foundation/2026-10-06-documentation-ci-and-windows-readiness-repair.md"
   ]
 }

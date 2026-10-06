@@ -1,0 +1,9 @@
+{
+  "passed": true,
+  "scope": "Content/link/JSON/whitespace review; sanitized archive byte/hash verification; direct native named-case logs; binding PRD prefix preserved.",
+  "receipts_verified": 51,
+  "native_functional_executions": 145,
+  "first_diagnostic_windows_format_failure_preserved": true,
+  "windows_format_follow_up_success": true,
+  "full_corrected_main_pending": true
+}

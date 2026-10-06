@@ -88,9 +88,17 @@ Default section order:
   Preserve existing runtimes/workloads; OS approval and reboot requirements remain
   explicit. Core coding stays usable when optional setup is declined.
 
-- For prose-only corrections, review content, links and whitespace; do not run
-  program test suites or a version/release pipeline. A documentation-only push
-  may skip CI when the user requests a text-only update without tests.
+- Include documentation, PRD/status, owning DOX and evidence-index updates in
+  the implementation/release candidate commit before CI. Do not automatically
+  push a separate documentation-only commit after a green release. Keep receipts
+  that can only exist after publication in the owned local `docs/foundation/`
+  report and deliver them; publish those updates with the next authorized code
+  change unless Alex explicitly requests a documentation-only push.
+- Prose-only and execution-report updates require content, links, JSON and
+  whitespace checks, not program suites, a version bump or another release.
+  Automatic CI filters must exclude prose/report-only pushes while retaining
+  gates for source, fixtures, bundled skills, dependencies, workflows and
+  release-objective provenance. Never represent skipped checks as release proof.
 
 When the user requests a durable behavior change, record it here or in the relevant child AGENTS.md
 

@@ -2,8 +2,28 @@ name: msrv
 
 on:
   pull_request:
+    paths-ignore:
+      - 'README.md'
+      - 'AGENTS.md'
+      - '**/AGENTS.md'
+      - 'docs/**/*.md'
+      - 'docs/foundation/*-evidence.json'
+      - 'docs/foundation/*-source.json'
+      - 'docs/foundation/*-requirements.json'
+      - 'docs/foundation/*-document-verification.json'
+      - 'docs/foundation/*-receipts.tar.gz'
   push:
     branches: [main]
+    paths-ignore:
+      - 'README.md'
+      - 'AGENTS.md'
+      - '**/AGENTS.md'
+      - 'docs/**/*.md'
+      - 'docs/foundation/*-evidence.json'
+      - 'docs/foundation/*-source.json'
+      - 'docs/foundation/*-requirements.json'
+      - 'docs/foundation/*-document-verification.json'
+      - 'docs/foundation/*-receipts.tar.gz'
 
 permissions:
   contents: read

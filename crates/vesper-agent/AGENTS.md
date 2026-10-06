@@ -674,6 +674,10 @@ the multi-turn, tool-executing layer above it.
   report early command termination with its actual result, and abort a timed-out
   fixture task. This allowance never extends post-signal settlement or cleanup
   assertions; slow-start and early-failure regressions exercise the helper.
+  Leader/descendant fixtures use the shared 20-second overall invocation budget,
+  including that startup phase. Their delayed descendant markers wait for
+  `settlement.ready` before starting the two-second cleanup probe. Both slow-start
+  regressions must execute; a five-second overall timeout contradicts readiness.
 - Descendant-after-leader fixture timing begins at its explicit leader-exit
   marker, excluding Windows PowerShell startup. It retains the three-second
   settlement assertion and delayed-marker cleanup proof.

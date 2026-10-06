@@ -1117,3 +1117,5 @@ Production publication used standard public GitHub Actions. Alex's installed
 application is outside this release authorization.
 
 [Current requirement trace](foundation/2026-10-06-rrc-parity-production-release-final-requirements.json) binds all 36 sections and 23 acceptance criteria to direct current native observations and actual production publication/closeout receipts.
+
+[Post-release documentation/Windows repair](foundation/2026-10-06-documentation-ci-and-windows-readiness-repair.md) records the unnecessary separate documentation push, newly exposed command-fixture readiness/MCP startup failures and the same-commit documentation rule. This later main-health repair does not move the published tag or relabel cancelled checks as passed.

@@ -7,6 +7,13 @@ migration gates and disposable platform assumptions on hosts unavailable locally
 
 ## Local Contracts
 
+- Canonical, MSRV, five-target and web-driver push/PR triggers exclude only
+  README/DOX prose, documentation Markdown and named foundation report/evidence
+  companions. Source, fixtures, seed skills, workflow/config/dependency changes
+  and `release-objective-provenance.json` still trigger every required gate.
+  Keep the same exclusion list in all four workflows. A missing filtered run
+  never authorizes a tag; the exact-commit release gate stays fail-closed.
+
 - `prepare-rust-runner.sh` refuses outside GitHub-hosted Linux. It removes only
   unused preinstalled Android/.NET/GHC SDK trees on disposable CI machines,
   records actual free space and preserves the Rust/Node/Python/Docker tool paths.

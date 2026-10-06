@@ -84,9 +84,16 @@ fn identical_config_has_independent_owners_and_explicit_close_resets() {
 
 #[test]
 fn timeout_is_bounded_quarantined_and_never_replayed() {
-    let config = fixture();
-    let session = McpSession::with_timeout(Duration::from_millis(150));
+    let mut config = fixture();
+    // Force startup beyond the request deadline so the fixture cannot silently
+    // regress to measuring Python creation instead of a dispatched hang.
+    config.args[2] = config.args[2].replace(
+        "state = 'about:blank'",
+        "time.sleep(0.3)\nstate = 'about:blank'",
+    );
+    let mut session = McpSession::with_timeout(Duration::from_secs(10));
     session.tools(&config).unwrap();
+    session.set_request_timeout_for_test(Duration::from_millis(150));
     let start = Instant::now();
     assert!(
         session
@@ -103,6 +110,7 @@ fn timeout_is_bounded_quarantined_and_never_replayed() {
             .to_string()
             .contains("session lost")
     );
+    session.set_request_timeout_for_test(Duration::from_secs(10));
     session.close(&config.id).unwrap();
     assert_eq!(
         session.call_tool(&config, "snapshot", json!({})).unwrap()["url"],

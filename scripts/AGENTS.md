@@ -15,6 +15,8 @@ with each release. The read-only release prerequisite helper also lives here.
   attempt-specific successful job set for all four release workflows; pagination,
   changed attempts and missing/skipped/running evidence fail closed.
   `test_release_gate.py` supplies offline structured GitHub fixtures.
+  It also checks matching push/PR documentation exclusions in all four workflows,
+  retained gates for executable inputs and refusal to tag filtered commits.
 
 - `install.sh` — POSIX installer (Linux + macOS). Downloads the
   `agent-vesper-acp-<platform>-<arch>.tar.gz` release, verifies SHA-256,

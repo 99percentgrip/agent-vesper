@@ -89,6 +89,11 @@ unsigned plugin by any code path.
 
 ## Verification
 
+- The timeout/quarantine fixture warms its real Python stdio handshake with a
+  ten-second startup budget before testing the unchanged 150 ms hanging-request
+  deadline. Its forced 300 ms startup guards this distinction. Restore the
+  startup budget for explicit reset; the mutable deadline seam is `cfg(test)`
+  only and must not change production timeout behavior.
 - `cargo test -p vesper-mcp` — unit + integration tests: signed plugins
   load when the publisher is trusted; signed plugins are REJECTED when
   the publisher is not trusted; tampered manifests are rejected via

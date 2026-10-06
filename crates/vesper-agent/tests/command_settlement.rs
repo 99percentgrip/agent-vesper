@@ -149,7 +149,29 @@ fn cancellation_command(marker: &str) -> String {
 
 #[cfg(unix)]
 fn held_pipe_command() -> String {
-    "(sleep 2; echo stale > descendant.marker; echo stale) & touch settlement.ready; echo leader-done".into()
+    "(while [ ! -f settlement.ready ]; do sleep 0.01; done; sleep 2; echo stale > descendant.marker; echo stale) & touch settlement.ready; echo leader-done".into()
+}
+
+fn leader_fixture_call(command: &str) -> ToolCall {
+    // The readiness helper admits 15 seconds of shell/descendant startup.
+    // Leave room for that phase; post-readiness assertions remain unchanged.
+    call(command, 20)
+}
+
+#[cfg(unix)]
+fn writer_command() -> String {
+    "(while :; do printf z; done) & (while [ ! -f settlement.ready ]; do sleep 0.01; done; sleep 2; echo stale > writer.marker) & touch settlement.ready; exit 0".to_owned()
+}
+
+#[cfg(windows)]
+fn writer_command() -> String {
+    powershell(&format!(
+        "{}; {}; Set-Content -LiteralPath settlement.ready -Value ready",
+        powershell_descendant("while ($true) { [Console]::Out.Write('z' * 4096) }"),
+        powershell_descendant(
+            "while (-not (Test-Path -LiteralPath settlement.ready)) { Start-Sleep -Milliseconds 10 }; Start-Sleep -Seconds 2; Set-Content -LiteralPath writer.marker -Value stale"
+        )
+    ))
 }
 
 #[cfg(windows)]
@@ -157,7 +179,7 @@ fn held_pipe_command() -> String {
     powershell(&format!(
         "{}; Set-Content -LiteralPath settlement.ready -Value ready; Write-Output leader-done",
         powershell_descendant(
-            "Start-Sleep -Seconds 2; Set-Content -LiteralPath descendant.marker -Value stale; [Console]::Out.Write('stale')"
+            "while (-not (Test-Path -LiteralPath settlement.ready)) { Start-Sleep -Milliseconds 10 }; Start-Sleep -Seconds 2; Set-Content -LiteralPath descendant.marker -Value stale; [Console]::Out.Write('stale')"
         )
     ))
 }
@@ -239,6 +261,35 @@ async fn startup_readiness_reports_early_command_failure() {
     let root = tempfile::tempdir().unwrap();
     let mut task = tokio::spawn(async { Err::<(), _>("synthetic startup failure") });
     wait_for_marker(&root.path().join("never.ready"), &mut task).await;
+}
+
+async fn assert_slow_leader_fixture(command: String, marker: &str) {
+    let root = tempfile::tempdir().unwrap();
+    let ctx = context(root.path(), Arc::new(Cancel::default()));
+    #[cfg(unix)]
+    let delayed = format!("sleep 6; {command}");
+    #[cfg(windows)]
+    let delayed = format!("{} & {command}", powershell("Start-Sleep -Seconds 6"));
+    let invocation = leader_fixture_call(&delayed);
+    let mut task = tokio::spawn(async move { RunCommand.execute(&invocation, &ctx).await });
+    wait_for_marker(&root.path().join("settlement.ready"), &mut task).await;
+    let output = tokio::time::timeout(Duration::from_secs(3), task)
+        .await
+        .expect("post-readiness settlement must remain bounded")
+        .unwrap()
+        .expect("slow fixture startup must not consume settlement budget");
+    assert!(!output.text.as_str().contains("stale"));
+    assert_marker_absent_after_cleanup(&root.path().join(marker)).await;
+}
+
+#[tokio::test]
+async fn held_pipe_fixture_allows_slow_startup_before_settlement() {
+    assert_slow_leader_fixture(held_pipe_command(), "descendant.marker").await;
+}
+
+#[tokio::test]
+async fn writer_fixture_allows_slow_startup_before_settlement() {
+    assert_slow_leader_fixture(writer_command(), "writer.marker").await;
 }
 
 #[tokio::test]
@@ -373,7 +424,7 @@ async fn dropping_async_caller_still_cleans_owned_process_tree() {
 async fn leader_exit_does_not_wait_for_descendant_held_pipe() {
     let root = tempfile::tempdir().unwrap();
     let ctx = context(root.path(), Arc::new(Cancel::default()));
-    let invocation = call(&held_pipe_command(), 5);
+    let invocation = leader_fixture_call(&held_pipe_command());
     let mut task = tokio::spawn(async move { RunCommand.execute(&invocation, &ctx).await });
     wait_for_marker(&root.path().join("settlement.ready"), &mut task).await;
     let started = Instant::now();
@@ -397,18 +448,7 @@ async fn leader_exit_does_not_wait_for_descendant_held_pipe() {
 async fn descendant_writing_after_leader_exit_is_cleaned() {
     let root = tempfile::tempdir().unwrap();
     let ctx = context(root.path(), Arc::new(Cancel::default()));
-    #[cfg(unix)]
-    let command =
-        "(while :; do printf z; done) & (sleep 2; echo stale > writer.marker) & touch settlement.ready; exit 0".to_owned();
-    #[cfg(windows)]
-    let command = powershell(&format!(
-        "{}; {}; Set-Content -LiteralPath settlement.ready -Value ready",
-        powershell_descendant("while ($true) { [Console]::Out.Write('z' * 4096) }"),
-        powershell_descendant(
-            "Start-Sleep -Seconds 2; Set-Content -LiteralPath writer.marker -Value stale"
-        )
-    ));
-    let invocation = call(&command, 5);
+    let invocation = leader_fixture_call(&writer_command());
     let mut task = tokio::spawn(async move { RunCommand.execute(&invocation, &ctx).await });
     wait_for_marker(&root.path().join("settlement.ready"), &mut task).await;
     let started = Instant::now();

@@ -36,6 +36,12 @@ impl Default for McpSession {
 }
 
 impl McpSession {
+    // Fixture startup and a dispatched request need independent test budgets.
+    #[cfg(test)]
+    pub(crate) fn set_request_timeout_for_test(&mut self, timeout: Duration) {
+        self.timeout = timeout.clamp(Duration::from_millis(1), Duration::from_secs(60));
+    }
+
     /// Creates an empty owner with a bounded operation deadline (at most 60 s).
     #[must_use]
     pub fn with_timeout(timeout: Duration) -> Self {
