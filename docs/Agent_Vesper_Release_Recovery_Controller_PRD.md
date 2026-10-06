@@ -1094,9 +1094,10 @@ reset, stashed or mutated by this process.
 
 ## 37. Current Implementation Status
 
-**Release integration in progress; native-pushed `1dab7456` passed all local steps and
-ten hosted jobs, including every native platform. Canonical failed in a stale host
-fixture; its correction has actual red/green proof. The successor is not published.**
+**Release integration in progress; native-pushed `3614a98d` passed all eight local
+steps and ten hosted jobs, including every native platform. Canonical exposed an
+ambient-credential assumption in the OpenAI startup fixture; all three corrected
+isolated real-PTY cases passed. Successor publication gates remain pending.**
 
 [The production release report](foundation/2026-10-06-rrc-parity-production-release.md)
 owns reconciliation with the newer production source, exact-source local verification,

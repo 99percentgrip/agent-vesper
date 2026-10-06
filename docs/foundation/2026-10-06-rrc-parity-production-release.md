@@ -4,8 +4,9 @@
 
 Publish the requested patch release with the RRC parity and native OpenAI sign-in
 repairs while preserving the newer changes already committed to production.
-**In progress: candidate `1dab7456` passed all native local steps and ten hosted jobs;
-canonical CI failed in a stale host-ledger fixture. Its focused correction passed.
+**In progress: native-pushed `3614a98d` passed all eight local steps and ten
+hosted jobs. Canonical exposed an OpenAI startup fixture that required ambient
+credentials; all three corrected isolated real-PTY cases passed locally.
 No release tag, publication or installation performed.**
 The latest public release is `v0.24.4`; production already contains the unpublished
 `0.24.5` version graph. The intended release target is `0.24.5`, subject to native
@@ -316,3 +317,56 @@ The next clean canonical source must undergo fresh native gates, public controls
 all hosted prerequisites. Publication/checksums/native closeout/Registry remain pending;
 Alex's installed application remains untouched. Nearest test and foundation contracts
 are updated; parent ownership boundaries and child indexes remain unchanged.
+
+
+## Complete `3614a98d` matrix and isolated OpenAI startup fixture
+
+Native admission archived the preceding failed candidate and started a new epoch
+for `3614a98d41d3299186b1355270e64c8826ae3a6d`. The registered producer passed
+all eight local steps, including both exact 100-case acceptance executions, then
+pushed through the native operation. A real target-filesystem resource defer at
+step 5 preserved that epoch and resumed after guarded reclamation of inactive
+task-owned preparation caches. The unchanged disk reserve was enforced. Actual
+filesystem free-space gain for the test-executable reclamation was about 2.5 GB;
+the larger allocated-file total is not the reclaimed physical-space measurement.
+
+The complete production matrix has eleven settled jobs: MSRV `37397644904`, all
+five native targets `37397644800`, all three web-driver jobs `37397644159`, and
+canonical supply-chain passed. Canonical quality `37397644209` failed in
+`openai_startup_does_not_wait_for_unselected_xai_discovery`: the clean runner
+rendered required OpenAI authentication rather than the assumed conversation.
+The native controller waited for the final Intel macOS job, then captured causal
+fingerprint `e5645aa3789243ecdb6be1b67b0d946fc3bcc6e6dba1ff7fde74ef3b549bc8b5`.
+It did not tag or publish; persisted retry counters remained unused.
+
+The fixture had no selected-provider loopback route or credential, inherited the
+invoker's environment, and left the credential files absent. Its corrected shared
+launcher clears the environment, isolates HOME/XDG/global cognition, and writes
+private signed-out OpenAI/xAI vaults. Every case uses the existing integration-only
+OpenAI loopback adapter with synthetic credentials. The unselected-xAI case now
+requires the real OpenAI loading frame while the selected catalog is held, keeps
+the assertion that xAI receives no connection, and settles both fixture workers.
+This changes test setup, not production sign-in rules or the browser-launch repair.
+
+Focused command: `cargo test --locked -p agent-vesper-tui --all-features --test
+openai_startup_responsiveness -- --test-threads=1`, under native default resource
+admission and bounded Cargo environment. All three real-PTY cases passed in
+3.74 seconds; an independent rerun passed all three in 3.63 seconds. The actual canonical failure is retained as the red receipt.
+
+Fresh public controls on `3614a98d` passed red `37393925022`, repeated fingerprint
+`37394081001`, and focused green `37394227894`, including actual partial-matrix
+blocking and redaction assertions. These Ubuntu-labelled controls do not substitute
+for native platform verification or certify the pending successor.
+
+[OpenAI fixture evidence](2026-10-06-rrc-parity-production-release-openai-fixture-evidence.json)
+and [receipts](2026-10-06-rrc-parity-production-release-openai-fixture-receipts.tar.gz)
+preserve the complete stopped matrix, native record/log, controls, cache-reclamation
+receipts and focused corrected cases. Successor exact-source prerequisites,
+publication, downloaded-asset verification and Registry delivery remain pending.
+Live OpenAI account/browser completion and actual model-driven repair remain
+unexecuted; the sandbox managed-repair and Linux governor limits above still apply.
+
+DOX pass: the nearest TUI test contract now requires cleared child environments,
+private signed-out vaults, isolated roots and the selected-provider loopback route.
+Root/application parents retain their existing authentication and public-release
+contracts; their ownership/index did not change.

@@ -1,0 +1,255 @@
+{
+  "failed_candidate_sha": "3614a98d41d3299186b1355270e64c8826ae3a6d",
+  "status": "Complete eleven-job prerequisite matrix: ten successful; canonical OpenAI startup fixture failed in a signed-out CI environment; three isolated real-PTY corrected cases passed locally. Successor release gates remain pending.",
+  "archive": "2026-10-06-rrc-parity-production-release-openai-fixture-receipts.tar.gz",
+  "archive_sha256": "23b028fb31e22f92f8bb9b770d8ed2b278e3ce51345d8ff25e3363adcf0b7b8c",
+  "binding_prd_sha256": "e85011c696d769837c6ed5a83e4290e77eadc4ae27a9ea42cffe0966d37518db",
+  "receipt_scope": "Actual 3614a98d native producer, complete hosted matrix, three current-source public controlled runs, resource defer/cache reclamation and source/linkage trace. Synthetic loopback startup does not certify live OpenAI account/browser completion.",
+  "corrected_files": [
+    {
+      "path": "apps/agent-vesper-tui/tests/openai_startup_responsiveness.rs",
+      "sha256": "d4aa2ff3004334a3b0e02663f22270f3f5593a6c59ea032b12622d19736b6f46"
+    },
+    {
+      "path": "apps/agent-vesper-tui/tests/AGENTS.md",
+      "sha256": "41e90c972244468918166e862602e1d1a16048670da92bbe106f0a06ff0baaab"
+    }
+  ],
+  "receipts": [
+    {
+      "path": "vesper-release-361-complete-failed-native-epoch.json",
+      "bytes": 31610,
+      "sha256": "ae59505088cbeb8f0ab9f0c9a2221cbd6e208c627040ffc07415d09ea385d0b6"
+    },
+    {
+      "path": "vesper-release-host-fixture-ci-doc-structure.log",
+      "bytes": 598,
+      "sha256": "bb12c24087a27f77f0955e059f68387f0bc641026d296f6e9be87bb74bd90a3c"
+    },
+    {
+      "path": "vesper-release-host-fixture-ci-doc-structure.sh",
+      "bytes": 568,
+      "sha256": "d61e6eb7aed28b350d0bed69e35ec3069c80a4f3d5f83dabe537b3688393e0a3"
+    },
+    {
+      "path": "vesper-release-host-fixture-controlled-complete.json",
+      "bytes": 938,
+      "sha256": "e5d53009679903f6a9bce58dd4750e36e836dcb42f5bf87b7d3b3cb53f28500a"
+    },
+    {
+      "path": "vesper-release-host-fixture-controlled-green-jobs.json",
+      "bytes": 10453,
+      "sha256": "0424815b462b9417102c8bf80356c3e35a1b0b4ff13b09cf81e8b084c581c0b6"
+    },
+    {
+      "path": "vesper-release-host-fixture-controlled-green-run.json",
+      "bytes": 15077,
+      "sha256": "cb811f8641037911332470e206ec41021771618a71866c6145e77f6aae82aac8"
+    },
+    {
+      "path": "vesper-release-host-fixture-controlled-green.log",
+      "bytes": 210,
+      "sha256": "188c8db8e45a3f17378613e27881d4c79b94f962eb44bcec267f88447810cb85"
+    },
+    {
+      "path": "vesper-release-host-fixture-controlled-partial.log",
+      "bytes": 712,
+      "sha256": "f45ef281dff8b008d3cafe341ac477c4fb06992ebb7817812a7ba20b2fd67cc5"
+    },
+    {
+      "path": "vesper-release-host-fixture-controlled-red-jobs.json",
+      "bytes": 10448,
+      "sha256": "44b643a97bd653887339394d4d9c59db6b7782c0bbc302aca6b09f0330b7f8b8"
+    },
+    {
+      "path": "vesper-release-host-fixture-controlled-red-run.json",
+      "bytes": 15075,
+      "sha256": "64a8566af4bb550c1341e0a9ac8cf03f01ecec460cd49a3b9d70d7414f4eeafd"
+    },
+    {
+      "path": "vesper-release-host-fixture-controlled-red.log",
+      "bytes": 345,
+      "sha256": "30951133238b01afd228470aa37e733af8832a042985b9b2a499cd88cde6c44e"
+    },
+    {
+      "path": "vesper-release-host-fixture-controlled-repeat-jobs.json",
+      "bytes": 10453,
+      "sha256": "531fcf60df0f785d74a334d5aff1c5f1e56b4bf69f4eb3ca82c636a2fa2cfbe6"
+    },
+    {
+      "path": "vesper-release-host-fixture-controlled-repeat-run.json",
+      "bytes": 15077,
+      "sha256": "84d4d68aed72bbf474fcf0fd49553acc48e54bdbbf8a3646eb13114879a7f3ae"
+    },
+    {
+      "path": "vesper-release-host-fixture-controlled-repeat.log",
+      "bytes": 345,
+      "sha256": "15f336526fe19218c3b7f4bbb998975138e982cf2389fba54d654c8a2fc64fa6"
+    },
+    {
+      "path": "vesper-release-host-fixture-github-status-current.json",
+      "bytes": 5538,
+      "sha256": "792c650e6faa9b0dd7785c97633d8b9a8b9693f0e5d5da31c442561bd4f528b3"
+    },
+    {
+      "path": "vesper-release-host-fixture-incremental-reclamation.json",
+      "bytes": 935,
+      "sha256": "4a4de984b0a09a42442c3156a324e4323eae5a0f0c46bea80710cd203524d4d1"
+    },
+    {
+      "path": "vesper-release-host-fixture-matrix-collection.log",
+      "bytes": 4214,
+      "sha256": "4821ccdde6a97dd036b21943093865bc4ecc720a16b76fbe84a85347a3e63790"
+    },
+    {
+      "path": "vesper-release-host-fixture-native-admission.log",
+      "bytes": 345,
+      "sha256": "6d7f46c177f6af92b554a5541aceb91cd04f3dd605b6fac999f9e51702c5400b"
+    },
+    {
+      "path": "vesper-release-host-fixture-native-epoch-lineage.json",
+      "bytes": 996,
+      "sha256": "e993a942fd41672e5e5294817ea4825aab26668a18f2d320393c562e90dcd4dc"
+    },
+    {
+      "path": "vesper-release-host-fixture-native-linkage.json",
+      "bytes": 3763,
+      "sha256": "99c5dcbc8b1bf41e9d157236ef904a139ac3fe1356d1e75ae96f2709dd982e3c"
+    },
+    {
+      "path": "vesper-release-host-fixture-production-five-target-foundation-job-112057320592.log",
+      "bytes": 597127,
+      "sha256": "1c691ed3ab138a4ce5e6b9726e67d5f8b1f15afbba79c52bc26c46fb550bdec0"
+    },
+    {
+      "path": "vesper-release-host-fixture-production-five-target-foundation-job-112057320821.log",
+      "bytes": 591101,
+      "sha256": "5cf5dae5d83607181dd07dc83a4ae3c77eafeea32848a049009ebb6628d49880"
+    },
+    {
+      "path": "vesper-release-host-fixture-production-five-target-foundation-job-112057320825.log",
+      "bytes": 604074,
+      "sha256": "6b59c1c5b13c83fc366db022efce4ba5469d9961baea498d6fc7906115d70641"
+    },
+    {
+      "path": "vesper-release-host-fixture-production-five-target-foundation-job-112057320892.log",
+      "bytes": 620996,
+      "sha256": "e516e5e2f05ea72b9b0d38a2af449e08dd6e77e5912dd90908f5076f8b1dfcb4"
+    },
+    {
+      "path": "vesper-release-host-fixture-production-five-target-foundation-job-112057320911.log",
+      "bytes": 604868,
+      "sha256": "8e3f8000a378f4d3125c1e14142d898241ca112cb9fec02aa112edbe0c7e66ad"
+    },
+    {
+      "path": "vesper-release-host-fixture-production-five-target-foundation-jobs.json",
+      "bytes": 27803,
+      "sha256": "055183cc6d013c974ac54806b375f7da2f1ed4f0d870b784b8fa519006e1af65"
+    },
+    {
+      "path": "vesper-release-host-fixture-production-five-target-foundation-run.json",
+      "bytes": 14755,
+      "sha256": "f7745a99066385beb7dd82cf62d8090394f215db1912d039e33a9e74c6cf9952"
+    },
+    {
+      "path": "vesper-release-host-fixture-production-matrix.json",
+      "bytes": 4214,
+      "sha256": "4821ccdde6a97dd036b21943093865bc4ecc720a16b76fbe84a85347a3e63790"
+    },
+    {
+      "path": "vesper-release-host-fixture-production-msrv-job-112057320718.log",
+      "bytes": 608100,
+      "sha256": "1776d743d340be55baf679927358572f363017de7a75062307003c12f550721f"
+    },
+    {
+      "path": "vesper-release-host-fixture-production-msrv-jobs.json",
+      "bytes": 4250,
+      "sha256": "558894fcfcdb08850fa14d830f36adbf225e53c1e8242452d366e3afc3b51ec2"
+    },
+    {
+      "path": "vesper-release-host-fixture-production-msrv-run.json",
+      "bytes": 14722,
+      "sha256": "f1417572f9975eca90bf8bf806e8ccc7d63798350a80b78a8a7932a6e32c4cba"
+    },
+    {
+      "path": "vesper-release-host-fixture-production-pull-request-validation-job-112057318385.log",
+      "bytes": 178056,
+      "sha256": "1da8c154c1b1c8a63d11c05ae4a82e3f20f3df2f1d4ec084ec86da6a77697614"
+    },
+    {
+      "path": "vesper-release-host-fixture-production-pull-request-validation-job-112057318459.log",
+      "bytes": 329999,
+      "sha256": "572865d5b2415205e55d4efeb049be7ef64ea89e3227a61ec0b3640af20a2d21"
+    },
+    {
+      "path": "vesper-release-host-fixture-production-pull-request-validation-jobs.json",
+      "bytes": 8001,
+      "sha256": "2a0849106c13280628066d793247f5e67749d1941aac4f229bb7c2e0437f0ad8"
+    },
+    {
+      "path": "vesper-release-host-fixture-production-pull-request-validation-run.json",
+      "bytes": 14739,
+      "sha256": "9f0da1430228a82cff9e08d21839c03d351e3d207d391b4e2fd6623b59469df0"
+    },
+    {
+      "path": "vesper-release-host-fixture-production-runs.json",
+      "bytes": 925,
+      "sha256": "8ce13dfe9decad20a4fb26cac606830aaa1a1de54f72d7ce6fb02315b95d68a9"
+    },
+    {
+      "path": "vesper-release-host-fixture-production-web-driver-job-112057318500.log",
+      "bytes": 74551,
+      "sha256": "b2d1d3ea17694f8fbb813723f97af990947d26b502763137e5220ec7e95b7bac"
+    },
+    {
+      "path": "vesper-release-host-fixture-production-web-driver-job-112057318732.log",
+      "bytes": 277287,
+      "sha256": "9f59484b4074d96c7a47d0b0a79e0d29941cd486262f811fdcdffa8e81e8f968"
+    },
+    {
+      "path": "vesper-release-host-fixture-production-web-driver-job-112057318799.log",
+      "bytes": 282296,
+      "sha256": "ce218ab9249d6ef797a12f2dc422143b9797505a1bf325a05f397bd1f1133885"
+    },
+    {
+      "path": "vesper-release-host-fixture-production-web-driver-jobs.json",
+      "bytes": 11774,
+      "sha256": "1a87568942803712cd3d2fd6cd56a9973cd5155d37f14170ba79f342d4c18395"
+    },
+    {
+      "path": "vesper-release-host-fixture-production-web-driver-run.json",
+      "bytes": 14734,
+      "sha256": "fa4833035f35fe654650978d168eef2cfc3b31b626683c603f1e7a0fb978b402"
+    },
+    {
+      "path": "vesper-release-host-fixture-registered-producer.log",
+      "bytes": 286395,
+      "sha256": "67f4650c9f53c838c427ecdaae85f1e26f3ec8c26de52f375bffecb5d1101fa1"
+    },
+    {
+      "path": "vesper-release-host-fixture-requirements.json",
+      "bytes": 55621,
+      "sha256": "d289a487f71e9d17cc9b4c0f383dfb3e29790503310983225663a6e51f95f759"
+    },
+    {
+      "path": "vesper-release-host-fixture-source.json",
+      "bytes": 112386,
+      "sha256": "c391c2cebf036c22585254d7b9a6ab130590267e52d02a555e20064fd81ac777"
+    },
+    {
+      "path": "vesper-release-host-fixture-test-cache-reclamation.json",
+      "bytes": 936,
+      "sha256": "95821e75bd91bbdc165f7a9840129000851dddf6ee4f34853c9e21687368aa62"
+    },
+    {
+      "path": "vesper-release-openai-startup-hermetic-green.log",
+      "bytes": 4874,
+      "sha256": "dcf6555ab15cf01e792cf5e096edfda49997b91c8332ca0d2a3fbfdefdf14ea6"
+    },
+    {
+      "path": "vesper-release-openai-startup-hermetic-repeat.log",
+      "bytes": 665,
+      "sha256": "32be57a53c79856d800cc135500dbd49405aa53c8b97f3412346e8f3a9f75f5b"
+    }
+  ]
+}

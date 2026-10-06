@@ -19,6 +19,9 @@ Own evidence and decisions that close the pre-workspace blockers identified by r
   and publication evidence belongs in the report. Its host-fixture companions bind
   the complete `1dab7456` matrix, native causal capture and actual canonical-identity/
   Published-schema red/green host correction, preserving initial helper/probe failures.
+  Its OpenAI-fixture companions bind the complete `3614a98d` matrix, native
+  settlement, fresh public controls, guarded inactive-cache reclamation, and the
+  isolated signed-out/loopback real-PTY startup correction.
 
 - `release-recovery-controller-parity-continuation.md` owns continued binding
   acceptance: publishing prerequisites, last-green lane evidence, measured

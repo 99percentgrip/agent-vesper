@@ -186,12 +186,28 @@ struct TuiProcess {
     output: Arc<Mutex<Vec<u8>>>,
 }
 
-fn launch(endpoint: &str, home: &std::path::Path) -> io::Result<TuiProcess> {
+fn launch(
+    endpoint: &str,
+    home: &std::path::Path,
+    xai_endpoint: Option<&str>,
+) -> io::Result<TuiProcess> {
+    use std::os::unix::fs::PermissionsExt;
+    for provider in ["openai", "xai"] {
+        let path = home.join(format!("{provider}-credentials.json"));
+        let vault = serde_json::json!({"credentials": {
+            provider: {"native-auth": "{\"mode\":\"signed-out\"}"}
+        }});
+        std::fs::write(&path, vault.to_string())?;
+        std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600))?;
+    }
     let (master, slave) = open_pty()?;
     let input = master.try_clone()?;
     let stdin = slave.try_clone()?;
     let stdout = slave.try_clone()?;
-    let child = Command::new(env!("CARGO_BIN_EXE_agent-vesper-tui"))
+    let mut command = Command::new(env!("CARGO_BIN_EXE_agent-vesper-tui"));
+    command
+        .env_clear()
+        .env("PATH", "/usr/bin:/bin")
         .arg("--resume")
         .arg("missing-openai-startup-session")
         .current_dir(home)
@@ -208,11 +224,20 @@ fn launch(endpoint: &str, home: &std::path::Path) -> io::Result<TuiProcess> {
             home.join("xai-credentials.json"),
         )
         .env("XDG_CONFIG_HOME", home.join("config"))
+        .env("XDG_DATA_HOME", home.join("data"))
+        .env("XDG_STATE_HOME", home.join("state"))
+        .env(
+            "AGENT_VESPER_GLOBAL_COGNITION_ROOT",
+            home.join("global-cognition"),
+        )
         .env("HOME", home)
         .stdin(Stdio::from(stdin))
         .stdout(Stdio::from(stdout))
-        .stderr(Stdio::from(slave))
-        .spawn()?;
+        .stderr(Stdio::from(slave));
+    if let Some(endpoint) = xai_endpoint {
+        command.env("AGENT_VESPER_XAI_TEST_URL", endpoint);
+    }
+    let child = command.spawn()?;
     let output = Arc::new(Mutex::new(Vec::new()));
     spawn_reader(master, Arc::clone(&output));
     Ok(TuiProcess {
@@ -311,12 +336,12 @@ fn run_case(succeed: bool) {
         Condvar::new(),
     ));
     let server_release = Arc::clone(&release);
-    thread::spawn(move || serve(listener, server_release));
+    let server = thread::spawn(move || serve(listener, server_release));
     let TuiProcess {
         mut child,
         mut input,
         output,
-    } = launch(&endpoint, home.path()).expect("launch");
+    } = launch(&endpoint, home.path(), None).expect("launch");
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         input_while_discovery_is_pending(&output, &mut input);
         release_discovery(&release, succeed);
@@ -342,7 +367,13 @@ fn run_case(succeed: bool) {
             );
         }
     }));
+    {
+        let (lock, gate) = &*release;
+        lock.lock().expect("release lock").released = true;
+        gate.notify_all();
+    }
     stop(&mut child, &mut input);
+    server.join().expect("discovery fixture settlement");
     if let Err(panic) = result {
         std::panic::resume_unwind(panic);
     }
@@ -365,10 +396,14 @@ fn openai_startup_does_not_wait_for_unselected_xai_discovery() {
     let endpoint = format!("http://{}/responses", listener.local_addr().expect("addr"));
     let contacted = Arc::new(AtomicBool::new(false));
     let server_contacted = Arc::clone(&contacted);
-    thread::spawn(move || {
+    let finished = Arc::new(AtomicBool::new(false));
+    let server_finished = Arc::clone(&finished);
+    let xai_server = thread::spawn(move || {
         listener.set_nonblocking(true).expect("listener");
         let started = Instant::now();
-        while started.elapsed() < Duration::from_secs(12) {
+        while !server_finished.load(Ordering::Acquire)
+            && started.elapsed() < Duration::from_secs(12)
+        {
             if listener.accept().is_ok() {
                 server_contacted.store(true, Ordering::Release);
                 return;
@@ -376,35 +411,38 @@ fn openai_startup_does_not_wait_for_unselected_xai_discovery() {
             thread::sleep(Duration::from_millis(20));
         }
     });
-    let (master, slave) = open_pty().expect("pty");
-    let mut input = master.try_clone().expect("input");
-    let output = Arc::new(Mutex::new(Vec::new()));
-    spawn_reader(master, Arc::clone(&output));
-    let mut child = Command::new(env!("CARGO_BIN_EXE_agent-vesper-tui"))
-        .arg("--resume")
-        .arg("missing-openai-startup-session")
-        .current_dir(home.path())
-        .env("TERM", "xterm-256color")
-        .env("AGENT_VESPER_PROVIDER", "openai")
-        .env("AGENT_VESPER_HOME", home.path())
-        .env(
-            "AGENT_VESPER_OPENAI_CREDENTIALS_PATH",
-            home.path().join("openai-credentials.json"),
-        )
-        .env(
-            "AGENT_VESPER_XAI_CREDENTIALS_PATH",
-            home.path().join("xai-credentials.json"),
-        )
-        .env("AGENT_VESPER_XAI_TEST_URL", &endpoint)
-        .env("XDG_CONFIG_HOME", home.path().join("config"))
-        .env("HOME", home.path())
-        .stdin(Stdio::from(slave.try_clone().expect("stdin")))
-        .stdout(Stdio::from(slave.try_clone().expect("stdout")))
-        .stderr(Stdio::from(slave))
-        .spawn()
-        .expect("launch");
-    let visible = wait_for(&output, b"Agent Vesper", Duration::from_secs(8));
+    let openai_listener = TcpListener::bind("127.0.0.1:0").expect("OpenAI bind");
+    let openai_endpoint = format!(
+        "http://{}/models",
+        openai_listener.local_addr().expect("addr")
+    );
+    let release = Arc::new((
+        Mutex::new(Release {
+            request_seen: false,
+            released: false,
+            succeed: true,
+        }),
+        Condvar::new(),
+    ));
+    let server_release = Arc::clone(&release);
+    let openai_server = thread::spawn(move || serve(openai_listener, server_release));
+    let TuiProcess {
+        mut child,
+        mut input,
+        output,
+    } = launch(&openai_endpoint, home.path(), Some(&endpoint)).expect("launch");
+    let visible = wait_for(&output, LOADING, Duration::from_secs(8));
+    {
+        let (lock, gate) = &*release;
+        lock.lock().expect("release lock").released = true;
+        gate.notify_all();
+    }
+    // Let the pending catalog response settle before closing its PTY child.
+    let _ = wait_for(&output, CATALOG_APPLIED, Duration::from_secs(5));
     stop(&mut child, &mut input);
+    openai_server.join().expect("OpenAI fixture settlement");
+    finished.store(true, Ordering::Release);
+    xai_server.join().expect("xAI fixture settlement");
     assert!(
         visible,
         "TUI did not render while unselected xAI discovery was stalled:\n{}",

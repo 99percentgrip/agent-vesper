@@ -19,7 +19,10 @@ Verify terminal interaction through the production TUI binary with isolated stat
   that both catalog completion and HTTP failure leave the event loop
   responsive. A burst already queued in the PTY is applied before the next
   full redraw. It requires `integration-test-harness` and never calls a live
-  provider.
+  provider. Children use a cleared environment, isolated HOME/XDG/cognition roots,
+  and private signed-out vaults; the selected OpenAI adapter always uses the
+  synthetic loopback route, including the unselected-xAI discovery case.
+  Catalog and unselected-provider fixture threads settle before closeout.
 - `xai_plain_turn_pty.py` owns the real TUI-process Grok-session `hello` smoke:
   full Code-mode registry, reasoning projection, stale-control suppression and
   exactly one loopback transport dispatch without live quota.
