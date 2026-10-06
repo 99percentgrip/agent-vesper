@@ -1126,14 +1126,30 @@ impl ReleaseExecutionPort for NativeReleaseExecutor {
             activity.gate_started_at = Some(Instant::now());
             activity.last_activity_at = Instant::now();
         }
-        if !self
-            .checked("git", &["status", "--porcelain"])?
-            .trim()
-            .is_empty()
-        {
-            return Err(RrcError::Invalid(
-                "release candidate preparation requires a clean working tree".into(),
+        let original_status = self.checked("git", &["status", "--porcelain"])?;
+        let original_patch = self.command("git", &["diff", "--binary", "HEAD"])?;
+        if !original_patch.status.success() {
+            return Err(RrcError::MutationBlocked(
+                "preparation baseline diff is unavailable".into(),
             ));
+        }
+        if !original_status.trim().is_empty() {
+            let owned = original_status.lines().all(|line| {
+                line.get(3..).is_some_and(|path| {
+                    admission
+                        .candidate_paths()
+                        .iter()
+                        .any(|allowed| allowed == path)
+                })
+            });
+            if !owned
+                || admission.preparation_baseline_digest()
+                    != Some(digest(&original_patch.stdout).as_str())
+            {
+                return Err(RrcError::MutationBlocked(
+                    "release preparation requires a clean tree or the exact admitted local repair patch".into(),
+                ));
+            }
         }
         let plan = build_version_mutation_plan(&self.workspace, target)?;
         let version_changes = plan.before != plan.after;
@@ -1169,6 +1185,19 @@ impl ReleaseExecutionPort for NativeReleaseExecutor {
         {
             if version_changes {
                 restore_version_mutation(&self.workspace, &plan, &lock_path, &lock_before)?;
+            }
+            if matches!(error, RrcError::Invalid(_)) {
+                let restored = self.command("git", &["diff", "--binary", "HEAD"])?;
+                if !restored.status.success()
+                    || restored.stdout != original_patch.stdout
+                    || self.checked("git", &["status", "--porcelain"])? != original_status
+                {
+                    return Err(RrcError::MutationBlocked(
+                        "failed version preparation did not restore its exact approved baseline"
+                            .into(),
+                    ));
+                }
+                return Err(RrcError::VersionPreparationFailed(error.to_string()));
             }
             return Err(error);
         }
@@ -1935,6 +1964,58 @@ fn defer_local_resources(
     Ok(())
 }
 
+fn record_local_gate_failure(
+    record: &mut ReleaseRecoveryRecord,
+    ledger: &ReleaseLedger,
+    index: usize,
+    error: &RrcError,
+) -> Result<(), RrcError> {
+    let gate = record.mutation.local_gates[index].clone();
+    let excerpt = crate::release_recovery::first_causal_excerpt(&error.to_string());
+    let (class, confidence) = crate::release_recovery::classify_failure(&excerpt, None);
+    let source_commit = record.active_commit().unwrap_or("unknown").to_owned();
+    record
+        .failures
+        .push(crate::release_recovery::FailureRecord {
+            workflow_id: 0,
+            run_id: 0,
+            attempt: record.repair_attempts.len() as u32 + 1,
+            job_id: index as u64,
+            workflow_name: "local-verification".into(),
+            job_name: gate.name.clone(),
+            platform: Some(std::env::consts::OS.into()),
+            step_name: Some(gate.command.clone()),
+            fingerprint: crate::release_recovery::failure_fingerprint(
+                "local-verification",
+                &gate.name,
+                Some(&gate.command),
+                Some(std::env::consts::OS),
+                None,
+                &excerpt,
+            ),
+            class,
+            confidence,
+            causal_excerpt: excerpt,
+            source_commit,
+            observed_at: Utc::now(),
+            other_platforms_passed: false,
+            exists_on_last_green: None,
+            related_source_touched: None,
+        });
+    record.mutation.local_gates[index].state = SettlementState::Failed;
+    record.mutation.local_gates[index].evidence_ref = Some("local:failed".into());
+    record.note_progress_milestone(format!(
+        "Local gate failed: {}; preserving failure evidence",
+        gate.name
+    ));
+    apply_controller_event(
+        record,
+        ReleaseControllerEvent::LocalVerificationFailed(vec![format!("local:{}", gate.name)]),
+    )?;
+    ledger.save(record)?;
+    Ok(())
+}
+
 pub fn advance_release(
     record: &mut ReleaseRecoveryRecord,
     context: ReleaseAdvanceContext<'_>,
@@ -2030,6 +2111,21 @@ pub fn advance_release(
                     );
                     ledger.save_for_scheduling(record)?;
                 }
+                if let Some(index) = record
+                    .mutation
+                    .local_gates
+                    .iter()
+                    .position(|gate| gate.name == "version-preparation")
+                    && record.mutation.local_gates[index].state != SettlementState::Running
+                {
+                    record.mutation.local_gates[index].state = SettlementState::Running;
+                    record.mutation.local_gates[index].evidence_ref = None;
+                    record.note_liveness_active("preparing repaired release target");
+                    record.note_progress_milestone(
+                        "Preparing repaired release target and validating the version graph",
+                    );
+                    ledger.save_for_scheduling(record)?;
+                }
                 let receipt = match executor.prepare_version_bump(
                     record.objective.version.as_str(),
                     &admit_release_mutation(record, ReleaseMutationKind::VersionBump)?,
@@ -2063,6 +2159,23 @@ pub fn advance_release(
                         record.mutation.in_flight_operation = None;
                         defer_local_resources(record, ledger, executor, index, &detail)?;
                         return Ok(());
+                    }
+                    Err(error @ RrcError::VersionPreparationFailed(_)) => {
+                        let index = record
+                            .mutation
+                            .local_gates
+                            .iter()
+                            .position(|gate| gate.name == "version-preparation")
+                            .ok_or_else(|| {
+                                RrcError::Invalid(
+                                    "version-preparation gate receipt is missing".into(),
+                                )
+                            })?;
+                        // The typed executor error proves the exact transaction rollback.
+                        // Settle the journal in the same checkpoint as causal evidence.
+                        record.mutation.in_flight_operation = None;
+                        record_local_gate_failure(record, ledger, index, &error)?;
+                        return Err(error);
                     }
                     Err(error) => return Err(error),
                 };
@@ -2132,54 +2245,7 @@ pub fn advance_release(
                         return Err(error);
                     }
                     Err(error) => {
-                        let excerpt =
-                            crate::release_recovery::first_causal_excerpt(&error.to_string());
-                        let (class, confidence) =
-                            crate::release_recovery::classify_failure(&excerpt, None);
-                        let source_commit = record.active_commit().unwrap_or("unknown").to_owned();
-                        record
-                            .failures
-                            .push(crate::release_recovery::FailureRecord {
-                                workflow_id: 0,
-                                run_id: 0,
-                                attempt: record.repair_attempts.len() as u32 + 1,
-                                job_id: index as u64,
-                                workflow_name: "local-verification".into(),
-                                job_name: gate.name.clone(),
-                                platform: Some(std::env::consts::OS.into()),
-                                step_name: Some(gate.command.clone()),
-                                fingerprint: crate::release_recovery::failure_fingerprint(
-                                    "local-verification",
-                                    &gate.name,
-                                    Some(&gate.command),
-                                    Some(std::env::consts::OS),
-                                    None,
-                                    &excerpt,
-                                ),
-                                class,
-                                confidence,
-                                causal_excerpt: excerpt,
-                                source_commit,
-                                observed_at: Utc::now(),
-                                other_platforms_passed: false,
-                                exists_on_last_green: None,
-                                related_source_touched: None,
-                            });
-                        record.mutation.local_gates[index].state = SettlementState::Failed;
-                        record.mutation.local_gates[index].evidence_ref =
-                            Some("local:failed".into());
-                        record.note_progress_milestone(format!(
-                            "Local gate failed: {}; preserving failure evidence",
-                            gate.name
-                        ));
-                        apply_controller_event(
-                            record,
-                            ReleaseControllerEvent::LocalVerificationFailed(vec![format!(
-                                "local:{}",
-                                gate.name
-                            )]),
-                        )?;
-                        ledger.save(record)?;
+                        record_local_gate_failure(record, ledger, index, &error)?;
                         return Err(error);
                     }
                 }
@@ -6153,6 +6219,150 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn version_preparation_rollback_routes_to_repair_and_pins_promoted_patch() {
+        let root = tempfile::tempdir().unwrap();
+        fs::create_dir_all(root.path().join("src")).unwrap();
+        fs::create_dir(root.path().join("registry")).unwrap();
+        fs::write(root.path().join("Cargo.toml"), "[workspace]\nmembers=[\".\"]\n[workspace.package]\nversion = \"0.24.4\"\n[package]\nname=\"preparation-repair-fixture\"\nversion.workspace=true\nedition=\"2024\"\n").unwrap();
+        fs::write(
+            root.path().join("registry/agent.json"),
+            "{\"version\":\"0.24.4\"}",
+        )
+        .unwrap();
+        fs::write(
+            root.path().join("src/lib.rs"),
+            "pub fn answer() -> u32 { undefined_answer }\n",
+        )
+        .unwrap();
+        let resources = tempfile::tempdir().unwrap();
+        let governor = HostResourceGovernor::new(
+            ResourcePolicy {
+                admission_pressure_enabled: false,
+                ..ResourcePolicy::default()
+            },
+            resources.path().join("scheduler"),
+            resources.path().join("target"),
+        )
+        .unwrap();
+        let native = NativeReleaseExecutor::new(root.path(), Arc::new(AtomicBool::new(false)))
+            .unwrap()
+            .with_resource_governor(governor);
+        native
+            .checked("cargo", &["generate-lockfile", "--offline"])
+            .unwrap();
+        native.checked("git", &["init", "-b", "main"]).unwrap();
+        native
+            .checked("git", &["config", "user.name", "fixture"])
+            .unwrap();
+        native
+            .checked("git", &["config", "user.email", "fixture@example.invalid"])
+            .unwrap();
+        native.checked("git", &["add", "--all"]).unwrap();
+        native
+            .checked("git", &["commit", "-m", "broken source fixture"])
+            .unwrap();
+        let base = native
+            .checked("git", &["rev-parse", "HEAD"])
+            .unwrap()
+            .trim()
+            .to_owned();
+        let manifest = fs::read(root.path().join("Cargo.toml")).unwrap();
+        let lock = fs::read(root.path().join("Cargo.lock")).unwrap();
+        let mut record =
+            crate::release_recovery::start_release("preparation", "patch", "main", &base).unwrap();
+        record.state = ReleaseRecoveryState::LocalVerification;
+        record.mutation.in_flight_operation = Some("LocalVerification".into());
+        let ledger = ReleaseLedger::open(resources.path().join("ledger"), "preparation").unwrap();
+        ledger.save(&record).unwrap();
+        let error = advance_release(
+            &mut record,
+            ReleaseAdvanceContext {
+                workspace: root.path(),
+                repository: "fixture/repo",
+                ledger: &ledger,
+                executor: &native,
+                github: &GreenGithub,
+                health: &HealthyStatus,
+                repair_factory: None,
+                cancelled: Arc::new(AtomicBool::new(false)),
+            },
+        )
+        .unwrap_err();
+        assert!(
+            matches!(error, RrcError::VersionPreparationFailed(_)),
+            "{error:?}"
+        );
+        assert_eq!(record.state, ReleaseRecoveryState::DiagnosingLocalFailure);
+        assert_eq!(record.failures.len(), 1);
+        assert_eq!(
+            record.failures[0].class,
+            crate::release_recovery::ReleaseFailureClass::CompileFailure
+        );
+        assert!(
+            record.failures[0]
+                .causal_excerpt
+                .contains("undefined_answer")
+        );
+        assert!(record.mutation.in_flight_operation.is_none());
+        assert_eq!(fs::read(root.path().join("Cargo.toml")).unwrap(), manifest);
+        assert_eq!(fs::read(root.path().join("Cargo.lock")).unwrap(), lock);
+        assert!(
+            native
+                .checked("git", &["status", "--porcelain"])
+                .unwrap()
+                .is_empty()
+        );
+
+        fs::write(
+            root.path().join("src/lib.rs"),
+            "pub fn answer() -> u32 { 42 }\n",
+        )
+        .unwrap();
+        native.checked("git", &["add", "src/lib.rs"]).unwrap();
+        record.state = ReleaseRecoveryState::LocalVerification;
+        record.mutation.repair_files = vec!["src/lib.rs".into()];
+        let patch = native
+            .command("git", &["diff", "--binary", "HEAD"])
+            .unwrap();
+        record
+            .repair_attempts
+            .push(crate::release_recovery::RepairAttempt {
+                fingerprint: record.failures[0].fingerprint.clone(),
+                causal_family: "fixture".into(),
+                hypothesis: "replace undefined answer".into(),
+                source_commit_before: base,
+                source_commit_after: None,
+                focused_proof: "cargo check --workspace --all-targets".into(),
+                focused_status: crate::release_recovery::FocusedProofStatus::Passed,
+                evidence_refs: vec![format!(
+                    "repair:preparation-baseline:{}",
+                    digest(&patch.stdout)
+                )],
+                disproven_or_insufficient: false,
+            });
+        let admission = admit_release_mutation(&record, ReleaseMutationKind::VersionBump).unwrap();
+        fs::write(
+            root.path().join("src/lib.rs"),
+            "pub fn answer() -> u32 { 43 }\n",
+        )
+        .unwrap();
+        assert!(native.prepare_version_bump("patch", &admission).is_err());
+        assert_eq!(fs::read(root.path().join("Cargo.toml")).unwrap(), manifest);
+        fs::write(
+            root.path().join("src/lib.rs"),
+            "pub fn answer() -> u32 { 42 }\n",
+        )
+        .unwrap();
+        let receipt = native.prepare_version_bump("patch", &admission).unwrap();
+        assert_eq!(receipt.after, "0.24.5");
+        assert_eq!(
+            fs::read_to_string(root.path().join("src/lib.rs")).unwrap(),
+            "pub fn answer() -> u32 { 42 }\n"
+        );
+        assert!(record.release_commit.is_none() || !record.mutation.candidate_pushed);
+    }
+
+    #[test]
     fn genuine_local_gate_failure_enters_diagnosing_local_failure() {
         struct FailingRelease;
         impl ReleaseExecutionPort for FailingRelease {
@@ -7080,141 +7290,186 @@ pub(crate) mod tests {
     #[test]
     fn isolated_agent_repair_verifies_and_promotes_one_patch_for_two_provider_fixtures() {
         for label in ["fixture.release-a", "fixture.release-b"] {
-            let temp = tempfile::tempdir().unwrap();
-            let workspace = temp.path().join("workspace");
-            fs::create_dir_all(workspace.join("src")).unwrap();
-            fs::write(
-                workspace.join("Cargo.toml"),
-                "[package]\nname=\"repair-composition\"\nversion=\"0.1.0\"\nedition=\"2024\"\n",
-            )
-            .unwrap();
-            fs::write(workspace.join(".gitattributes"), "* text eol=lf\n").unwrap();
-            fs::write(workspace.join(".gitignore"), "/target/\n").unwrap();
-            let broken = "pub fn answer() -> u32 { 0 }\n#[test] fn exact_regression() { assert_eq!(answer(), 42); }\n";
-            let repaired = broken.replace("{ 0 }", "{ 42 }");
-            fs::write(workspace.join("src/lib.rs"), broken).unwrap();
-            let native =
-                NativeReleaseExecutor::new(&workspace, Arc::new(AtomicBool::new(false))).unwrap();
-            native.checked("git", &["init", "-b", "main"]).unwrap();
-            native
-                .checked("git", &["config", "user.name", "fixture"])
+            for preparing in [false, true] {
+                let temp = tempfile::tempdir().unwrap();
+                let workspace = temp.path().join("workspace");
+                fs::create_dir_all(workspace.join("src")).unwrap();
+                fs::create_dir(workspace.join("registry")).unwrap();
+                fs::write(
+                    workspace.join("registry/agent.json"),
+                    "{\"version\":\"0.1.0\"}",
+                )
                 .unwrap();
-            native
-                .checked("git", &["config", "user.email", "fixture@example.invalid"])
+                fs::write(
+                    workspace.join("Cargo.toml"),
+                    "[package]\nname=\"repair-composition\"\nversion=\"0.1.0\"\nedition=\"2024\"\n",
+                )
                 .unwrap();
-            assert!(
-                !native
-                    .command("cargo", &["test", "exact_regression", "--offline"])
-                    .unwrap()
-                    .status
-                    .success()
-            );
-            native.checked("git", &["add", "--all"]).unwrap();
-            native
-                .checked("git", &["commit", "-m", "fixture red regression"])
-                .unwrap();
-            let base = native
-                .checked("git", &["rev-parse", "HEAD"])
-                .unwrap()
-                .trim()
-                .to_owned();
-            let mut record =
-                crate::release_recovery::start_release("composition", "patch", "main", &base)
+                fs::write(workspace.join(".gitattributes"), "* text eol=lf\n").unwrap();
+                fs::write(workspace.join(".gitignore"), "/target/\n").unwrap();
+                let broken = "pub fn answer() -> u32 { 0 }\n#[test] fn exact_regression() { assert_eq!(answer(), 42); }\n";
+                let repaired = broken.replace("{ 0 }", "{ 42 }");
+                fs::write(workspace.join("src/lib.rs"), broken).unwrap();
+                let native =
+                    NativeReleaseExecutor::new(&workspace, Arc::new(AtomicBool::new(false)))
+                        .unwrap();
+                native.checked("git", &["init", "-b", "main"]).unwrap();
+                native
+                    .checked("git", &["config", "user.name", "fixture"])
                     .unwrap();
-            record.state = ReleaseRecoveryState::ClassifyingFailure;
-            record.mutation.candidate_committed = true;
-            record.mutation.candidate_pushed = true;
-            record.mutation.candidate_push_ref = Some(format!("origin/main@{base}"));
-            record.required_gates = GreenGithub.matrix_for_sha("fixture/repo", &base).unwrap();
-            record.required_gates[0].jobs[0].state = crate::release_recovery::JobState::Failure;
-            record.required_gates[0].run_state = Some(crate::release_recovery::JobState::Failure);
-            record
-                .failures
-                .push(crate::release_recovery::FailureRecord {
-                    workflow_id: 1,
-                    run_id: 1,
-                    attempt: 1,
-                    job_id: 1,
-                    workflow_name: record.required_gates[0].name.clone(),
-                    job_name: record.required_gates[0].jobs[0].job_name.clone(),
-                    platform: Some(std::env::consts::OS.into()),
-                    step_name: Some("cargo test exact_regression".into()),
-                    fingerprint: crate::release_recovery::FailureFingerprint(
-                        "fixture-regression".into(),
-                    ),
-                    class: crate::release_recovery::ReleaseFailureClass::TestRegression,
-                    confidence: crate::release_recovery::EvidenceConfidence::Proven,
-                    causal_excerpt:
-                        "thread 'exact_regression' panicked at src/lib.rs:2: assertion failed"
-                            .into(),
-                    source_commit: base.clone(),
-                    observed_at: Utc::now(),
-                    other_platforms_passed: true,
-                    exists_on_last_green: Some(false),
-                    related_source_touched: Some(true),
-                });
-            let ledger = ReleaseLedger::open(temp.path().join("state"), "composition").unwrap();
-            ledger.save(&record).unwrap();
-            let (factory, session, _runtime) = repair_test_factory(label, &repaired);
-            let gates_observed = std::sync::atomic::AtomicUsize::new(0);
-            let verify_fixture_gates = |executor: &NativeReleaseExecutor| {
-                gates_observed.fetch_add(1, Ordering::SeqCst);
-                assert_ne!(
-                    executor.workspace, workspace,
-                    "verification must use the isolated worktree"
+                native
+                    .checked("git", &["config", "user.email", "fixture@example.invalid"])
+                    .unwrap();
+                assert!(
+                    !native
+                        .command("cargo", &["test", "exact_regression", "--offline"])
+                        .unwrap()
+                        .status
+                        .success()
                 );
-                executor.checked("cargo", &["test", "--offline"])?;
-                Ok(())
-            };
-            run_bounded_repair_agent_with_verification(
-                &workspace,
-                &mut record,
-                &ledger,
-                &factory,
-                Arc::new(AtomicBool::new(false)),
-                RepairVerification {
-                    root: &temp.path().join("state"),
-                    governor: None,
-                    verify: &verify_fixture_gates,
-                },
-            )
-            .unwrap();
-            assert_eq!(gates_observed.load(Ordering::SeqCst), 1);
-            assert_eq!(session.requests().len(), 3);
-            assert_eq!(record.state, ReleaseRecoveryState::RetryAdmissible);
-            assert_eq!(record.repair_attempts.len(), 1);
-            let receipt = &record.repair_attempts[0];
-            assert_eq!(receipt.source_commit_before, base);
-            assert_ne!(receipt.source_commit_after.as_deref(), Some(base.as_str()));
-            assert_eq!(
-                receipt.focused_status,
-                crate::release_recovery::FocusedProofStatus::Passed
-            );
-            assert!(!receipt.hypothesis.is_empty());
-            assert_eq!(
-                fs::read_to_string(workspace.join("src/lib.rs")).unwrap(),
-                repaired
-            );
-            assert!(
+                native.checked("git", &["add", "--all"]).unwrap();
                 native
-                    .checked("git", &["status", "--porcelain"])
+                    .checked("git", &["commit", "-m", "fixture red regression"])
+                    .unwrap();
+                let base = native
+                    .checked("git", &["rev-parse", "HEAD"])
                     .unwrap()
-                    .is_empty()
-            );
-            assert_eq!(
-                native
-                    .checked("git", &["diff", "--name-only", &base, "HEAD"])
-                    .unwrap()
-                    .trim(),
-                "src/lib.rs"
-            );
-            assert!(!record.mutation.candidate_pushed);
-            assert_eq!(
-                record.retry_budget.full_gate_used, 0,
-                "promotion is not a remote retry"
-            );
-            assert!(record.metrics.model_active_millis > 0);
-            assert_eq!(ledger.load().unwrap().unwrap(), record);
+                    .trim()
+                    .to_owned();
+                let mut record =
+                    crate::release_recovery::start_release("composition", "patch", "main", &base)
+                        .unwrap();
+                record.state = if preparing {
+                    ReleaseRecoveryState::DiagnosingLocalFailure
+                } else {
+                    ReleaseRecoveryState::ClassifyingFailure
+                };
+                record.mutation.candidate_committed = !preparing;
+                record.mutation.candidate_pushed = !preparing;
+                record.mutation.candidate_push_ref = Some(format!("origin/main@{base}"));
+                record.required_gates = GreenGithub.matrix_for_sha("fixture/repo", &base).unwrap();
+                record.required_gates[0].jobs[0].state = crate::release_recovery::JobState::Failure;
+                record.required_gates[0].run_state =
+                    Some(crate::release_recovery::JobState::Failure);
+                record
+                    .failures
+                    .push(crate::release_recovery::FailureRecord {
+                        workflow_id: 1,
+                        run_id: 1,
+                        attempt: 1,
+                        job_id: 1,
+                        workflow_name: record.required_gates[0].name.clone(),
+                        job_name: record.required_gates[0].jobs[0].job_name.clone(),
+                        platform: Some(std::env::consts::OS.into()),
+                        step_name: Some("cargo test exact_regression".into()),
+                        fingerprint: crate::release_recovery::FailureFingerprint(
+                            "fixture-regression".into(),
+                        ),
+                        class: crate::release_recovery::ReleaseFailureClass::TestRegression,
+                        confidence: crate::release_recovery::EvidenceConfidence::Proven,
+                        causal_excerpt:
+                            "thread 'exact_regression' panicked at src/lib.rs:2: assertion failed"
+                                .into(),
+                        source_commit: base.clone(),
+                        observed_at: Utc::now(),
+                        other_platforms_passed: true,
+                        exists_on_last_green: Some(false),
+                        related_source_touched: Some(true),
+                    });
+                let ledger = ReleaseLedger::open(temp.path().join("state"), "composition").unwrap();
+                ledger.save(&record).unwrap();
+                let (factory, session, _runtime) = repair_test_factory(label, &repaired);
+                let gates_observed = std::sync::atomic::AtomicUsize::new(0);
+                let verify_fixture_gates = |executor: &NativeReleaseExecutor| {
+                    gates_observed.fetch_add(1, Ordering::SeqCst);
+                    assert_ne!(
+                        executor.workspace, workspace,
+                        "verification must use the isolated worktree"
+                    );
+                    executor.checked("cargo", &["test", "--offline"])?;
+                    Ok(())
+                };
+                run_bounded_repair_agent_with_verification(
+                    &workspace,
+                    &mut record,
+                    &ledger,
+                    &factory,
+                    Arc::new(AtomicBool::new(false)),
+                    RepairVerification {
+                        root: &temp.path().join("state"),
+                        governor: None,
+                        verify: &verify_fixture_gates,
+                    },
+                )
+                .unwrap();
+                assert_eq!(gates_observed.load(Ordering::SeqCst), 1);
+                assert_eq!(session.requests().len(), 3);
+                assert_eq!(
+                    record.state,
+                    if preparing {
+                        ReleaseRecoveryState::LocalVerification
+                    } else {
+                        ReleaseRecoveryState::RetryAdmissible
+                    }
+                );
+                assert_eq!(record.repair_attempts.len(), 1);
+                let receipt = &record.repair_attempts[0];
+                assert_eq!(receipt.source_commit_before, base);
+                if preparing {
+                    assert!(receipt.source_commit_after.is_none());
+                } else {
+                    assert_ne!(receipt.source_commit_after.as_deref(), Some(base.as_str()));
+                }
+                assert_eq!(
+                    receipt.focused_status,
+                    crate::release_recovery::FocusedProofStatus::Passed
+                );
+                assert!(!receipt.hypothesis.is_empty());
+                assert_eq!(
+                    fs::read_to_string(workspace.join("src/lib.rs")).unwrap(),
+                    repaired
+                );
+                if preparing {
+                    assert_eq!(
+                        native
+                            .checked("git", &["rev-parse", "HEAD"])
+                            .unwrap()
+                            .trim(),
+                        base
+                    );
+                    let patch = native
+                        .command("git", &["diff", "--binary", "HEAD"])
+                        .unwrap();
+                    let admission =
+                        admit_release_mutation(&record, ReleaseMutationKind::VersionBump).unwrap();
+                    assert_eq!(
+                        admission.preparation_baseline_digest(),
+                        Some(digest(&patch.stdout).as_str())
+                    );
+                    assert_eq!(record.mutation.repair_files, vec!["src/lib.rs"]);
+                } else {
+                    assert!(
+                        native
+                            .checked("git", &["status", "--porcelain"])
+                            .unwrap()
+                            .is_empty()
+                    );
+                    assert_eq!(
+                        native
+                            .checked("git", &["diff", "--name-only", &base, "HEAD"])
+                            .unwrap()
+                            .trim(),
+                        "src/lib.rs"
+                    );
+                }
+                assert!(!record.mutation.candidate_pushed);
+                assert_eq!(
+                    record.retry_budget.full_gate_used, 0,
+                    "promotion is not a remote retry"
+                );
+                assert!(record.metrics.model_active_millis > 0);
+                assert_eq!(ledger.load().unwrap().unwrap(), record);
+            }
         }
     }
 
@@ -8988,6 +9243,22 @@ fn run_bounded_repair_agent_with_verification(
     if local {
         let paths = controller.checked("git", &["diff", "--cached", "--name-only"])?;
         record.mutation.repair_files = paths.lines().map(str::to_owned).collect();
+        let mut evidence_refs = vec![
+            format!("repair:patch:{}", digest(&diff.stdout)),
+            "repair:local-gates".into(),
+        ];
+        if record.mutation.version_after.is_none() {
+            let promoted = controller.command("git", &["diff", "--binary", "HEAD"])?;
+            if !promoted.status.success() {
+                return Err(RrcError::MutationBlocked(
+                    "promoted preparation baseline is unavailable".into(),
+                ));
+            }
+            evidence_refs.push(format!(
+                "repair:preparation-baseline:{}",
+                digest(&promoted.stdout)
+            ));
+        }
         record.record_repair(crate::release_recovery::RepairAttempt {
             fingerprint: failure.fingerprint,
             causal_family: family,
@@ -8996,10 +9267,7 @@ fn run_bounded_repair_agent_with_verification(
             source_commit_after: None,
             focused_proof: focused_command,
             focused_status: crate::release_recovery::FocusedProofStatus::Passed,
-            evidence_refs: vec![
-                format!("repair:patch:{}", digest(&diff.stdout)),
-                "repair:local-gates".into(),
-            ],
+            evidence_refs,
             disproven_or_insufficient: false,
         })?;
         for gate in &mut record.mutation.local_gates {

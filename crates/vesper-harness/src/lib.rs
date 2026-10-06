@@ -2883,8 +2883,9 @@ impl WorkerFactory {
                             && progress.requests.load(Ordering::Relaxed) == 1
                             && !progress.work_observed.load(Ordering::Relaxed)
                             && !cancellation.is_cancelled()
-                            && error.retry_decision()
-                                == vesper_provider::RetryDecision::RetryBeforeVisibleOutput
+                            && !error.info.visible_output_emitted
+                            && error.info.retryability
+                                == vesper_domain::Retryability::BeforeVisibleOutput
                             && error.info.retry_after_ms.unwrap_or(2000) <= 30_000 =>
                     {
                         spent = 1;

@@ -71,12 +71,18 @@ Z.ai and Playwright MCP server descriptors.
   commits include only admitted version/repair paths. Native version preparation
   resolves the complete Cargo workspace inventory before writing, updates all
   member path-dependency pins, and records those manifests in candidate admission.
+  Source validation failures during version preparation become causal local failures
+  only after the exact approved patch/status baseline is restored and reobserved;
+  settle that journal with the failure checkpoint and route ordinary repair automatically.
+  A promoted preparation repair pins the full patch digest and admitted paths;
+  refuse unrelated or tampered edits before another version write. Shared retry
+  policy uses the always-available domain contract and must compile without swarm.
   Git repair fixtures declare LF bytes explicitly across native targets.
   The RRC coding factory fixture runs real file/command tools and native failing
   then passing Rust tests with two registered fixture provider IDs; fixture
   streams never establish real model effectiveness or production transport.
   The combined composition fixture verifies native isolated-worktree proof and
-  one-patch promotion for both fixture IDs; only its fixture-wide gate port is
+  one-patch promotion for both fixture IDs in remote and preparation routes; only its fixture-wide gate port is
   substituted. Production always executes the complete native gate set.
   Measured CI waits/model repair time and denied autonomous retries persist
   separately from pure status queries and idle time across host restarts.

@@ -107,6 +107,9 @@ architecture, MSRV, and source-oracle checks.
   without changing the host configuration. Mandatory cases cover inherited lock
   descriptions, initial adapter-admitted retry, both-auth-mode HTTP rejection policy
   and numeric/date server delays; action/fragment replay and long-delay retries refuse.
+  Mandatory preparation coverage executes a compiler failure, exact rollback,
+  causal journal settlement, admitted patch preparation and tamper refusal. The
+  two-provider composition case exercises both remote and preparation promotion.
   Provider-owned server tool selections are distinct from client gateways; the
   named fixture proves their request/configuration retention without measuring
   live hosted execution.

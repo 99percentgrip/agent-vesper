@@ -1147,4 +1147,10 @@ The additional settled Apple Silicon scheduler failure has a red/green inherited
 file-description regression and explicit lease unlock. Initial provider recovery
 uses the adapter's typed retry decision under one bounded shared admission, never
 replays output/tools, and retains safe terminal status. The autonomy audit records
-126 exact local cases, stopped worker evidence and pending final-source CI.
+127 exact local cases, stopped worker evidence and pending final-source CI.
+
+Version-preparation source failures now enter ordinary autonomous local repair only
+after verified baseline rollback and causal journal settlement. Promoted local
+patches are digest-pinned before preparation; tampering refuses before version
+writes. Default-feature and all-feature builds are checked independently. The
+autonomy audit records the additional native discovery and executed mutation proof.

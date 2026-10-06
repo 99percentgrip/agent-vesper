@@ -55,7 +55,7 @@ The repairs remove confirmed premature completion, false receipt reuse, excessiv
 
 ## Archived local receipts
 
-[Local and public protocol receipts](2026-10-06-rrc-autonomy-and-prd-audit-receipts.tar.gz), SHA-256 63df39feb245247aecdc31708f93447509baa59f26537c3b490e49724043a52b.
+[Local and public protocol receipts](2026-10-06-rrc-autonomy-and-prd-audit-receipts.tar.gz), SHA-256 814ac1d90f30e41312ee8d407bd56cf77bf983c2e78d42f5960629be859c8ae7.
 
 The prior epoch was Complete/Idle without an in-flight operation or owner. Scoped Cargo cleaning of only its harness/ACP/TUI products preserved the dependency cache and increased observed free disk from 124 GiB to 155 GiB; native reserve thresholds remain unchanged.
 
@@ -93,3 +93,20 @@ Official [OpenAI error guidance](https://developers.openai.com/api/docs/guides/e
 Final-source local/hosted/producing receipts remain pending for these additional repairs. Reports, PRDs and owning DOX accompany the corrected source before another exact candidate push; target remains 0.24.7.
 
 Current lease/request source passed both scheduler cases, the complete bounded retry fixture, all 66 OpenAI adapter tests, changed-package all-target/all-feature Clippy and all 126 exact acceptance cases (194782 ms). ACP rebuilt successfully. Disabling only the initial retry path caused the named fixture's executed assertion failure; restoring the exact original source SHA-256 `e78480e0cdb2c42b5142482fc5904b8a95a75e26a01316708b54648f8103f6ac` restored green. The initial Clippy attempt rejected a test-module placement; it was moved before the successful final run. Neither the failed lint nor the zero-match command is passing evidence.
+
+## Version-preparation source recovery and final local proof
+
+Native source `98edac2c77292ab88528ba4be3073be8599cea45` failed version preparation before push: default-feature compilation could not resolve the optional `vesper_provider` import introduced by the retry predicate. All-feature checks had masked that gap. The shared predicate now uses the normalized always-available domain retry contract; it retains the same before-output restriction. That native failure also exposed an unsettled preparation journal without causal failure capture. The executor now returns a distinct source-validation failure only after restoring and reobserving the exact approved patch and status baseline. The controller settles that journal with captured causal evidence and routes ordinary local repair automatically. Unknown or uncertain rollback still refuses.
+
+Promoted pre-preparation repairs pin the complete patch digest against HEAD and admitted paths. Preparation accepts that proven baseline, preserves the repair through version validation and refuses a changed or unrelated patch before writing. The existing isolated two-provider composition case now executes four real repair/proof/promotion paths: two provider IDs in both preparation and remote recovery.
+
+Sequential final-source local proof:
+
+- `cargo check --locked --workspace --all-targets`: passed, including default features; `vesper-rrc-version-source-default-check.log`.
+- Changed harness/OpenAI/ACP/TUI/xtask all-target/all-feature Clippy with warnings denied: passed; `vesper-rrc-version-source-clippy.log`.
+- `cargo xtask acceptance`: **127/127 exact cases passed**, 177788 ms; `vesper-rrc-version-source-acceptance.log`. Offline fixtures establish no live-model effectiveness.
+- Version rollback/preparation regression: passed. Disabling only its causal diagnosis route caused an executed assertion failure; restoring the exact source digest restored green. `vesper-rrc-version-source-mutation.json` and red/green logs preserve the result. Earlier attempts used a noncanonical fixture manifest and failed before the targeted mechanism; they are not red regression proof.
+- Extended isolated two-provider local/remote composition case: passed, 11070 ms; `vesper-rrc-version-local-promotion.log`.
+- Native ACP rebuilt successfully; `vesper-rrc-version-source-acp-build.log`.
+
+All current required hosted, native full-gate and producing/registry/final-receipt evidence remains pending. Target stays 0.24.7; no second bump, moved tag, local installation or separate documentation push is authorized. Nearest harness/xtask contracts were updated; parent ownership, documentation indices and adapter policy remain unchanged because these repairs add no boundary or adapter behavior.

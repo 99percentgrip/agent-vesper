@@ -2493,6 +2493,11 @@ fn acceptance_verify() -> Result<(), String> {
         (
             "vesper-harness",
             &["--lib"],
+            "release_executor::tests::version_preparation_rollback_routes_to_repair_and_pins_promoted_patch",
+        ),
+        (
+            "vesper-harness",
+            &["--lib"],
             "release_executor::tests::repair_initial_provider_retry_is_bounded_and_never_replays_tools",
         ),
         (

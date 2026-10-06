@@ -2103,9 +2103,13 @@ pub struct ReleaseMutationAdmission {
     kind: ReleaseMutationKind,
     candidate_commit: Option<String>,
     candidate_paths: Vec<String>,
+    preparation_baseline_digest: Option<String>,
 }
 
 impl ReleaseMutationAdmission {
+    pub(crate) fn preparation_baseline_digest(&self) -> Option<&str> {
+        self.preparation_baseline_digest.as_deref()
+    }
     pub(crate) fn candidate_paths(&self) -> &[String] {
         &self.candidate_paths
     }
@@ -2181,6 +2185,32 @@ pub fn admit_release_mutation(
     }
     Ok(ReleaseMutationAdmission {
         kind,
+        preparation_baseline_digest: if kind == ReleaseMutationKind::VersionBump
+            && !record.mutation.repair_files.is_empty()
+        {
+            record
+                .repair_attempts
+                .last()
+                .filter(|attempt| {
+                    attempt.focused_status == FocusedProofStatus::Passed
+                        && !attempt.disproven_or_insufficient
+                        && attempt.source_commit_after.is_none()
+                        && Some(attempt.source_commit_before.as_str()) == record.active_commit()
+                })
+                .and_then(|attempt| {
+                    attempt.evidence_refs.iter().find_map(|value| {
+                        value
+                            .strip_prefix("repair:preparation-baseline:")
+                            .filter(|digest| {
+                                digest.len() == 64
+                                    && digest.bytes().all(|byte| byte.is_ascii_hexdigit())
+                            })
+                            .map(str::to_owned)
+                    })
+                })
+        } else {
+            None
+        },
         candidate_commit: record.active_commit().map(str::to_owned),
         candidate_paths: [
             vec![
@@ -2633,6 +2663,10 @@ pub enum RrcError {
     },
     #[error("invalid release recovery input: {0}")]
     Invalid(String),
+    /// Source validation failed after the version transaction was restored and
+    /// the exact approved preparation baseline was reobserved.
+    #[error("version preparation failed after verified rollback: {0}")]
+    VersionPreparationFailed(String),
     #[error("stale workflow result: expected {expected}, observed {observed}")]
     StaleWorkflow { expected: String, observed: String },
     #[error("retry blocked: {0}")]
