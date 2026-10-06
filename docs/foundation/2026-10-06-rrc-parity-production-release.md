@@ -437,3 +437,10 @@ gate, push, tag or publication was started for it. Diagnostic provenance is now 
 separate non-canonical objective. The production variant explicitly supersedes that
 old source-integration variant; native archival preserves the mistakenly selected
 preparation epoch. No ledger bytes or retry counters are manually reset.
+
+Native re-admission correctly refused a sibling source because the selected
+historical candidate was not its ancestor. A recorded merge retains that historical
+preparation ancestor while restoring both diagnostic workflow/DOX files to the
+production tree. The resulting strict descendant contains the original production
+workflow and the corrected xAI fixture; the temporary diagnostic workflow is not
+promoted. Native admission must still validate and archive the old preparation epoch.
