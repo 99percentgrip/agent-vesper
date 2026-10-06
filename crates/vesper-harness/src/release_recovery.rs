@@ -29,13 +29,13 @@ use crate::host_resources::ResourceTelemetry;
 
 pub const SCHEMA_VERSION: u32 = 1;
 
-pub const INITIAL_POLL_INTERVAL: Duration = Duration::from_secs(5);
+pub const INITIAL_POLL_INTERVAL: Duration = Duration::from_secs(20);
 
-pub const SECOND_POLL_INTERVAL: Duration = Duration::from_secs(10);
+pub const SECOND_POLL_INTERVAL: Duration = Duration::from_secs(40);
 
-pub const THIRD_POLL_INTERVAL: Duration = Duration::from_secs(15);
+pub const THIRD_POLL_INTERVAL: Duration = Duration::from_secs(80);
 
-pub const MAX_POLL_INTERVAL: Duration = Duration::from_secs(30);
+pub const MAX_POLL_INTERVAL: Duration = Duration::from_secs(120);
 
 pub const STAGNATION_ACTION_LIMIT: u8 = 6;
 
@@ -694,6 +694,14 @@ pub struct ReleaseMutationRecord {
     pub in_flight_operation: Option<String>,
     #[serde(default)]
     pub repair_files: Vec<String>,
+    /// SHA-256 causal-family identities counted before model dispatch. Includes
+    /// interrupted/failed turns which never produced a focused proof receipt.
+    #[serde(default)]
+    pub repair_admissions: std::collections::BTreeMap<String, u8>,
+    #[serde(default)]
+    pub closeout_registry: Option<crate::release_closeout::RegistryTarget>,
+    #[serde(default)]
+    pub closeout_receipt: Option<crate::release_closeout::CloseoutReceipt>,
 }
 
 /// A normalized release target selected by ordinary-language or slash-command
@@ -1095,9 +1103,16 @@ impl ReleaseRecoveryRecord {
             ReleaseRecoveryState::PausedExternal | ReleaseRecoveryState::Escalated => {
                 ReleaseProgressPhase::Paused
             }
-            ReleaseRecoveryState::Published
-            | ReleaseRecoveryState::Complete
-            | ReleaseRecoveryState::Cancelled => ReleaseProgressPhase::Settled,
+            ReleaseRecoveryState::Published => ReleaseProgressPhase::Publication,
+            ReleaseRecoveryState::Complete
+                if self.mutation.publication_verified
+                    && self.mutation.closeout_receipt.is_none() =>
+            {
+                ReleaseProgressPhase::Publication
+            }
+            ReleaseRecoveryState::Complete | ReleaseRecoveryState::Cancelled => {
+                ReleaseProgressPhase::Settled
+            }
         };
         let headline = match self.state {
             ReleaseRecoveryState::Idle => "Awaiting a release request".into(),
@@ -1174,6 +1189,12 @@ impl ReleaseRecoveryRecord {
             ReleaseRecoveryState::PostReleaseCloseout => "Checking post-release main health".into(),
             ReleaseRecoveryState::PostReleaseMainDegraded => {
                 "Published release remains verified; later main is degraded".into()
+            }
+            ReleaseRecoveryState::Complete
+                if self.mutation.publication_verified
+                    && self.mutation.closeout_receipt.is_none() =>
+            {
+                "Main health verified; registry and execution report closeout pending".into()
             }
             ReleaseRecoveryState::Complete => "Release recovery is complete".into(),
             ReleaseRecoveryState::Cancelled => "Release recovery was cancelled".into(),
@@ -1408,9 +1429,21 @@ impl ReleaseRecoveryRecord {
 
     #[must_use]
     fn remote_matrix_watch_timed_out(&self, now: DateTime<Utc>) -> bool {
+        // Waiting on known queued/running GitHub jobs is passive CI time, not
+        // active model recovery. Allow the repository's 60-minute platform jobs
+        // to settle, while bounding unavailable/indefinitely queued CI evidence.
+        let active_jobs = self.required_gates.iter().any(|gate| {
+            gate.run_state.is_some_and(|state| !state.terminal())
+                || gate.jobs.iter().any(|job| !job.state.terminal())
+        });
+        let limit = if active_jobs {
+            Duration::from_secs(2 * 60 * 60)
+        } else {
+            STAGNATION_TIME_LIMIT
+        };
         now.signed_duration_since(self.last_progress_at)
             .to_std()
-            .is_ok_and(|elapsed| elapsed >= STAGNATION_TIME_LIMIT)
+            .is_ok_and(|elapsed| elapsed >= limit)
     }
 
     #[must_use]
@@ -2059,6 +2092,7 @@ pub enum ReleaseMutationKind {
     PushCandidate,
     CreateTag,
     Publish,
+    Closeout,
 }
 
 /// Unforgeable capability for one release mutation. Construction remains in
@@ -2129,6 +2163,14 @@ pub fn admit_release_mutation(
             record.state == ReleaseRecoveryState::Publishing
                 && record.mutation.tag_pushed
                 && !record.mutation.publication_verified
+        }
+        ReleaseMutationKind::Closeout => {
+            record.state == ReleaseRecoveryState::Complete
+                && record.mutation.publication_verified
+                && record.mutation.closeout_receipt.is_none()
+                && record.current_main.as_deref() == record.active_commit()
+                && record.matrix_complete()
+                && !record.required_gates.iter().any(GateRecord::has_failure)
         }
     };
     if !allowed {
@@ -2264,6 +2306,12 @@ pub fn next_directive(record: &ReleaseRecoveryRecord, unchanged_polls: u8) -> Re
         S::Tagging | S::Publishing => ReleaseDirective::PublishAndVerifyAssets,
         S::Published | S::PostReleaseCloseout => ReleaseDirective::RunPostReleaseCloseout,
         S::PostReleaseMainDegraded | S::Escalated => ReleaseDirective::Escalate,
+        S::Complete
+            if record.mutation.publication_verified
+                && record.mutation.closeout_receipt.is_none() =>
+        {
+            ReleaseDirective::RunPostReleaseCloseout
+        }
         S::Idle | S::Preparing | S::Complete | S::Cancelled => ReleaseDirective::None,
     }
 }
@@ -3088,6 +3136,7 @@ pub fn refresh_remote_evidence(
             .any(|required| gate.name.eq_ignore_ascii_case(required))
     });
     if gates.is_empty() {
+        record.required_gates.clear();
         record.note_progress(false);
         if record.state != ReleaseRecoveryState::WaitingForMatrix {
             record.transition(
@@ -4547,6 +4596,24 @@ fn reconcile_active_epoch(
     version: &ReleaseVersionSelector,
     state_root: &Path,
 ) -> Result<ActiveEpochReconciliation, RrcError> {
+    if record.mutation.publication_verified
+        && source_repository_matches_epoch(&record, source)?
+        && same_release_objective(&record, source) == Some(true)
+        && resolved_record_release_target(&record)
+            == resolved_source_release_target(source, version)
+        && record.mutation.closeout_receipt.is_none()
+        && matches!(
+            record.state,
+            ReleaseRecoveryState::Published
+                | ReleaseRecoveryState::PostReleaseCloseout
+                | ReleaseRecoveryState::Complete
+        )
+        && let Some(workspace) = release_workspace_matches_epoch(&record, state_root)?
+    {
+        record.liveness = Default::default();
+        record.refresh_progress();
+        return Ok(ActiveEpochReconciliation::Resume { record, workspace });
+    }
     if has_publication_boundary(&record) {
         return Ok(ActiveEpochReconciliation::Clarify(format!(
             "An unfinished {} already has {}. Your new request targets {}. Which release should RRC continue?",
@@ -4721,10 +4788,25 @@ where
     let owner = ledger.acquire_owner()?;
     let mut superseded = None;
     if let Some(existing) = ledger.load()?
-        && !matches!(
-            existing.state,
-            ReleaseRecoveryState::Complete | ReleaseRecoveryState::Cancelled
-        )
+        && existing.state == ReleaseRecoveryState::Complete
+        && source_repository_matches_epoch(&existing, &source)?
+        && resolved_record_release_target(&existing)
+            == resolved_source_release_target(&source, &version)
+        && let Some(summary) = crate::release_closeout::summary(&existing)
+    {
+        if same_release_objective(&existing, &source) != Some(true) {
+            return Ok(NaturalReleaseAdmission::Clarification(format!(
+                "Version {} is already published for {}. Your new request names a different completed objective. Which new version should RRC release?",
+                existing.release_version.as_deref().unwrap_or("unknown"),
+                active_objective_description(&existing),
+            )));
+        }
+        return Ok(NaturalReleaseAdmission::Started(summary));
+    }
+    if let Some(existing) = ledger.load()?
+        && !matches!(existing.state, ReleaseRecoveryState::Cancelled)
+        && !(existing.state == ReleaseRecoveryState::Complete
+            && existing.mutation.closeout_receipt.is_some())
     {
         match reconcile_active_epoch(existing, &source, &version, state_root)? {
             ActiveEpochReconciliation::Resume {
@@ -4736,7 +4818,7 @@ where
                 drop(owner);
                 launcher(workspace, repository, repo_identity)?;
                 return Ok(NaturalReleaseAdmission::Started(
-                    "Continuing the matching release automatically from its last safe stage. Local verification is active; no manual resume command was required."
+                    "Continuing the matching release automatically from its last safe stage; no manual resume command was required."
                         .into(),
                 ));
             }
@@ -4824,11 +4906,31 @@ fn release_start_selector(action: &str, checkpoint_exists: bool) -> Option<Relea
     ReleaseVersionSelector::parse(action).ok()
 }
 
+/// Typed admission prevents hosts from waiting on an unrelated active release
+/// when a command instead returned clarification or a read-only reply.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ReleaseCommandOutcome {
+    Started(String),
+    Reply(String),
+}
+
 pub fn release_command_for_workspace_with_factory(
     workspace: &Path,
     argument: &str,
     repair_factory: Option<crate::WorkerFactory>,
 ) -> Result<String, RrcError> {
+    release_command_outcome_for_workspace_with_factory(workspace, argument, repair_factory).map(
+        |outcome| match outcome {
+            ReleaseCommandOutcome::Started(body) | ReleaseCommandOutcome::Reply(body) => body,
+        },
+    )
+}
+
+pub fn release_command_outcome_for_workspace_with_factory(
+    workspace: &Path,
+    argument: &str,
+    repair_factory: Option<crate::WorkerFactory>,
+) -> Result<ReleaseCommandOutcome, RrcError> {
     let canonical = workspace.canonicalize()?;
     let repo_identity = repository_identity(&canonical)?;
     let action = argument.trim();
@@ -4848,16 +4950,18 @@ pub fn release_command_for_workspace_with_factory(
             &objective,
             repair_factory,
         )? {
-            NaturalReleaseAdmission::Started(body)
-            | NaturalReleaseAdmission::Clarification(body) => Ok(body),
+            NaturalReleaseAdmission::Started(body) => Ok(ReleaseCommandOutcome::Started(body)),
+            NaturalReleaseAdmission::Clarification(body) => Ok(ReleaseCommandOutcome::Reply(body)),
             NaturalReleaseAdmission::NotRelease => Err(RrcError::Invalid(
                 "explicit release command was not admitted".into(),
             )),
         };
     }
     if action == "status" {
-        return Ok(release_status_for_workspace(&canonical)
-            .unwrap_or_else(|| "release: no active or persisted epoch".into()));
+        return Ok(ReleaseCommandOutcome::Reply(
+            release_status_for_workspace(&canonical)
+                .unwrap_or_else(|| "release: no active or persisted epoch".into()),
+        ));
     }
     let source_commit = git_output(&canonical, &["rev-parse", "HEAD"])?;
     let branch_ref = git_output(&canonical, &["rev-parse", "--abbrev-ref", "HEAD"])?;
@@ -4890,15 +4994,16 @@ pub fn release_command_for_workspace_with_factory(
             repo_identity,
             repair_factory,
         )?;
-        return Ok(format!(
+        return Ok(ReleaseCommandOutcome::Started(format!(
             "{}\nController            active in background; use /release status for the persisted stage",
             record.render_status()
-        ));
+        )));
     }
     release_command(&repo_identity, action, &source_commit, &branch_ref)
+        .map(ReleaseCommandOutcome::Reply)
 }
 
-fn github_repository_slug(remote: &str) -> Result<String, RrcError> {
+pub(crate) fn github_repository_slug(remote: &str) -> Result<String, RrcError> {
     let trimmed = remote.trim().trim_end_matches(".git");
     let path = if let Some(path) = trimmed.strip_prefix("git@github.com:") {
         path
@@ -6195,6 +6300,76 @@ mod tests {
     }
 
     #[test]
+    fn matching_published_release_resumes_closeout_without_new_epoch_or_tag() {
+        for state in [
+            ReleaseRecoveryState::Published,
+            ReleaseRecoveryState::Complete,
+        ] {
+            let fixture = active_epoch_fixture();
+            let ledger = ReleaseLedger::open(fixture.state.clone(), &fixture.identity).unwrap();
+            let mut active = ledger.load().unwrap().unwrap();
+            active.state = state;
+            active.release_version = Some("0.24.5".into());
+            active.mutation.version_after = Some("0.24.5".into());
+            active.mutation.publication_verified = true;
+            active.mutation.tag_pushed = true;
+            active.mutation.tag_name = Some("v0.24.5".into());
+            active.mutation.tag_object = Some("immutable-published-tag".into());
+            ledger.save(&active).unwrap();
+            let mut launches = 0;
+            let outcome = admit_natural_release_with_launcher(
+                &fixture.primary,
+                "Release version 0.24.5.",
+                &fixture.state,
+                |workspace, _, _| {
+                    launches += 1;
+                    assert_eq!(
+                        workspace.to_string_lossy(),
+                        active.mutation.release_workspace.as_deref().unwrap()
+                    );
+                    Ok(())
+                },
+            )
+            .unwrap();
+            assert!(matches!(outcome, NaturalReleaseAdmission::Started(_)));
+            assert_eq!(launches, 1);
+            let resumed = ledger.load().unwrap().unwrap();
+            assert_eq!(resumed.epoch_id, active.epoch_id);
+            assert_eq!(resumed.state, state);
+            assert_eq!(resumed.mutation.tag_object, active.mutation.tag_object);
+            assert_eq!(resumed.retry_budget, active.retry_budget);
+        }
+    }
+
+    #[test]
+    fn completed_version_does_not_claim_a_different_objective_was_released() {
+        let fixture = active_epoch_fixture();
+        let ledger = ReleaseLedger::open(fixture.state.clone(), &fixture.identity).unwrap();
+        let mut active = ledger.load().unwrap().unwrap();
+        active.state = ReleaseRecoveryState::Complete;
+        active.release_version = Some("0.24.5".into());
+        active.release_commit = active.mutation.source_commit.clone();
+        active.mutation.publication_verified = true;
+        active.mutation.closeout_receipt = Some(crate::release_closeout::CloseoutReceipt {
+            report: "docs/foundation/release-v0.24.5-closeout.md".into(),
+            registry_url: None,
+            registry_blob: None,
+        });
+        active.mutation.objective_id = Some("another-objective".into());
+        ledger.save(&active).unwrap();
+        let before = fs::read(ledger.path()).unwrap();
+        let result = admit_natural_release_with_launcher(
+            &fixture.primary,
+            "Release version 0.24.5.",
+            &fixture.state,
+            |_, _, _| panic!("published version conflict must not launch"),
+        )
+        .unwrap();
+        assert!(matches!(result, NaturalReleaseAdmission::Clarification(_)));
+        assert_eq!(fs::read(ledger.path()).unwrap(), before);
+    }
+
+    #[test]
     fn unrelated_active_release_asks_one_human_clarification_without_mutation() {
         let fixture = active_epoch_fixture();
         let ledger = ReleaseLedger::open(fixture.state.clone(), &fixture.identity).unwrap();
@@ -7097,6 +7272,59 @@ mod tests {
     }
 
     #[test]
+    fn a_long_running_platform_matrix_is_not_active_repair_stagnation() {
+        let mut record = record();
+        let adapter = FakeGitHub {
+            gates: vec![GateRecord {
+                name: "gate".into(),
+                head_sha: "abcdef123456".into(),
+                run_id: Some(2),
+                run_attempt: Some(1),
+                run_state: Some(JobState::InProgress),
+                jobs: vec![failed_job(JobState::InProgress)],
+                url: None,
+            }],
+            log: String::new(),
+        };
+        refresh_remote_evidence(&mut record, "owner/repo", &adapter).unwrap();
+        record.last_progress_at = Utc::now() - chrono::Duration::minutes(40);
+        refresh_remote_evidence(&mut record, "owner/repo", &adapter).unwrap();
+        assert_eq!(record.state, ReleaseRecoveryState::WaitingForMatrix);
+        assert!(record.failures.is_empty());
+        assert_eq!(record.retry_budget.full_gate_used, 0);
+        record.last_progress_at = Utc::now() - chrono::Duration::hours(3);
+        refresh_remote_evidence(&mut record, "owner/repo", &adapter).unwrap();
+        assert_eq!(record.state, ReleaseRecoveryState::Escalated);
+    }
+
+    #[test]
+    fn missing_runs_cannot_reuse_a_stale_running_matrix_to_avoid_timeout() {
+        let mut record = record();
+        record.state = ReleaseRecoveryState::WaitingForMatrix;
+        record.last_progress_at = Utc::now() - chrono::Duration::minutes(21);
+        record.required_gates.push(GateRecord {
+            name: "gate".into(),
+            head_sha: "abcdef123456".into(),
+            run_id: Some(2),
+            run_attempt: Some(1),
+            run_state: Some(JobState::InProgress),
+            jobs: vec![failed_job(JobState::InProgress)],
+            url: None,
+        });
+        refresh_remote_evidence(
+            &mut record,
+            "owner/repo",
+            &FakeGitHub {
+                gates: Vec::new(),
+                log: String::new(),
+            },
+        )
+        .unwrap();
+        assert_eq!(record.state, ReleaseRecoveryState::Escalated);
+        assert!(record.required_gates.is_empty());
+    }
+
+    #[test]
     fn complete_matrix_collects_first_causal_log_and_classifies_it() {
         let mut record = record();
         let adapter = FakeGitHub {
@@ -7158,11 +7386,11 @@ mod tests {
     fn directives_are_typed_and_back_off_without_model_step_polling() {
         let mut record = record();
         for (unchanged, expected) in [
-            (0, INITIAL_POLL_INTERVAL),
-            (1, SECOND_POLL_INTERVAL),
-            (2, THIRD_POLL_INTERVAL),
-            (3, MAX_POLL_INTERVAL),
-            (u8::MAX, MAX_POLL_INTERVAL),
+            (0, Duration::from_secs(20)),
+            (1, Duration::from_secs(40)),
+            (2, Duration::from_secs(80)),
+            (3, Duration::from_secs(120)),
+            (u8::MAX, Duration::from_secs(120)),
         ] {
             assert_eq!(
                 next_directive(&record, unchanged),
@@ -8100,7 +8328,13 @@ mod tests {
         old.release_version = Some("0.24.5".into());
         old.mutation.publication_verified = true;
         old.mutation.tag_name = Some("v0.24.5".into());
+        old.mutation.closeout_receipt = Some(crate::release_closeout::CloseoutReceipt {
+            report: "previous-release-report".into(),
+            registry_url: None,
+            registry_blob: None,
+        });
         let next = post_release_main_epoch(&old, "fedcba654321").unwrap();
+        assert!(next.mutation.closeout_receipt.is_none());
         assert_ne!(next.epoch_id, old.epoch_id);
         assert_eq!(next.release_commit, old.release_commit);
         assert_eq!(next.mutation.tag_name, old.mutation.tag_name);
@@ -8878,7 +9112,7 @@ fn is_causal_diagnostic(line: &str) -> bool {
         && !lower.contains("process completed with exit code")
 }
 
-fn redact_persisted_value(value: &mut serde_json::Value) {
+pub(crate) fn redact_persisted_value(value: &mut serde_json::Value) {
     match value {
         serde_json::Value::String(text) => *text = redact_secret_text(text),
         serde_json::Value::Array(values) => values.iter_mut().for_each(redact_persisted_value),
@@ -9468,6 +9702,8 @@ pub fn post_release_main_epoch(
     next.release_commit = published.release_commit.clone();
     next.mutation = published.mutation.clone();
     next.mutation.in_flight_operation = None;
+    next.mutation.closeout_receipt = None;
+    next.mutation.repair_admissions.clear();
     next.mutation.local_gates = Vec::new();
     next.current_main = Some(main.to_owned());
     next.state = ReleaseRecoveryState::Published;

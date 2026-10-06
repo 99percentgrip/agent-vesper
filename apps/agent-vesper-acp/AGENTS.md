@@ -29,6 +29,11 @@ transport, stderr-only tracing, and orderly shutdown.
 
 ## Local Contracts
 
+- Admitted release prompts retain their ACP owner until native settlement and
+  stream shared milestones plus the final durable receipt explicitly. Concurrent
+  status and cancellation remain available. A recoverable or failed closeout
+  returns unfinished status; publication/start acknowledgement is not completion.
+
 - Provider-owned controls are intersected with the selected non-secret
   authentication method before runtime configuration. Stale API-key-only xAI
   values cannot enter a Grok-session request.
@@ -68,8 +73,9 @@ transport, stderr-only tracing, and orderly shutdown.
   active worker and passively returns to local verification after shared governor
   recovery without `/release resume`, provider dispatch, retry spending or a host-
   private polling loop; an obsolete same-objective prerelease epoch is
-  archived and superseded automatically. Remote irreversible state or an unrelated
-  active objective asks one bounded human-facing clarification without exposing
+  archived and superseded automatically. A matching published objective continues
+  closeout automatically. A different irreversible target or an unrelated active
+  objective asks one bounded human-facing clarification without exposing
   epoch IDs, controller states or ledger paths. Objective provenance excludes
   unrelated historical worktrees. Only unresolved variants of the same objective
   return one human-labelled clarification—never paths or SHAs—without a provider

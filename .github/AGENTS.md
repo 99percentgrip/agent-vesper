@@ -32,7 +32,9 @@ migration gates and disposable platform assumptions on hosts unavailable locally
   `release-recovery-acceptance.yml` is a manually dispatched, read-only controlled
   fixture for deterministic complete-matrix red, repeated-fingerprint, focused-green
   and post-publication-main-red evidence. Its selectable synthetic macOS/Windows
-  lane is Ubuntu-hosted diagnosis evidence, never native platform proof. `release-recovery-lifecycle-acceptance.yml`
+  lane is Ubuntu-hosted diagnosis evidence, never native platform proof. Its
+  non-failing lanes wait 90 seconds so 20-second controller polling plus native
+  API inventory latency can capture the actual partial matrix. `release-recovery-lifecycle-acceptance.yml`
   is the manually dispatched, read-only five-native-runner gate for an exact SHA in
   the controlled public acceptance repository; it proves RRC process-tree
   cancellation, persisted restart identity, controller/adapter/policy regressions

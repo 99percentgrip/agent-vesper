@@ -991,8 +991,12 @@ impl AcpHarnessEngine {
             .map_err(|error| format!("release admission executor panicked: {error}"))?
             .map_err(|error| format!("release admission failed: {error}"))?;
             match admission {
-                vesper_harness::release_recovery::NaturalReleaseAdmission::Started(body)
-                | vesper_harness::release_recovery::NaturalReleaseAdmission::Clarification(body) => {
+                vesper_harness::release_recovery::NaturalReleaseAdmission::Started(body) => {
+                    return Ok(self
+                        .await_release_delivery(&request, root.clone(), body)
+                        .await);
+                }
+                vesper_harness::release_recovery::NaturalReleaseAdmission::Clarification(body) => {
                     return Ok(AcpPromptResult {
                         text: body,
                         cancelled: false,
@@ -1378,6 +1382,118 @@ impl AcpHarnessEngine {
     /// the prompt with a workflow that drives one real agent turn (TUI
     /// parity). `/release` is served in-process by the shared persisted
     /// release controller.
+    // Keep the admitted native controller's ACP owner alive until settlement.
+    // The shared ledger supplies progress and the final receipt; no provider turn
+    // or host-local lifecycle progression is involved.
+    async fn await_release_delivery(
+        &self,
+        request: &AcpPromptRequest,
+        root: std::path::PathBuf,
+        acknowledgement: String,
+    ) -> AcpPromptResult {
+        let cancellation = Arc::new(RuntimeCancellation::new());
+        self.cancellations
+            .lock()
+            .await
+            .entry(request.session_id.clone())
+            .or_default()
+            .push(cancellation.clone());
+        let mut cursor: Option<(String, u64)> = None;
+        let mut cancelled = false;
+        let final_text = loop {
+            if cancellation.is_cancelled() {
+                let cancel_root = root.clone();
+                let result = tokio::task::spawn_blocking(move || {
+                    let body = vesper_harness::release_recovery::release_command_for_workspace(
+                        &cancel_root,
+                        "cancel",
+                    )?;
+                    let confirmed =
+                        vesper_harness::release_recovery::reconcile_unowned_release(&cancel_root)?
+                            .is_some_and(|record| {
+                                record.state
+                            == vesper_harness::release_recovery::ReleaseRecoveryState::Cancelled
+                            });
+                    Ok::<_, vesper_harness::release_recovery::RrcError>((body, confirmed))
+                })
+                .await;
+                cancelled = matches!(&result, Ok(Ok((_, true))));
+                break match result {
+                    Ok(Ok((body, _))) => body,
+                    _ => {
+                        "Release cancellation could not be confirmed; check native release status."
+                            .into()
+                    }
+                };
+            }
+            let observation_root = root.clone();
+            let observed = tokio::task::spawn_blocking(move || {
+                let completion = vesper_harness::release_executor::release_completion_for_workspace(
+                    &observation_root,
+                );
+                let snapshot = vesper_harness::release_executor::release_run_snapshot_for_workspace(
+                    &observation_root,
+                );
+                let stopped = if snapshot.is_none() && completion.is_none() {
+                    vesper_harness::release_recovery::release_status_for_workspace(
+                        &observation_root,
+                    )
+                } else {
+                    None
+                };
+                (completion, snapshot, stopped)
+            })
+            .await;
+            let Ok((completion, snapshot, stopped)) = observed else {
+                break "Release observation failed; completion is unconfirmed.".into();
+            };
+            if let Some((_, _, summary)) = completion {
+                break summary;
+            }
+            let Some(snapshot) = snapshot else {
+                break stopped.unwrap_or(acknowledgement);
+            };
+            for milestone in &snapshot.progress.milestones {
+                let previous = cursor
+                    .as_ref()
+                    .filter(|(epoch, _)| epoch == &snapshot.epoch_id)
+                    .map_or(0, |(_, sequence)| *sequence);
+                if milestone.sequence > previous {
+                    if let Some(sink) = request.event_sink.as_ref() {
+                        sink.event(vesper_acp::AcpEngineEvent::ContentDelta {
+                            text: format!("release: {}\n", milestone.summary),
+                        });
+                    }
+                    cursor = Some((snapshot.epoch_id.clone(), milestone.sequence));
+                }
+            }
+            // A persisted recoverable epoch is a truthful stop, not a live worker.
+            if snapshot.stage == "Release recoverable" {
+                break format!("Release unfinished: {}", snapshot.detail);
+            }
+            tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+        };
+        self.cancellations
+            .lock()
+            .await
+            .entry(request.session_id.clone())
+            .or_default()
+            .retain(|entry| !Arc::ptr_eq(entry, &cancellation));
+        // The ACP adapter has already streamed progress, so explicitly deliver the
+        // final text too rather than relying on its no-delta fallback.
+        if let Some(sink) = request.event_sink.as_ref() {
+            sink.event(vesper_acp::AcpEngineEvent::ContentDelta {
+                text: format!("\n{final_text}"),
+            });
+        }
+        AcpPromptResult {
+            text: final_text,
+            cancelled,
+            persist_turn: false,
+            history_replacement: None,
+        }
+    }
+
     async fn try_slash_command(&self, request: &AcpPromptRequest, text: &str) -> SlashFlow {
         use vesper_harness::slash_commands::{
             SlashCommandContext, SlashCommandOutcome, execute_slash_command,
@@ -1925,20 +2041,22 @@ impl AcpHarnessEngine {
                 )
                 .with_permission_port(permission)
                 .with_release_policy(request.operating_mode, request.permission_mode);
+                let observation_root = workspace_root.clone();
                 let argument = argument.to_owned();
-                let body = tokio::task::spawn_blocking(move || {
-                    vesper_harness::release_recovery::release_command_for_workspace_with_factory(
-                        &workspace_root,
-                        &argument,
-                        Some(repair_factory),
-                    )
-                    .unwrap_or_else(|error| format!("release: {error}"))
-                })
-                .await
-                .unwrap_or_else(|error| {
-                    format!("/release failed — host executor panicked: {error}")
-                });
-                respond(body)
+                use vesper_harness::release_recovery::ReleaseCommandOutcome;
+                let outcome = tokio::task::spawn_blocking(move || {
+                    vesper_harness::release_recovery::release_command_outcome_for_workspace_with_factory(
+                        &workspace_root, &argument, Some(repair_factory),
+                    ).unwrap_or_else(|error| ReleaseCommandOutcome::Reply(format!("release: {error}")))
+                }).await.unwrap_or_else(|error| ReleaseCommandOutcome::Reply(
+                    format!("/release failed — host executor panicked: {error}")));
+                match outcome {
+                    ReleaseCommandOutcome::Started(body) => SlashFlow::Respond(
+                        self.await_release_delivery(request, observation_root, body)
+                            .await,
+                    ),
+                    ReleaseCommandOutcome::Reply(body) => respond(body),
+                }
             }
             _ => {
                 let session_id = request.session_id.as_str().to_owned();

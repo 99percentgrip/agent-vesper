@@ -6,6 +6,14 @@ Own evidence and decisions that close the pre-workspace blockers identified by r
 
 ## Ownership
 
+- `2026-10-06-rrc-autonomy-and-prd-audit.md` owns the expanded binding-PRD audit,
+  semantic repair watchdog, passive CI wait separation, objective/receipt isolation,
+  current requirement trace, exact-source verification and authorized next release.
+
+- `2026-10-06-rrc-automatic-closeout-repair.md` owns the publication-terminal,
+  matching-request admission and final-delivery repair, hermetic registry/report
+  receipts, both-host verification and the immutable v0.24.6 closeout boundary.
+
 - `2026-10-06-rrc-version-preparation-resource-repair.md` owns the production stalled-version-preparation observation,
   discarded resource error, shared governor deferral/journal repair, native rollback
   and recovery regressions, and the unchanged disk-capacity/publication boundaries.
@@ -792,6 +800,11 @@ Own evidence and decisions that close the pre-workspace blockers identified by r
   requested dynamic microphone control implementation boundaries.
 
 ## Local Contracts
+
+- Native `release-v*-closeout.md` reports own immutable publication, current-main
+  matrix, existing-registry-PR readback and completion receipts for one version.
+  They and their evidence-index/PRD links stay local after publication; updates
+  never trigger a separate documentation release or an installation.
 
 - Routing JSON/JSONL evidence is LF-pinned by repository attributes so frozen
   corpus and receipt digests remain stable on Windows checkouts.

@@ -241,7 +241,12 @@ When the user requests a durable behavior change, record it here or in the relev
   Recovery Controller in `vesper-harness`, not a free-form `/release` prompt.
   Wait for complete exact-SHA matrices, capture and fingerprint first causal
   failures, require focused proof plus a relevant state change, and enforce the
-  persisted retry budget.
+  persisted retry budget. RRC must autonomously diagnose and repair admitted
+  source/CI failures, recover safe interruptions and finish registry/report delivery
+  through the shared provider-neutral path in both hosts. Repeated activity without
+  evidence must stop truthfully within its persisted limits; users must not need
+  corrective prompts to advance ordinary stages. Audit confirmed gaps before the
+  next version bump and keep repair documentation in that release candidate.
   A new natural-language release request automatically
   reconciles a persisted epoch: resume the matching recoverable objective from its
   safe stage, archive and supersede an obsolete same-objective prerelease candidate,

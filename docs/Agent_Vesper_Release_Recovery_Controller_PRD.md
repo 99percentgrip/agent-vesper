@@ -1094,12 +1094,18 @@ reset, stashed or mutated by this process.
 
 ## 37. Current Implementation Status
 
-**Current full-parity completion is withdrawn: the subsequent 0.24.6 attempt
-stalled during version preparation with 0/8 gates, an exited owner and a discarded
-resource error. The published v0.24.5 remains immutable historical evidence.
-[The resource-recovery repair](foundation/2026-10-06-rrc-version-preparation-resource-repair.md) fixes the reproduced
-local defect; integration, current native progression and exact-source hosted
-publication remain pending.**
+[The expanded autonomy audit](foundation/2026-10-06-rrc-autonomy-and-prd-audit.md) tracks the subsequently authorized full requirement audit, new recovery/completion regressions and next patch release. Current hosted and producing evidence remain pending.
+
+**Full PRD parity remains unconfirmed. v0.24.6 was published at
+`a56f0ba76525bf4e7e288eefe2dff731cb120914`, with its assets verified, but the
+controller initially stopped at Published before registry/report closeout and final user
+notification. Native closeout now completed with an idle owner and final receipt;
+[the v0.24.6 receipt](foundation/release-v0.24.6-closeout.md) records the unchanged
+release and same registry PR update. [The automatic-closeout repair](foundation/2026-10-06-rrc-automatic-closeout-repair.md)
+tracks the reproduced defects, current repair evidence and live closeout outcome.
+The earlier [resource-recovery repair](foundation/2026-10-06-rrc-version-preparation-resource-repair.md)
+remains evidence for the separate version-preparation defect. Published tags/assets
+are immutable; a completed release does not establish all PRD requirements.**
 
 [The production release report](foundation/2026-10-06-rrc-parity-production-release.md)
 owns reconciliation with the newer production source, exact-source local verification,
@@ -1121,6 +1127,6 @@ does not establish deterministic release recovery acceptance.
 Production publication used standard public GitHub Actions. Alex's installed
 application is outside this release authorization.
 
-[Current requirement trace](foundation/2026-10-06-rrc-parity-production-release-final-requirements.json) binds all 36 sections and 23 acceptance criteria to direct current native observations and actual production publication/closeout receipts.
+[Historical requirement trace](foundation/2026-10-06-rrc-parity-production-release-final-requirements.json) binds the earlier production candidate; it cannot certify this changed source or the subsequently reproduced closeout defects.
 
 [Post-release documentation/Windows repair](foundation/2026-10-06-documentation-ci-and-windows-readiness-repair.md) records the unnecessary separate documentation push, newly exposed command-fixture readiness/MCP startup failures and the same-commit documentation rule. This later main-health repair does not move the published tag or relabel cancelled checks as passed.

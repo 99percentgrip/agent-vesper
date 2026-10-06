@@ -706,6 +706,10 @@ business logic.
 
 ## Local Contracts
 
+- TUI release completion uses the shared durable closeout receipt after RUN
+  disappears. Its completion cursor is separate from the milestone cursor so
+  observing the last active milestone cannot suppress the final summary.
+
 - Provider request controls are projected only from the active registry
   superpower surface. Hidden controls from a previous authentication mode are
   cleared before dispatch rather than sent as stale provider configuration.

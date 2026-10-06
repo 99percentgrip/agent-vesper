@@ -2093,6 +2093,86 @@ fn acceptance_verify() -> Result<(), String> {
         (
             "vesper-harness",
             &["--lib"],
+            "release_recovery::tests::directives_are_typed_and_back_off_without_model_step_polling",
+        ),
+        (
+            "vesper-harness",
+            &["--lib"],
+            "release_recovery::tests::a_long_running_platform_matrix_is_not_active_repair_stagnation",
+        ),
+        (
+            "vesper-harness",
+            &["--lib"],
+            "release_recovery::tests::missing_runs_cannot_reuse_a_stale_running_matrix_to_avoid_timeout",
+        ),
+        (
+            "vesper-harness",
+            &["--lib"],
+            "release_recovery::tests::matching_published_release_resumes_closeout_without_new_epoch_or_tag",
+        ),
+        (
+            "vesper-harness",
+            &["--lib"],
+            "release_recovery::tests::completed_version_does_not_claim_a_different_objective_was_released",
+        ),
+        (
+            "vesper-harness",
+            &["--lib"],
+            "release_executor::tests::published_release_keeps_worker_until_post_release_closeout",
+        ),
+        (
+            "vesper-harness",
+            &["--lib"],
+            "release_executor::tests::published_closeout_finishes_report_without_replaying_release_mutations",
+        ),
+        (
+            "vesper-harness",
+            &["--lib"],
+            "release_executor::tests::repair_evidence_watchdog_ignores_streaming_and_repeated_tool_results",
+        ),
+        (
+            "vesper-harness",
+            &["--lib"],
+            "release_executor::tests::repair_evidence_deadline_and_native_verification_are_distinct",
+        ),
+        (
+            "vesper-harness",
+            &["--lib"],
+            "release_executor::tests::repair_dispatch_budget_survives_restart_without_a_focused_proof",
+        ),
+        (
+            "vesper-harness",
+            &["--lib"],
+            "release_executor::tests::repair_registry_stops_repeated_observations_for_each_provider_context",
+        ),
+        (
+            "vesper-harness",
+            &["--lib"],
+            "release_closeout::tests::closeout_registry_uncertain_write_never_replays",
+        ),
+        (
+            "vesper-harness",
+            &["--lib"],
+            "release_closeout::tests::closeout_registry_preserves_concurrent_edit_and_rejects_false_write_receipt",
+        ),
+        (
+            "vesper-harness",
+            &["--lib"],
+            "release_closeout::tests::closeout_later_main_has_a_distinct_report_without_overwriting_publication",
+        ),
+        (
+            "vesper-harness",
+            &["--lib"],
+            "release_closeout::tests::closeout_report_restart_is_idempotent_and_preserves_user_edits",
+        ),
+        (
+            "agent-vesper-tui",
+            &["--bin", "agent-vesper-tui"],
+            "tests::release_final_receipt_is_not_suppressed_by_last_active_milestone",
+        ),
+        (
+            "vesper-harness",
+            &["--lib"],
             "release_recovery::tests::partial_matrix_blocks_retry",
         ),
         (
@@ -2456,6 +2536,18 @@ fn acceptance_verify() -> Result<(), String> {
             "host_resources_constrained_tests::constrained_disk_acceptance_preserves_target_cache_and_withholds_gate",
         ),
     ]);
+    #[cfg(target_os = "linux")]
+    cases.push((
+        "agent-vesper-acp",
+        &["--test", "release_resource_governor"],
+        "acp_completed_release_delivers_final_receipt_without_provider_or_new_release",
+    ));
+    #[cfg(target_os = "linux")]
+    cases.push((
+        "agent-vesper-acp",
+        &["--test", "release_resource_governor"],
+        "acp_conflicting_published_target_returns_clarification_without_observing_old_worker",
+    ));
     #[cfg(target_os = "linux")]
     cases.push((
         "agent-vesper-acp",

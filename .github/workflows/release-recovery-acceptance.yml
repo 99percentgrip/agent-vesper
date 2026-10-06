@@ -52,7 +52,7 @@ jobs:
       - name: Keep non-failing lanes active after the deterministic early failure
         if: matrix.lane != inputs.failure_lane
         shell: bash
-        run: sleep 30
+        run: sleep 90
       - name: Emit deterministic first causal failure with synthetic secret canary
         if: >-
           matrix.lane == inputs.failure_lane &&

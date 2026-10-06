@@ -43,6 +43,7 @@ pub mod host_resources;
 #[cfg(test)]
 mod host_resources_constrained_tests;
 pub mod lens_tools;
+pub mod release_closeout;
 pub mod release_executor;
 #[cfg(test)]
 mod release_progress_tests;

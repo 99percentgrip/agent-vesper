@@ -4295,6 +4295,7 @@ dependencies = [
 name = "vesper-harness"
 version = "0.24.6"
 dependencies = [
+ "base64",
  "chrono",
  "command-group",
  "fs2",

@@ -16,10 +16,13 @@ architecture, MSRV, and source-oracle checks.
   The fixed acceptance set also executes the RRC partial-matrix, verified-repair,
   pause/resume, immutable-publication, production-orchestrator, native host
   cancellation/restart process-lifecycle, and TUI-controller routing cases;
-  deleting or renaming any case fails the gate. RRC cases additionally pin
+  deleting or renaming any case fails the gate. Mandatory RRC cases also pin
+  literal 20–120 second polling, long-running platform settlement, semantic repair
+  stagnation, same-objective published admission, shared closeout journaling,
+  idempotent report delivery and the TUI/ACP final receipt routes. RRC cases additionally pin
   continuous polling, owner exclusivity, cancellation propagation, stale-writer
   rejection, mutation journals, exact-attempt routing, reserved retry floors,
-  immutable epoch history, fourteen publication assets, secret redaction and
+  immutable epoch history, the complete publication inventory, secret redaction and
   nonzero native focused proof. Native patch fixtures preserve version seeds
   and new regression files; policy denial remains authoritative. Combined
   isolated AgentLoop/native proof/promotion and missing last-green platform

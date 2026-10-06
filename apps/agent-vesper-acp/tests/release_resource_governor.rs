@@ -60,6 +60,134 @@ fn acp_natural_release_inherits_session_permission_and_governor() {
     governed_release_process("Release this completed work with a patch version bump.");
 }
 
+#[test]
+fn acp_completed_release_delivers_final_receipt_without_provider_or_new_release() {
+    use vesper_harness::{release_closeout::CloseoutReceipt, release_recovery::*};
+    let fixture = tempfile::tempdir().unwrap();
+    let workspace = fixture.path().join("workspace");
+    let state_root = fixture.path().join("release-state");
+    create_release_fixture(&workspace);
+    let identity = repository_identity_for_workspace(&workspace).unwrap();
+    let head = Command::new("git")
+        .args(["rev-parse", "HEAD"])
+        .current_dir(&workspace)
+        .output()
+        .unwrap();
+    let head = String::from_utf8(head.stdout).unwrap().trim().to_owned();
+    let report = workspace.join("docs/foundation/release-fixture-closeout.md");
+    fs::write(&report, "Controlled completed release receipt\n").unwrap();
+    let mut record = start_release(&identity, "patch", "main", &head).unwrap();
+    record.state = ReleaseRecoveryState::Complete;
+    record.release_version = Some("0.1.1".into());
+    record.release_commit = Some(head.clone());
+    record.current_main = Some(head);
+    record.mutation.publication_verified = true;
+    record.mutation.closeout_receipt = Some(CloseoutReceipt {
+        report: report.to_string_lossy().into_owned(),
+        registry_url: None,
+        registry_blob: None,
+    });
+    record.note_progress_milestone("Fixture release closeout verified");
+    ReleaseLedger::open(&state_root, &identity)
+        .unwrap()
+        .save(&record)
+        .unwrap();
+    let before = fs::read(workspace.join("Cargo.toml")).unwrap();
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    listener.set_nonblocking(true).unwrap();
+    let mut process = ProcessHarness::spawn_resource_governor_test_driver(
+        listener.local_addr().unwrap(),
+        [(
+            "AGENT_VESPER_RELEASE_ROOT",
+            state_root.display().to_string(),
+        )],
+    );
+    let session = process.initialize_and_new_session_in(&workspace);
+    process.prompt(3, &session, "/release resume", "fixture-closeout-delivery");
+    let response = process.response(3);
+    assert!(response.get("error").is_none(), "{response}");
+    let text = update_text(process.transcript());
+    assert_eq!(
+        text.matches("Release v0.1.1 completed.").count(),
+        1,
+        "{text}"
+    );
+    assert!(
+        text.contains(&report.to_string_lossy().to_string()),
+        "{text}"
+    );
+    assert_eq!(support::terminal_count(process.transcript(), 3), 1);
+    process.finish();
+    assert_eq!(fs::read(workspace.join("Cargo.toml")).unwrap(), before);
+    assert!(
+        listener.accept().is_err(),
+        "completion must not dispatch a model"
+    );
+}
+
+#[test]
+fn acp_conflicting_published_target_returns_clarification_without_observing_old_worker() {
+    use vesper_harness::release_recovery::*;
+    let fixture = tempfile::tempdir().unwrap();
+    let workspace = fixture.path().join("workspace");
+    let state_root = fixture.path().join("release-state");
+    create_release_fixture(&workspace);
+    let identity = repository_identity_for_workspace(&workspace).unwrap();
+    let head = Command::new("git")
+        .args(["rev-parse", "HEAD"])
+        .current_dir(&workspace)
+        .output()
+        .unwrap();
+    let head = String::from_utf8(head.stdout).unwrap().trim().to_owned();
+    let mut record = start_release(&identity, "patch", "main", &head).unwrap();
+    record.state = ReleaseRecoveryState::Published;
+    record.release_version = Some("0.1.1".into());
+    record.release_commit = Some(head);
+    record.mutation.publication_verified = true;
+    record.mutation.version_after = Some("0.1.1".into());
+    record.liveness.state = ReleaseLivenessState::Active;
+    record.liveness.owner_pid = Some(std::process::id());
+    let ledger = ReleaseLedger::open(&state_root, &identity).unwrap();
+    ledger.save(&record).unwrap();
+    let ledger_path = fs::read_dir(&state_root)
+        .unwrap()
+        .filter_map(Result::ok)
+        .map(|entry| entry.path())
+        .find(|path| {
+            path.extension()
+                .is_some_and(|extension| extension == "json")
+        })
+        .unwrap();
+    let before = fs::read(&ledger_path).unwrap();
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    listener.set_nonblocking(true).unwrap();
+    let mut process = ProcessHarness::spawn_resource_governor_test_driver(
+        listener.local_addr().unwrap(),
+        [(
+            "AGENT_VESPER_RELEASE_ROOT",
+            state_root.display().to_string(),
+        )],
+    );
+    let session = process.initialize_and_new_session_in(&workspace);
+    process.prompt(
+        3,
+        &session,
+        "/release 0.1.2",
+        "fixture-conflicting-publication",
+    );
+    let response = process.response(3);
+    assert!(response.get("error").is_none(), "{response}");
+    let text = update_text(process.transcript());
+    assert!(
+        text.contains("Which release should RRC continue?"),
+        "{text}"
+    );
+    assert_eq!(support::terminal_count(process.transcript(), 3), 1);
+    process.finish();
+    assert_eq!(fs::read(&ledger_path).unwrap(), before);
+    assert!(listener.accept().is_err());
+}
+
 fn governed_release_process(request: &str) {
     let fixture = tempfile::tempdir().expect("temporary ACP RRC fixture");
     let workspace = fixture.path().join("workspace");
@@ -100,13 +228,8 @@ fn governed_release_process(request: &str) {
     assert!(configured.get("error").is_none(), "{configured}");
 
     process.prompt(3, &session, request, "resource-governor-start");
-    let started = process.response(3);
-    assert!(started.get("error").is_none(), "{started}");
-    assert!(
-        update_text(process.transcript())
-            .contains("Release controller started and is preparing the release target."),
-        "the ACP command must admit the controller rather than dispatch a provider"
-    );
+    // Admission streams progress but the request remains active to own RRC.
+    // Concurrent status/cancel must still work while the Cargo gate is blocked.
     wait_for_receipt(&receipts, "gate");
 
     let before_status = process.transcript().len();
@@ -114,6 +237,11 @@ fn governed_release_process(request: &str) {
     let status = process.response(4);
     assert!(status.get("error").is_none(), "{status}");
     let status_text = update_text(&process.transcript()[before_status..]);
+    assert_eq!(
+        support::terminal_count(process.transcript(), 3),
+        0,
+        "release prompt must not terminate its ACP owner at admission"
+    );
     for expected in [
         "RUN                  Local verification",
         "Current process      cargo",
@@ -182,6 +310,9 @@ fn governed_release_process(request: &str) {
     assert!(cancelled.get("error").is_none(), "{cancelled}");
     fs::write(&release, b"stop").expect("release controlled Cargo gate");
     wait_for_worker_settlement(&mut process, &session);
+    let settled = process.response(3);
+    assert!(settled.get("error").is_none(), "{settled}");
+    assert_eq!(support::terminal_count(process.transcript(), 3), 1);
     process.finish();
     assert!(
         listener.accept().is_err(),

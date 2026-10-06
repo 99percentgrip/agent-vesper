@@ -545,6 +545,7 @@ async fn run(resume_id: Option<String>) -> Result<(), String> {
         telemetry: Arc::new(trajectory_recorder()),
         activity: Vec::new(),
         release_milestone_cursor: None,
+        release_completion_cursor: None,
         live_trajectory: Vec::new(),
         file_changes: Vec::new(),
         show_tool_details: false,
@@ -1025,6 +1026,7 @@ struct TuiSession {
     /// sequence is persisted, so redraws and RUN-panel refreshes never repeat
     /// chat lines while a newly opened session can show recent context once.
     release_milestone_cursor: Option<(String, u64)>,
+    release_completion_cursor: Option<(String, u64)>,
     /// VRO-11.4: inline tool telemetry lines rendered DIRECTLY in the main
     /// Conversation panel (not a sidebar). Populated from both the direct
     /// path's `AgentProgressEvent::ToolStarted/ToolFinished` and the ReAct
@@ -1427,8 +1429,15 @@ fn release_background_task(
 fn project_release_milestones(
     session: &mut TuiSession,
     background_task: Option<&agent_vesper_tui::ui::BackgroundTaskState>,
+    workspace: &std::path::Path,
 ) {
-    let Some(task) = background_task else { return };
+    let Some(task) = background_task else {
+        project_release_completion(
+            session,
+            vesper_harness::release_executor::release_completion_for_workspace(workspace),
+        );
+        return;
+    };
     let milestones = &task.progress.milestones;
     let Some(latest) = milestones.last() else {
         return;
@@ -1446,6 +1455,16 @@ fn project_release_milestones(
         session.state.status = Some(format!("Release update: {}", milestone.summary));
     }
     session.release_milestone_cursor = Some((task.epoch_id.clone(), latest.sequence));
+}
+
+fn project_release_completion(session: &mut TuiSession, completion: Option<(String, u64, String)>) {
+    if let Some((epoch, sequence, summary)) = completion
+        && session.release_completion_cursor.as_ref() != Some(&(epoch.clone(), sequence))
+    {
+        session.state.transcript.push(summary);
+        session.state.status = Some("Release completed".into());
+        session.release_completion_cursor = Some((epoch, sequence));
+    }
 }
 
 const OPENAI_MODEL_LOADING_STATUS: &str = "Loading OpenAI account models…";
@@ -1854,7 +1873,11 @@ async fn drive_loop(
         if pending_terminal_events.is_empty() {
             let voice = session.voice.snapshot();
             let background_task = release_background_task(&checkpoint_stores.workspace_root);
-            project_release_milestones(session, background_task.as_ref());
+            project_release_milestones(
+                session,
+                background_task.as_ref(),
+                &checkpoint_stores.workspace_root,
+            );
             let model = ViewModel {
                 voice_phase: voice.phase,
                 voice_elapsed: voice.elapsed,
@@ -18258,6 +18281,7 @@ mod tests {
             telemetry: Arc::new(vesper_observability::TrajectoryRecorder::disabled()),
             activity: Vec::new(),
             release_milestone_cursor: None,
+            release_completion_cursor: None,
             live_trajectory: Vec::new(),
             file_changes: Vec::new(),
             show_tool_details: false,
@@ -18337,6 +18361,7 @@ mod tests {
             telemetry: Arc::new(vesper_observability::TrajectoryRecorder::disabled()),
             activity: Vec::new(),
             release_milestone_cursor: None,
+            release_completion_cursor: None,
             live_trajectory: Vec::new(),
             file_changes: Vec::new(),
             show_tool_details: false,
@@ -18414,6 +18439,7 @@ mod tests {
             telemetry: Arc::new(vesper_observability::TrajectoryRecorder::disabled()),
             activity: Vec::new(),
             release_milestone_cursor: None,
+            release_completion_cursor: None,
             live_trajectory: Vec::new(),
             file_changes: Vec::new(),
             show_tool_details: false,
@@ -19498,6 +19524,24 @@ mod tests {
         assert_eq!(session.state.status.as_deref(), Some("non-voice status"));
     }
 
+    #[test]
+    fn release_final_receipt_is_not_suppressed_by_last_active_milestone() {
+        let mut session = fresh_tui_session_for_trajectory_tests();
+        session.release_milestone_cursor = Some(("epoch".into(), 40));
+        let receipt = ("epoch".into(), 40, "Release v0.24.6 completed.".into());
+        project_release_completion(&mut session, None);
+        assert!(session.state.transcript.is_empty());
+        project_release_completion(&mut session, Some(receipt.clone()));
+        project_release_completion(&mut session, Some(receipt));
+        assert_eq!(session.state.transcript.len(), 1);
+        assert_eq!(session.state.status.as_deref(), Some("Release completed"));
+        project_release_completion(
+            &mut session,
+            Some(("new epoch".into(), 40, "Next release completed.".into())),
+        );
+        assert_eq!(session.state.transcript.len(), 2);
+    }
+
     /// Builds a minimal TuiSession for the trajectory-drain tests. We don't
     /// need a real provider registry / approval broker — only the
     /// `trajectory_rx` and `reasoning` fields are exercised.
@@ -19541,6 +19585,7 @@ mod tests {
             telemetry: Arc::new(trajectory_recorder()),
             activity: Vec::new(),
             release_milestone_cursor: None,
+            release_completion_cursor: None,
             live_trajectory: Vec::new(),
             file_changes: Vec::new(),
             show_tool_details: false,

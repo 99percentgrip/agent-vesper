@@ -83,8 +83,8 @@ Z.ai and Playwright MCP server descriptors.
   Passive CI polls do not consume the active stagnation budget. Infrastructure
   recovery reserves budget/attempt floors before its scoped rerun.
 - Published assets require a settled exact-SHA tag workflow, an annotated tag
-  targeting that SHA, nondraft/nonprerelease metadata and all fourteen nonempty
-  uploaded archive/checksum assets. Downloaded checksum contents must match the
+  targeting that SHA, nondraft/nonprerelease metadata and the complete expected
+  inventory of nonempty uploaded archive/checksum assets. Downloaded checksum contents must match the
   archive and checksum asset's server SHA-256 digests and exact filename.
   Credential/normalization regexes compile once with thread-safe LazyLock;
   ledger string redaction must not repeatedly compile patterns per field.
@@ -171,11 +171,13 @@ Z.ai and Playwright MCP server descriptors.
   state without paths, raw SHAs or internal state names. Primary workspaces are never
   changed by reconciliation. Resume refreshes exact-SHA GitHub state before progression.
   `RemoteGateRunning`, `WaitingForMatrix`, and `ClassifyingFailure` remain active
-  controller-owned worker states: missing/partial runs poll at 5/10/15/30-second
+  controller-owned worker states: missing/partial runs poll at 20/40/80/120-second
   bounded intervals, passive refreshes do not spend the six-action repair watchdog,
   cancellation interrupts each wait promptly, and restart reloads the same epoch before
-  continuing the exact-SHA watch. The separate 20-minute no-evidence timeout still
-  bounds a stalled remote watch. GitHub write operations require
+  continuing the exact-SHA watch. Missing runs retain a 20-minute evidence window;
+  known queued/running jobs use a two-hour passive watch so 60-minute platform jobs
+  can settle without consuming active repair limits. Later-main recovery clears
+  the prior completion receipt and writes a distinct full-SHA main report. GitHub write operations require
   an unforgeable controller admission token; adapters, providers and hosts do not
   decide retry policy. `release_executor` runs the repository's existing local gates, version/commit/
   push/tag/publication path, bounded official GitHub-status check, persisted
@@ -189,7 +191,16 @@ Z.ai and Playwright MCP server descriptors.
   protocol/safety deadlines: remote Git mutations use 5/30 minutes, GitHub evidence
   requests use 2/5 minutes, publication requests use 2/10 minutes and official health
   requests use 15 seconds. The repair AgentLoop uses its progress port as a heartbeat
-  with a 10-minute no-progress bound and no elapsed-runtime ceiling. Exact-SHA dispatch
+  with a 10-minute inactivity bound. A separate semantic watchdog hashes actual
+  successful tool observations, excludes call IDs and command timing, and stops
+  after six repeated/failed actions or 20 minutes without new evidence. Streamed
+  text/status never resets semantic progress. Governed focused verification retains
+  its native subprocess watchdog; a progressing compiler may outlast 20 minutes.
+  Observation identities are bounded to 4096 hashes per repair. Every causal-family
+  repair admission is counted and persisted before model dispatch, including turns
+  that fail before focused proof; restarts cannot reset that limit. Disproven prior
+  hypotheses/proof status enter the next repair as untrusted evidence. New later-main
+  epochs start their own admission counters while preserving the published record. Exact-SHA dispatch
   starts a fresh remote-matrix window under the separate 20-minute no-evidence bound.
   Watchdog outcomes are persisted as typed
   liveness failures, never source/CI evidence, and both hosts render the shared
@@ -432,6 +443,17 @@ Z.ai and Playwright MCP server descriptors.
   session lifecycle; they inject a `WorkerFactory` when nested work is allowed.
 
 ## Local Contracts
+
+- `release_closeout` owns existing-registry-PR delivery and local release reports.
+  Publication is an immutable checkpoint, not a worker termination condition.
+  The native worker continues through current-main matrix settlement, expected-blob
+  registry update/readback and a durable completion receipt. Matching published
+  requests resume that checkpoint without a new epoch/version/tag or retry reset.
+  Uncertain registry writes are reobserved, never replayed; concurrent edits refuse.
+  Reports retain failures, focused attempts, reserved admission counters, retry
+  budgets, transitions, metrics and changed paths; later-main links name the actual
+  distinct report. Final summary delivery requires the receipt. Post-publication evidence links stay
+  local until the next authorized code push; closeout never installs an update.
 
 - ADR 0029 adds empty-path opt-in as pending automatic PRD enrollment. Both hosts
   capture the original user request with `activate_for_prompt`; `acceptance_enroll`

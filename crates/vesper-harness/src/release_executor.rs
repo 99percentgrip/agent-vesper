@@ -522,6 +522,23 @@ pub trait ReleaseExecutionPort: Send + Sync {
         None
     }
 
+    fn plan_closeout(
+        &self,
+        _record: &ReleaseRecoveryRecord,
+        _repository: &str,
+    ) -> Result<Option<crate::release_closeout::RegistryTarget>, RrcError> {
+        Ok(None)
+    }
+    fn finish_closeout(
+        &self,
+        _record: &ReleaseRecoveryRecord,
+        _allow_mutation: bool,
+        _admission: &ReleaseMutationAdmission,
+    ) -> Result<crate::release_closeout::CloseoutReceipt, RrcError> {
+        Err(RrcError::Invalid(
+            "native closeout/report port unavailable".into(),
+        ))
+    }
     fn preview_release_version(&self, _target: &str) -> Result<(String, String), RrcError> {
         Err(RrcError::Invalid(
             "release version preview is unavailable for this executor".into(),
@@ -1004,6 +1021,90 @@ impl ReleaseExecutionPort for NativeReleaseExecutor {
             .and_then(|activity| activity.resource_telemetry.clone())
     }
 
+    fn plan_closeout(
+        &self,
+        record: &ReleaseRecoveryRecord,
+        repository: &str,
+    ) -> Result<Option<crate::release_closeout::RegistryTarget>, RrcError> {
+        if !self.workspace.join("registry/agent.json").exists() {
+            return Ok(None);
+        }
+        let commit = record
+            .release_commit
+            .as_deref()
+            .ok_or_else(|| RrcError::Invalid("closeout release identity missing".into()))?;
+        let output = self.command("git", &["show", &format!("{commit}:registry/agent.json")])?;
+        if !output.status.success() {
+            return Err(RrcError::Invalid(
+                "committed registry manifest unavailable".into(),
+            ));
+        }
+        let manifest = serde_json::from_slice(&output.stdout)?;
+        let version = record
+            .release_version
+            .as_deref()
+            .ok_or_else(|| RrcError::Invalid("published version missing".into()))?;
+        let pr = std::env::var("AGENT_VESPER_REGISTRY_PR")
+            .ok()
+            .map(|s| s.parse::<u64>())
+            .transpose()
+            .map_err(|_| RrcError::Invalid("invalid existing registry PR number".into()))?
+            .unwrap_or(539);
+        crate::release_closeout::prepare_registry(manifest, version, repository, pr, |endpoint| {
+            self.gh_json(&["api", endpoint])
+        })
+        .map(Some)
+    }
+    fn finish_closeout(
+        &self,
+        record: &ReleaseRecoveryRecord,
+        allow_mutation: bool,
+        admission: &ReleaseMutationAdmission,
+    ) -> Result<crate::release_closeout::CloseoutReceipt, RrcError> {
+        require_kind(admission, ReleaseMutationKind::Closeout)?;
+        if let Some(target) = record.mutation.closeout_registry.as_ref() {
+            let remote = self.checked("git", &["config", "--get", "remote.origin.url"])?;
+            let repository = crate::release_recovery::github_repository_slug(&remote)?;
+            let current = self.plan_closeout(record, &repository)?.ok_or_else(|| {
+                RrcError::Invalid("closeout registry manifest disappeared".into())
+            })?;
+            if current.repository != target.repository
+                || current.branch != target.branch
+                || current.path != target.path
+                || current.manifest != target.manifest
+                || current.pull_request != target.pull_request
+            {
+                return Err(RrcError::MutationBlocked(
+                    "registry target changed after admission; no write performed".into(),
+                ));
+            }
+        }
+        let blob = record
+            .mutation
+            .closeout_registry
+            .as_ref()
+            .map(|target| {
+                crate::release_closeout::update_registry(target, allow_mutation, |args| {
+                    self.gh_json(args)
+                })
+            })
+            .transpose()?;
+        let root = record
+            .mutation
+            .source_workspace
+            .as_deref()
+            .map(Path::new)
+            .unwrap_or(&self.workspace)
+            .canonicalize()?;
+        if crate::release_recovery::repository_identity_for_workspace(&root)?
+            != record.repo_identity
+        {
+            return Err(RrcError::Invalid(
+                "closeout report workspace identity mismatch".into(),
+            ));
+        }
+        crate::release_closeout::write_report(&root, record, blob)
+    }
     fn preview_release_version(&self, target: &str) -> Result<(String, String), RrcError> {
         let plan = build_version_mutation_plan(&self.workspace, target)?;
         Ok((plan.before, plan.after))
@@ -1568,6 +1669,100 @@ fn repair_watchdog_error(
         })
     } else {
         None
+    }
+}
+
+/// Provider activity is liveness, not proof of recovery progress. Only a new
+/// successful tool observation resets the repair's semantic stagnation window.
+struct RepairEvidenceProgress {
+    last_evidence: Instant,
+    seen: BTreeSet<String>,
+    stagnant_actions: u8,
+    verification_active: usize,
+}
+
+impl RepairEvidenceProgress {
+    fn new() -> Self {
+        Self {
+            last_evidence: Instant::now(),
+            seen: BTreeSet::new(),
+            stagnant_actions: 0,
+            verification_active: 0,
+        }
+    }
+
+    fn observe(
+        &mut self,
+        call: &vesper_domain::ToolCall,
+        result: &Result<vesper_agent::ToolResult, vesper_agent::ToolError>,
+    ) {
+        // Never retain tool contents or credentials; identity excludes call IDs.
+        let fresh = result.as_ref().ok().is_some_and(|result| {
+            let text = if call.tool_id.as_str() == "run_command" {
+                static TIMING: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+                    regex::Regex::new(r"\b\d+(?:\.\d+)?(?:ms|s| seconds)\b")
+                        .expect("static duration pattern")
+                });
+                TIMING
+                    .replace_all(result.text.as_str(), "<elapsed>")
+                    .into_owned()
+            } else {
+                result.text.as_str().to_owned()
+            };
+            let observation = digest(
+                format!(
+                    "{}\n{}\n{}\n{:?}",
+                    call.tool_id.as_str(),
+                    call.arguments,
+                    text,
+                    result.change,
+                )
+                .as_bytes(),
+            );
+            self.seen.len() < 4096 && self.seen.insert(observation)
+        });
+        if fresh {
+            self.last_evidence = Instant::now();
+            self.stagnant_actions = 0;
+        } else {
+            self.stagnant_actions = self.stagnant_actions.saturating_add(1);
+        }
+    }
+
+    fn watchdog_error(&self) -> Option<RrcError> {
+        self.watchdog_error_with_inactivity(self.last_evidence.elapsed())
+    }
+
+    fn watchdog_error_with_inactivity(&self, no_evidence_for: Duration) -> Option<RrcError> {
+        if self.stagnant_actions >= crate::release_recovery::STAGNATION_ACTION_LIMIT {
+            return Some(RrcError::WatchdogStalled {
+                operation: "focused repair repeated six actions without new evidence".into(),
+                limit_seconds: crate::release_recovery::STAGNATION_TIME_LIMIT.as_secs(),
+            });
+        }
+        // Governed focused verification has its own native subprocess inactivity
+        // watchdog. A progressing compiler is not a model reasoning loop.
+        if self.verification_active == 0
+            && no_evidence_for >= crate::release_recovery::STAGNATION_TIME_LIMIT
+        {
+            return Some(RrcError::WatchdogStalled {
+                operation: "focused repair produced no new evidence".into(),
+                limit_seconds: crate::release_recovery::STAGNATION_TIME_LIMIT.as_secs(),
+            });
+        }
+        None
+    }
+}
+
+struct RepairVerificationActivity(Option<Arc<Mutex<RepairEvidenceProgress>>>);
+
+impl Drop for RepairVerificationActivity {
+    fn drop(&mut self) {
+        if let Some(progress) = &self.0
+            && let Ok(mut observed) = progress.lock()
+        {
+            observed.verification_active = observed.verification_active.saturating_sub(1);
+        }
     }
 }
 
@@ -2248,8 +2443,19 @@ pub fn advance_release(
             }
         }
         ReleaseRecoveryState::Published => {
-            // Publication is an immutable stop boundary. A later closeout/main
-            // SHA is admitted only from independently observed main evidence.
+            if !record.mutation.publication_verified {
+                return Err(RrcError::Invalid(
+                    "unverified publication cannot enter closeout".into(),
+                ));
+            }
+            record.mutation.closeout_registry = executor.plan_closeout(record, repository)?;
+            apply_controller_event(
+                record,
+                ReleaseControllerEvent::PostReleaseCloseoutStarted(vec![
+                    "rrc:verified-publication-closeout".into(),
+                ]),
+            )?;
+            ledger.save(record)?;
         }
         _ => {}
     }
@@ -2590,7 +2796,6 @@ fn release_worker_terminal(state: ReleaseRecoveryState) -> bool {
         state,
         ReleaseRecoveryState::NeedMoreEvidence
             | ReleaseRecoveryState::PausedExternal
-            | ReleaseRecoveryState::Published
             | ReleaseRecoveryState::PostReleaseMainDegraded
             | ReleaseRecoveryState::Escalated
             | ReleaseRecoveryState::Complete
@@ -2613,6 +2818,46 @@ fn release_liveness_operation(state: ReleaseRecoveryState) -> &'static str {
         ReleaseRecoveryState::ResourceDeferred => "resource recovery watch",
         _ => "release controller step",
     }
+}
+
+fn finish_release_closeout(
+    record: &mut ReleaseRecoveryRecord,
+    ledger: &ReleaseLedger,
+    executor: &dyn ReleaseExecutionPort,
+    factory: Option<&crate::WorkerFactory>,
+    repository: &str,
+    cancelled: &Arc<AtomicBool>,
+) -> Result<(), RrcError> {
+    let allow_mutation = match record.mutation.in_flight_operation.as_deref() {
+        None => true,
+        Some("Closeout") => false,
+        Some(_) => {
+            return Err(RrcError::MutationBlocked(
+                "unsettled non-closeout operation cannot be replayed".into(),
+            ));
+        }
+    };
+    if record.mutation.closeout_registry.is_none() {
+        record.mutation.closeout_registry = executor.plan_closeout(record, repository)?;
+        ledger.save(record)?;
+    }
+    if allow_mutation {
+        authorize_controller_step(factory, record, repository, cancelled)?;
+        record.mutation.in_flight_operation = Some("Closeout".into());
+        ledger.save(record)?;
+    }
+    let receipt = executor.finish_closeout(
+        record,
+        allow_mutation,
+        &admit_release_mutation(record, ReleaseMutationKind::Closeout)?,
+    )?;
+    record.mutation.closeout_receipt = Some(receipt);
+    record.mutation.in_flight_operation = None;
+    record.note_progress_milestone(
+        "Release completed — registry and execution report verified; final summary ready",
+    );
+    ledger.save(record)?;
+    Ok(())
 }
 
 #[allow(clippy::too_many_arguments)] // background-worker composition owns distinct state, ports and cancellation.
@@ -2649,6 +2894,20 @@ fn run_release_worker(
             update_release_activity(activity, &record);
         }
         let before = record.state;
+        if record.state == ReleaseRecoveryState::Complete
+            && record.mutation.publication_verified
+            && record.mutation.closeout_receipt.is_none()
+        {
+            finish_release_closeout(
+                &mut record,
+                &ledger,
+                &executor,
+                repair_factory,
+                repository,
+                &cancelled,
+            )?;
+            update_release_activity(activity, &record);
+        }
         if record.mutation.in_flight_operation.is_some() {
             return Err(RrcError::MutationBlocked(
                 "previous release operation did not settle; reconcile receipts before retry".into(),
@@ -2717,6 +2976,19 @@ fn run_release_worker(
             record.updated_at = Utc::now();
             ledger.save(&record)?;
             continue;
+        }
+        if record.state == ReleaseRecoveryState::Complete
+            && record.mutation.publication_verified
+            && record.mutation.closeout_receipt.is_none()
+        {
+            finish_release_closeout(
+                &mut record,
+                &ledger,
+                &executor,
+                repair_factory,
+                repository,
+                &cancelled,
+            )?;
         }
         if release_worker_terminal(record.state) {
             record.liveness = Default::default();
@@ -2985,10 +3257,10 @@ pub fn release_run_snapshot_for_workspace(workspace: &Path) -> Option<ReleaseWor
     let record = crate::release_recovery::reconcile_unowned_release(workspace).ok()??;
     if matches!(
         record.state,
-        ReleaseRecoveryState::Idle
-            | ReleaseRecoveryState::Complete
-            | ReleaseRecoveryState::Cancelled
-    ) {
+        ReleaseRecoveryState::Idle | ReleaseRecoveryState::Cancelled
+    ) || (record.state == ReleaseRecoveryState::Complete
+        && record.mutation.closeout_receipt.is_some())
+    {
         return None;
     }
     let recoverable =
@@ -3038,6 +3310,17 @@ pub fn release_run_snapshot_for_workspace(workspace: &Path) -> Option<ReleaseWor
         resource_deferred: record.state == ReleaseRecoveryState::ResourceDeferred,
         resource_telemetry: record.resource_deferred.map(|deferred| deferred.telemetry),
     })
+}
+
+/// Durable final delivery is separate from an active RUN snapshot. Hosts must
+/// consume this receipt after the worker disappears; publication alone is insufficient.
+pub fn release_completion_for_workspace(workspace: &Path) -> Option<(String, u64, String)> {
+    let record = crate::release_recovery::reconcile_unowned_release(workspace).ok()??;
+    if record.state != ReleaseRecoveryState::Complete {
+        return None;
+    }
+    let summary = crate::release_closeout::summary(&record)?;
+    Some((record.epoch_id, record.progress.next_sequence, summary))
 }
 
 pub fn relinquish_release_ownership() {
@@ -3810,7 +4093,7 @@ fn rewrite_version_urls(value: &mut serde_json::Value, before: &str, after: &str
     }
 }
 
-fn atomic_write(path: &Path, bytes: &[u8]) -> Result<(), RrcError> {
+pub(crate) fn atomic_write(path: &Path, bytes: &[u8]) -> Result<(), RrcError> {
     let parent = path
         .parent()
         .ok_or_else(|| RrcError::Invalid("version path has no parent".into()))?;
@@ -4308,6 +4591,116 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn published_release_keeps_worker_until_post_release_closeout() {
+        assert!(
+            !release_worker_terminal(ReleaseRecoveryState::Published),
+            "publication must not strand the pending closeout directive"
+        );
+    }
+
+    #[test]
+    fn published_closeout_finishes_report_without_replaying_release_mutations() {
+        struct MainGreen;
+        impl GitHubEvidencePort for MainGreen {
+            fn current_main_commit(&self, _: &str) -> Result<Option<String>, RrcError> {
+                Ok(Some("a".repeat(40)))
+            }
+            fn matrix_for_sha(
+                &self,
+                repo: &str,
+                sha: &str,
+            ) -> Result<Vec<crate::release_recovery::GateRecord>, RrcError> {
+                GreenGithub.matrix_for_sha(repo, sha)
+            }
+            fn rerun_job(&self, _: &str, _: u64) -> Result<(), RrcError> {
+                panic!("no rerun expected")
+            }
+            fn rerun_failed(&self, _: &str, _: u64) -> Result<(), RrcError> {
+                panic!("no rerun expected")
+            }
+            fn rerun_workflow(&self, _: &str, _: u64) -> Result<(), RrcError> {
+                panic!("no rerun expected")
+            }
+            fn job_log(&self, _: &str, _: u64) -> Result<String, RrcError> {
+                panic!("no failure log expected")
+            }
+        }
+        let root = tempfile::tempdir().unwrap();
+        let ledger = ReleaseLedger::open(root.path().join("state"), "fixture").unwrap();
+        let mut record =
+            crate::release_recovery::start_release("fixture", "patch", "main", &"a".repeat(40))
+                .unwrap();
+        record.state = ReleaseRecoveryState::Published;
+        record.release_commit = Some("a".repeat(40));
+        record.release_version = Some("0.24.6".into());
+        record.mutation.source_workspace = Some(root.path().to_string_lossy().into_owned());
+        record.mutation.publication_verified = true;
+        record.mutation.tag_object = Some("immutable-tag".into());
+        record.mutation.local_gates = production_local_gates();
+        for gate in &mut record.mutation.local_gates {
+            gate.state = SettlementState::Succeeded;
+        }
+        let publication = record.mutation.tag_object.clone();
+        ledger.save(&record).unwrap();
+        let cancelled = Arc::new(AtomicBool::new(false));
+        for expected in [
+            ReleaseRecoveryState::PostReleaseCloseout,
+            ReleaseRecoveryState::WaitingForMatrix,
+            ReleaseRecoveryState::Complete,
+        ] {
+            advance_release(
+                &mut record,
+                ReleaseAdvanceContext {
+                    workspace: root.path(),
+                    repository: "fixture/repo",
+                    ledger: &ledger,
+                    executor: &FakeRelease,
+                    github: &MainGreen,
+                    health: &HealthyStatus,
+                    repair_factory: None,
+                    cancelled: cancelled.clone(),
+                },
+            )
+            .unwrap();
+            assert_eq!(record.state, expected);
+        }
+        assert!(crate::release_closeout::summary(&record).is_none());
+        let (factory, session, _runtime) =
+            repair_test_factory_with_commands("closeout-fixture", "", &[]);
+        finish_release_closeout(
+            &mut record,
+            &ledger,
+            &FakeRelease,
+            Some(&factory),
+            "fixture/repo",
+            &cancelled,
+        )
+        .unwrap();
+        let receipt = record.mutation.closeout_receipt.as_ref().unwrap();
+        assert!(Path::new(&receipt.report).is_file());
+        assert_eq!(record.mutation.tag_object, publication);
+        assert!(record.mutation.in_flight_operation.is_none());
+        assert!(
+            crate::release_closeout::summary(&record)
+                .unwrap()
+                .contains("Release v0.24.6 completed")
+        );
+        assert!(
+            session.requests().is_empty(),
+            "closeout must not dispatch a model"
+        );
+        assert!(
+            ledger
+                .load()
+                .unwrap()
+                .unwrap()
+                .mutation
+                .closeout_receipt
+                .is_some()
+        );
+    }
+
+    #[test]
     fn community_input_is_never_requested_by_production_health_builder() {
         struct Healthy;
         impl ExternalHealthPort for Healthy {
@@ -4467,6 +4860,16 @@ pub(crate) mod tests {
     struct FakeRelease;
 
     impl ReleaseExecutionPort for FakeRelease {
+        fn finish_closeout(
+            &self,
+            record: &ReleaseRecoveryRecord,
+            _allow_mutation: bool,
+            admission: &ReleaseMutationAdmission,
+        ) -> Result<crate::release_closeout::CloseoutReceipt, RrcError> {
+            require_kind(admission, ReleaseMutationKind::Closeout)?;
+            let root = Path::new(record.mutation.source_workspace.as_deref().unwrap());
+            crate::release_closeout::write_report(root, record, None)
+        }
         fn prepare_version_bump(
             &self,
             _bump: &str,
@@ -5479,6 +5882,163 @@ pub(crate) mod tests {
             repair_watchdog_error(true, Duration::ZERO, Duration::from_secs(10)),
             Some(RrcError::Cancelled)
         ));
+    }
+
+    #[test]
+    fn repair_evidence_watchdog_ignores_streaming_and_repeated_tool_results() {
+        let mut evidence = RepairEvidenceProgress::new();
+        let mut call = repair_command_test_call("cargo test exact_regression -- --exact");
+        evidence.observe(
+            &call,
+            &Ok(vesper_agent::ToolResult::new("1 passed; 0 failed; finished in 1.23s").unwrap()),
+        );
+        let last = evidence.last_evidence;
+        for attempt in 0..6 {
+            call.id = vesper_domain::ToolCallId::new(format!("different-call-{attempt}")).unwrap();
+            evidence.observe(
+                &call,
+                &Ok(vesper_agent::ToolResult::new(format!(
+                    "1 passed; 0 failed; finished in {attempt}.56s"
+                ))
+                .unwrap()),
+            );
+        }
+        assert_eq!(evidence.last_evidence, last);
+        assert!(matches!(
+            evidence.watchdog_error(),
+            Some(RrcError::WatchdogStalled { .. })
+        ));
+        let heartbeat = Arc::new(Mutex::new(Instant::now()));
+        let progress = RepairHeartbeatProgress {
+            heartbeat,
+            downstream: None,
+        };
+        vesper_agent::AgentProgressPort::emit(
+            &progress,
+            vesper_agent::AgentProgressEvent::Status {
+                text: "still thinking".into(),
+            },
+        );
+        assert_eq!(evidence.last_evidence, last);
+        evidence.observe(
+            &call,
+            &Ok(vesper_agent::ToolResult::new("2 passed; 0 failed").unwrap()),
+        );
+        assert_eq!(evidence.stagnant_actions, 0);
+        assert!(evidence.watchdog_error().is_none());
+    }
+
+    #[test]
+    fn repair_registry_stops_repeated_observations_for_each_provider_context() {
+        for provider in ["fixture.alpha", "fixture.beta"] {
+            let workspace = tempfile::tempdir().unwrap();
+            fs::write(workspace.path().join("cause.rs"), "fn cause() {}\n").unwrap();
+            let evidence = Arc::new(Mutex::new(RepairEvidenceProgress::new()));
+            let registry = build_repair_tool_registry(
+                None,
+                true,
+                Some(RepairCommandProgress {
+                    heartbeat: Arc::new(Mutex::new(Instant::now())),
+                    activity: None,
+                    evidence: Some(Arc::clone(&evidence)),
+                }),
+            );
+            let mut context = repair_command_test_context(workspace.path());
+            context.provider_id = vesper_domain::ProviderId::new(provider).unwrap();
+            let call = vesper_domain::ToolCall {
+                id: vesper_domain::ToolCallId::new("read-cause").unwrap(),
+                tool_id: vesper_domain::ToolId::new("read_file").unwrap(),
+                arguments: serde_json::json!({"path": "cause.rs"}),
+                extensions: Default::default(),
+            };
+            let runtime = tokio::runtime::Runtime::new().unwrap();
+            for _ in 0..7 {
+                runtime.block_on(registry.execute(&call, &context)).unwrap();
+            }
+            let error = runtime
+                .block_on(registry.execute(&call, &context))
+                .unwrap_err();
+            assert!(
+                error
+                    .to_string()
+                    .contains("six actions without new evidence")
+            );
+            assert_eq!(evidence.lock().unwrap().stagnant_actions, 6);
+            assert_eq!(
+                fs::read_to_string(workspace.path().join("cause.rs")).unwrap(),
+                "fn cause() {}\n"
+            );
+        }
+    }
+
+    #[test]
+    fn repair_dispatch_budget_survives_restart_without_a_focused_proof() {
+        let root = tempfile::tempdir().unwrap();
+        let ledger = ReleaseLedger::open(root.path().to_path_buf(), "fixture").unwrap();
+        let mut record =
+            crate::release_recovery::start_release("fixture", "patch", "main", &"a".repeat(40))
+                .unwrap();
+        let families = BTreeSet::from(["workflow:source-regression".into()]);
+        reserve_repair_dispatch(&mut record, &families, &ledger).unwrap();
+        let mut restored = ledger.load().unwrap().unwrap();
+        assert!(restored.repair_attempts.is_empty());
+        reserve_repair_dispatch(&mut restored, &families, &ledger).unwrap();
+        let mut restored = ledger.load().unwrap().unwrap();
+        let before = fs::read_dir(root.path())
+            .unwrap()
+            .filter_map(Result::ok)
+            .find(|entry| {
+                entry
+                    .path()
+                    .extension()
+                    .is_some_and(|extension| extension == "json")
+            })
+            .map(|entry| fs::read(entry.path()).unwrap())
+            .unwrap();
+        assert!(matches!(
+            reserve_repair_dispatch(&mut restored, &families, &ledger),
+            Err(RrcError::RepairBudgetExhausted(_))
+        ));
+        assert!(restored.repair_attempts.is_empty());
+        assert_eq!(restored.retry_budget.full_gate_used, 0);
+        assert_eq!(
+            restored
+                .mutation
+                .repair_admissions
+                .values()
+                .copied()
+                .collect::<Vec<_>>(),
+            vec![2]
+        );
+        assert_eq!(
+            fs::read_dir(root.path())
+                .unwrap()
+                .filter_map(Result::ok)
+                .find(|entry| entry
+                    .path()
+                    .extension()
+                    .is_some_and(|extension| extension == "json"))
+                .map(|entry| fs::read(entry.path()).unwrap())
+                .unwrap(),
+            before
+        );
+    }
+
+    #[test]
+    fn repair_evidence_deadline_and_native_verification_are_distinct() {
+        let mut evidence = RepairEvidenceProgress::new();
+        let inactive = crate::release_recovery::STAGNATION_TIME_LIMIT;
+        assert!(matches!(
+            evidence.watchdog_error_with_inactivity(inactive),
+            Some(RrcError::WatchdogStalled { .. })
+        ));
+        evidence.verification_active = 1;
+        assert!(evidence.watchdog_error_with_inactivity(inactive).is_none());
+        evidence.stagnant_actions = crate::release_recovery::STAGNATION_ACTION_LIMIT;
+        assert!(evidence.watchdog_error().is_some());
+        let shared = Arc::new(Mutex::new(evidence));
+        drop(RepairVerificationActivity(Some(Arc::clone(&shared))));
+        assert_eq!(shared.lock().unwrap().verification_active, 0);
     }
 
     #[test]
@@ -6973,6 +7533,7 @@ fn actual_regression() {
             Some(RepairCommandProgress {
                 heartbeat: Arc::clone(&heartbeat),
                 activity: Some(Arc::clone(&activity)),
+                evidence: None,
             }),
         );
         let call = repair_command_test_call("cargo test --offline actual_regression -- --exact");
@@ -7580,6 +8141,53 @@ struct RepairVerification<'a> {
     verify: &'a dyn Fn(&NativeReleaseExecutor) -> Result<(), RrcError>,
 }
 
+fn repair_admission_counts(
+    record: &ReleaseRecoveryRecord,
+    families: &BTreeSet<String>,
+) -> Result<Vec<(String, u8)>, RrcError> {
+    families
+        .iter()
+        .map(|family| {
+            let key = digest(family.as_bytes());
+            let observed = u8::try_from(
+                record
+                    .repair_attempts
+                    .iter()
+                    .filter(|attempt| &attempt.causal_family == family)
+                    .count(),
+            )
+            .unwrap_or(u8::MAX);
+            let used = record
+                .mutation
+                .repair_admissions
+                .get(&key)
+                .copied()
+                .unwrap_or(0)
+                .max(observed);
+            if used >= record.retry_budget.repair_attempt_limit_per_family {
+                return Err(RrcError::RepairBudgetExhausted(family.clone()));
+            }
+            Ok((key, used.saturating_add(1)))
+        })
+        .collect()
+}
+
+fn reserve_repair_dispatch(
+    record: &mut ReleaseRecoveryRecord,
+    families: &BTreeSet<String>,
+    ledger: &ReleaseLedger,
+) -> Result<(), RrcError> {
+    let reservations = repair_admission_counts(record, families)?;
+    let previous = record.mutation.repair_admissions.clone();
+    record.mutation.repair_admissions.extend(reservations);
+    record.updated_at = Utc::now();
+    if let Err(error) = ledger.save(record) {
+        record.mutation.repair_admissions = previous;
+        return Err(error);
+    }
+    Ok(())
+}
+
 fn run_bounded_repair_agent_with_verification(
     workspace: &Path,
     record: &mut ReleaseRecoveryRecord,
@@ -7624,6 +8232,11 @@ fn run_bounded_repair_agent_with_verification(
             "full-gate budget exhausted; further repair promotion forbidden".into(),
         ));
     }
+    let families = failures
+        .iter()
+        .map(|failure| format!("{}:{}", failure.workflow_name, failure.job_name))
+        .collect::<BTreeSet<_>>();
+    repair_admission_counts(record, &families)?;
     let base = record
         .active_commit()
         .map(str::to_owned)
@@ -7695,18 +8308,6 @@ fn run_bounded_repair_agent_with_verification(
     }
     let baseline_tree = repair_executor.checked("git", &["write-tree"])?;
     let family = format!("{}:{}", failure.workflow_name, failure.job_name);
-    for admitted in &failures {
-        let family = format!("{}:{}", admitted.workflow_name, admitted.job_name);
-        if record
-            .repair_attempts
-            .iter()
-            .filter(|repair| repair.causal_family == family)
-            .count()
-            >= usize::from(record.retry_budget.repair_attempt_limit_per_family)
-        {
-            return Err(RrcError::RepairBudgetExhausted(family));
-        }
-    }
     let clustered_evidence = failures
         .iter()
         .enumerate()
@@ -7733,8 +8334,28 @@ fn run_bounded_repair_agent_with_verification(
         failures.len(),
         clustered_evidence,
     );
+    let prior_attempts = record
+        .repair_attempts
+        .iter()
+        .filter(|attempt| families.contains(&attempt.causal_family))
+        .map(|attempt| {
+            format!(
+                "family={} hypothesis={} focused_status={:?} proof={}",
+                attempt.causal_family,
+                attempt.hypothesis,
+                attempt.focused_status,
+                attempt.focused_proof,
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    let prompt = format!(
+        "{prompt}\n<untrusted-prior-repair-evidence>\n{}\n</untrusted-prior-repair-evidence>\nDo not repeat a disproven hypothesis or count prior progress as current proof.",
+        redact_secrets(&prior_attempts)
+    );
     let runtime_cancel = Arc::new(vesper_runtime::RuntimeCancellation::new());
     let heartbeat = Arc::new(Mutex::new(Instant::now()));
+    let evidence = Arc::new(Mutex::new(RepairEvidenceProgress::new()));
     let monitored_factory = factory
         .clone()
         .with_progress(Arc::new(RepairHeartbeatProgress {
@@ -7745,6 +8366,7 @@ fn run_bounded_repair_agent_with_verification(
         .enable_all()
         .build()
         .map_err(|error| RrcError::Invalid(format!("repair runtime failed: {error}")))?;
+    reserve_repair_dispatch(record, &families, ledger)?;
     let repair_started = Instant::now();
     let turn = runtime.block_on(async {
         let tools = match verification.governor.clone() {
@@ -7753,6 +8375,7 @@ fn run_bounded_repair_agent_with_verification(
                 false,
                 Some(RepairCommandProgress {
                     heartbeat: Arc::clone(&heartbeat),
+                    evidence: Some(Arc::clone(&evidence)),
                     activity: active_workers().lock().ok().and_then(|workers| {
                         workers
                             .get(&record.repo_identity)
@@ -7764,7 +8387,15 @@ fn run_bounded_repair_agent_with_verification(
                 // The substituted fixture-wide gate port is test-only.
                 #[cfg(test)]
                 {
-                    repair_tool_registry()
+                    build_repair_tool_registry(
+                        None,
+                        true,
+                        Some(RepairCommandProgress {
+                            heartbeat: Arc::clone(&heartbeat),
+                            activity: None,
+                            evidence: Some(Arc::clone(&evidence)),
+                        }),
+                    )
                 }
                 #[cfg(not(test))]
                 {
@@ -7791,7 +8422,7 @@ fn run_bounded_repair_agent_with_verification(
                         cancelled.load(Ordering::Acquire),
                         last_progress.elapsed(),
                         REPAIR_HEARTBEAT_TIMEOUT,
-                    ) {
+                    ).or_else(|| evidence.lock().ok().and_then(|p| p.watchdog_error())) {
                         runtime_cancel.cancel();
                         let _ = tokio::time::timeout(REPAIR_CANCEL_GRACE, &mut turn).await;
                         break Err(error);
@@ -7807,6 +8438,11 @@ fn run_bounded_repair_agent_with_verification(
     record.updated_at = Utc::now();
     ledger.save(record)?;
     let (outcome, history) = turn?;
+    // A provider can finish between watchdog ticks. Completion prose cannot
+    // bypass the evidence limit reached by its last repeated tool action.
+    if let Some(error) = evidence.lock().ok().and_then(|p| p.watchdog_error()) {
+        return Err(error);
+    }
     if cancelled.load(Ordering::Acquire) {
         return Err(RrcError::Cancelled);
     }
@@ -8024,6 +8660,7 @@ fn repair_tool_registry_with_governor(
 struct RepairCommandProgress {
     heartbeat: Arc<Mutex<Instant>>,
     activity: Option<Arc<Mutex<ReleaseWorkerActivity>>>,
+    evidence: Option<Arc<Mutex<RepairEvidenceProgress>>>,
 }
 
 fn build_repair_tool_registry(
@@ -8043,6 +8680,41 @@ fn build_repair_tool_registry(
                 .definitions_for(vesper_domain::SessionOperatingMode::Code)
         }
         fn execute<'a>(
+            &'a self,
+            call: &'a vesper_domain::ToolCall,
+            context: &'a vesper_agent::ToolContext,
+        ) -> vesper_agent::ToolFuture<'a, Result<vesper_agent::ToolResult, vesper_agent::ToolError>>
+        {
+            Box::pin(async move {
+                let evidence = self.progress.as_ref().and_then(|p| p.evidence.clone());
+                if let Some(evidence) = &evidence
+                    && let Some(error) = evidence.lock().ok().and_then(|p| p.watchdog_error())
+                {
+                    return Err(vesper_agent::ToolError::Failed(error.to_string()));
+                }
+                let governed_verification =
+                    call.tool_id.as_str() == "run_command" && !self.fixture_commands;
+                if governed_verification
+                    && let Some(evidence) = &evidence
+                    && let Ok(mut observed) = evidence.lock()
+                {
+                    observed.verification_active = observed.verification_active.saturating_add(1);
+                }
+                let _activity = RepairVerificationActivity(
+                    governed_verification.then(|| evidence.clone()).flatten(),
+                );
+                let result = self.execute_checked(call, context).await;
+                if let Some(evidence) = &evidence
+                    && let Ok(mut observed) = evidence.lock()
+                {
+                    observed.observe(call, &result);
+                }
+                result
+            })
+        }
+    }
+    impl RepairTools {
+        fn execute_checked<'a>(
             &'a self,
             call: &'a vesper_domain::ToolCall,
             context: &'a vesper_agent::ToolContext,
@@ -8372,6 +9044,20 @@ fn credible_focused_command(command: &str) -> bool {
 }
 
 fn release_stage_commands(record: &ReleaseRecoveryRecord, repository: &str) -> Vec<String> {
+    if record.state == ReleaseRecoveryState::Complete
+        && record.mutation.publication_verified
+        && record.mutation.closeout_receipt.is_none()
+    {
+        let mut commands = vec!["write local release execution report and evidence links".into()];
+        if let Some(target) = &record.mutation.closeout_registry {
+            commands.push(format!(
+                "gh api --method PUT {} branch={}",
+                target.endpoint(),
+                target.branch
+            ));
+        }
+        return commands;
+    }
     match record.state {
         ReleaseRecoveryState::ClassifyingFailure
             if record
@@ -8450,6 +9136,7 @@ fn authorize_controller_step(
             ReleaseRecoveryState::LocalVerification => "version preparation, verification or candidate commit",
             ReleaseRecoveryState::CandidateReady | ReleaseRecoveryState::RetryAdmissible => "push the exact admitted candidate to origin/main",
             ReleaseRecoveryState::RemoteGatesGreen => "create and push immutable release tag; this starts publication",
+            ReleaseRecoveryState::Complete => "update the existing registry PR branch and write local execution report/evidence links",
             ReleaseRecoveryState::ClassifyingFailure if record.failures.last().is_some_and(|failure| failure.class.infrastructure_like()) => "rerun the exact admitted failed infrastructure gates on GitHub",
             _ => "bounded focused repair, local checks and verified commit promotion",
         }}),
@@ -8572,6 +9259,12 @@ impl Drop for CheckpointCancellationWatcher {
 fn release_stage_has_side_effects(record: &ReleaseRecoveryRecord) -> bool {
     use crate::release_recovery::{EvidenceConfidence, ReleaseDirective};
     use ReleaseRecoveryState as S;
+    if record.state == ReleaseRecoveryState::Complete
+        && record.mutation.publication_verified
+        && record.mutation.closeout_receipt.is_none()
+    {
+        return true;
+    }
     match record.state {
         S::ClassifyingFailure => {
             (match crate::release_recovery::next_directive(record, 0) {

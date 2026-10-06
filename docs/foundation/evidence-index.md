@@ -1,5 +1,9 @@
 # Foundation Evidence Index
 
+## RRC autonomy and PRD audit (2026-10-06)
+
+- [Audit report](2026-10-06-rrc-autonomy-and-prd-audit.md) records the expanded autonomous, provider-neutral repair, confirmed polling/stagnation/completion gaps, current verification and pending exact-commit release boundary.
+
 ## RRC version-preparation resource recovery (2026-10-06)
 
 - [Repair report](2026-10-06-rrc-version-preparation-resource-repair.md) records the stuck unpublished 0.24.6 epoch,
@@ -2150,3 +2154,7 @@ v0.21.6 release notes own the final run links, image IDs and local-install recei
 - [Execution report](mcp-session-lifecycle-repair.md): conversation-owned stdio,
   fault quarantine, host gateway wiring and isolated real-browser acceptance.
   Source repair only; installed-binary and cross-platform acceptance remain separate.
+
+- [RRC automatic closeout repair](2026-10-06-rrc-automatic-closeout-repair.md) — publication checkpoint continuation, existing registry PR and final receipt delivery.
+
+- [Release v0.24.6 native closeout](release-v0.24.6-closeout.md) — current-main green, same registry PR updated and durable completion receipt.

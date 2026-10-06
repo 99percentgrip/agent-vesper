@@ -1,15 +1,14 @@
 {
   "version": 1,
-  "objective_id": "openai-catalog-gpt-6-1-sol-20261006",
-  "objective_label": "OpenAI coding-model catalog audit and GPT-6.1 Sol support",
-  "variant_label": "Verified provider-owned catalog, account discovery, and both-host integration",
-  "variant_id": "openai-catalog-gpt-6-1-sol-verified-source-20261006",
+  "objective_id": "rrc-autonomy-prd-audit-20261006",
+  "objective_label": "RRC autonomous recovery and completion repair",
+  "variant_label": "Shared provider-neutral controller, both-host ownership and persisted repair watchdog",
+  "variant_id": "rrc-autonomy-current-source-20261006",
   "canonical_release_source": true,
   "supersedes": [],
-  "completed_at": "2026-10-06T11:22:17+00:00",
+  "completed_at": "2026-10-06T15:44:33.186041+00:00",
   "evidence_reports": [
-    "docs/foundation/2026-10-06-openai-catalog-audit-and-gpt-6-1-sol.md",
-    "docs/foundation/2026-10-06-openai-catalog-prerelease-review-and-repair.md",
-    "docs/foundation/2026-10-06-rrc-version-preparation-resource-repair.md"
+    "docs/foundation/2026-10-06-rrc-autonomy-and-prd-audit.md",
+    "docs/foundation/2026-10-06-rrc-automatic-closeout-repair.md"
   ]
 }
