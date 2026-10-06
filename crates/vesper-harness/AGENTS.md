@@ -196,6 +196,11 @@ Z.ai and Playwright MCP server descriptors.
   progress headline after worker exit or restart. `Active` stores the owner pid.
   A missing or dead owner becomes `OwnerExited` and stays recoverable; it is not
   a source failure and must not be rendered as a live run. Version preparation
+  handles governor rejection through the same persisted `ResourceDeferred` path as
+  local gates: restore version bytes before returning, settle the preparation journal,
+  retain the pending gate/reason and watch for three safe observations before retry.
+  Resource errors escaping a worker retain redacted diagnostics without source
+  failure evidence or clearing an uncertain mutation journal. Version preparation
   persists the resolved release version and a visible `version-preparation` gate
   before the expensive workspace check. Scheduling checkpoints (worker heartbeats
   and gate intent saved before a cargo child is spawned) rename into place and

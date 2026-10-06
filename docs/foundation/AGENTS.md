@@ -6,6 +6,10 @@ Own evidence and decisions that close the pre-workspace blockers identified by r
 
 ## Ownership
 
+- `2026-10-06-rrc-version-preparation-resource-repair.md` owns the production stalled-version-preparation observation,
+  discarded resource error, shared governor deferral/journal repair, native rollback
+  and recovery regressions, and the unchanged disk-capacity/publication boundaries.
+
 - `2026-10-06-openai-catalog-audit-and-gpt-6-1-sol.md` owns the current
   primary-source OpenAI catalog audit, GPT-6.1 Sol/GPT-6 Sol/Luna capability
   additions, subscription discovery floor, both-host hermetic evidence, retained

@@ -1094,7 +1094,12 @@ reset, stashed or mutated by this process.
 
 ## 37. Current Implementation Status
 
-**Complete at the mandatory RRC PRD scope: production `v0.24.5` is published from `7e837db36f4090e566ac1a7461b5b103b8649368`. All eight native local gates, eleven exact-source prerequisite jobs and seven producing jobs passed. Native closeout reached `Complete`; Registry PR #539 was updated in place. Scope limits below remain explicit.**
+**Current full-parity completion is withdrawn: the subsequent 0.24.6 attempt
+stalled during version preparation with 0/8 gates, an exited owner and a discarded
+resource error. The published v0.24.5 remains immutable historical evidence.
+[The resource-recovery repair](foundation/2026-10-06-rrc-version-preparation-resource-repair.md) fixes the reproduced
+local defect; integration, current native progression and exact-source hosted
+publication remain pending.**
 
 [The production release report](foundation/2026-10-06-rrc-parity-production-release.md)
 owns reconciliation with the newer production source, exact-source local verification,
@@ -1111,8 +1116,8 @@ changed production code. Earlier execution reports retain their original scope a
 unexecuted items.
 
 The release preserves the OpenAI device-sign-in URL/browser-launch repair together
-with the later background startup discovery fix. Actual browser/account completion
-is unexecuted; it is separate from deterministic release recovery acceptance.
+with the later background startup discovery fix. Alex confirmed working OpenAI authentication in manual testing; that confirmation
+does not establish deterministic release recovery acceptance.
 Production publication used standard public GitHub Actions. Alex's installed
 application is outside this release authorization.
 

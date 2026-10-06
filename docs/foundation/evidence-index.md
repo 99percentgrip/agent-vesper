@@ -1,5 +1,14 @@
 # Foundation Evidence Index
 
+## RRC version-preparation resource recovery (2026-10-06)
+
+- [Repair report](2026-10-06-rrc-version-preparation-resource-repair.md) records the stuck unpublished 0.24.6 epoch,
+  missing version-preparation deferral, discarded resource diagnostics, current
+  filesystem rejection, red/green recovery and native rollback proof. The repair
+  is local; the active process, hosted release and full PRD parity remain unverified.
+  [Observation](2026-10-06-rrc-version-preparation-resource-repair-evidence.json) and
+  [receipts](2026-10-06-rrc-version-preparation-resource-repair-receipts.tar.gz) retain exact scope and source hashes.
+
 ## OpenAI catalog audit and GPT-6.1 Sol (2026-10-06)
 
 - [Execution report](2026-10-06-openai-catalog-audit-and-gpt-6-1-sol.md)

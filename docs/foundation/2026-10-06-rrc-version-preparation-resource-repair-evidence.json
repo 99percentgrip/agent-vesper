@@ -1,0 +1,62 @@
+{
+  "observed_at": "2026-10-06T11:46:49.180892+00:00",
+  "parent_commit": "7a8de2f57d3199f9cf1858b4dabfcd9dbc083161",
+  "epoch_id": "20261006T112521.786854617Z-7a8de2f57d31",
+  "state": "local_verification",
+  "liveness": {
+    "state": "owner_exited",
+    "operation": "preparing release target",
+    "detail": "controller owner is gone; epoch remains recoverable",
+    "observed_at": "2026-10-06T11:26:07.781066418Z",
+    "owner_pid": 3635774
+  },
+  "in_flight_operation": "LocalVerification",
+  "version_before": "0.24.5",
+  "version_after": null,
+  "candidate_pushed": false,
+  "tag_pushed": false,
+  "publication_verified": false,
+  "filesystem": {
+    "available_bytes": 103004336128,
+    "total_bytes": 1021431513088,
+    "policy_reserve_bytes": 102143151308,
+    "policy_expected_growth_bytes": 32212254720
+  },
+  "limitation": "Original resource error was discarded. Current filesystem rejection explains a reproducible governor block, not a recovered original error receipt.",
+  "source_sha256": {
+    "crates/vesper-harness/src/release_executor.rs": "8b87d59a277cba2cdc20adfadc0ace4336033d69887218dff6e132b2dab1e5ad",
+    "crates/vesper-harness/AGENTS.md": "4f56a2525b164da1c44f9c99e7115ebca52f979f4abe3bc6ddc2d7c5ded8bd4b"
+  },
+  "receipt_sha256": {
+    "vesper-rrc-version-preparation-red.log": "acb27f46a86e6eb8b69a83a4541475732a3375cf397039dbf9a2719dbe4ede68",
+    "vesper-rrc-version-preparation-green.log": "ff68c6be4ca134977eed636e36cb0784857d343c53e85753dafa932ec28eed9f",
+    "vesper-rrc-version-preparation-executor-final.log": "2ac5bed38ebb1dbe71fb8567a15c3f3a3a1116fdcec956c24120ade9662b7ebf",
+    "vesper-rrc-version-preparation-clippy.log": "abc8f90a09d581620fca7ff7436f94bd522b3a1184c196b47ce597e0560a7112"
+  },
+  "results": {
+    "executed_red_regression": {
+      "exit": 101,
+      "passed": 0,
+      "failed": 1
+    },
+    "executed_green_regression": {
+      "exit": 0,
+      "passed": 1,
+      "failed": 0
+    },
+    "release_executor_suite": {
+      "exit": 0,
+      "passed": 62,
+      "failed": 0
+    },
+    "clippy": {
+      "exit": 0
+    },
+    "format": {
+      "exit": 0
+    },
+    "whitespace": {
+      "exit": 0
+    }
+  }
+}
