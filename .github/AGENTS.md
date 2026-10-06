@@ -182,3 +182,12 @@ migration gates and disposable platform assumptions on hosts unavailable locally
   the repo `skills/` seed library seeded by the installers into
   `~/.agent-vesper/memory/`; the registry continues
   to launch only the ACP binary from the shared bundle.
+
+## Temporary Windows SSE diagnostic scope
+
+- On `verify/windows-sse-20261006` in the separate public acceptance repository,
+  `release-recovery-lifecycle-acceptance.yml` is a non-publishing focused Windows/Linux
+  probe that checks out exact source `e425b5b5e9670e05221b7a09e633d1c12122f486`.
+  It executes all fifteen HTTP boundary cases plus ten independent repetitions
+  of oversized rejection and three-byte UTF-8 fragmentation. This temporary
+  diagnostic does not replace the unchanged production release prerequisites.

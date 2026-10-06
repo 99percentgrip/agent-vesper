@@ -1,97 +1,40 @@
-name: rrc-host-lifecycle-acceptance
-run-name: rrc-host-lifecycle-${{ inputs.candidate_ref }}
-
+name: xai-sse-focused-native-acceptance
 on:
   workflow_dispatch:
-    inputs:
-      candidate_ref:
-        description: Exact candidate commit SHA in this controlled public acceptance repository
-        required: true
-        type: string
-
 permissions:
   contents: read
-
 env:
   CARGO_INCREMENTAL: "0"
-  CARGO_PROFILE_DEV_DEBUG: "line-tables-only"
-  CARGO_PROFILE_TEST_DEBUG: "line-tables-only"
-
+  CARGO_PROFILE_DEV_DEBUG: line-tables-only
+  CARGO_PROFILE_TEST_DEBUG: line-tables-only
 jobs:
-  lifecycle:
-    name: ${{ matrix.target }}
+  boundary:
+    name: ${{ matrix.runner }}
     runs-on: ${{ matrix.runner }}
-    timeout-minutes: 45
+    timeout-minutes: 25
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - target: linux-x86_64
-            runner: ubuntu-24.04
-          - target: linux-arm64
-            runner: ubuntu-24.04-arm
-          - target: macos-intel
-            runner: macos-15-intel
-          - target: macos-apple-silicon
-            runner: macos-15
-          - target: windows-x86_64
-            runner: windows-2025
+        runner: [windows-2025, ubuntu-24.04]
     steps:
-      - name: Reject non-SHA candidate input
-        shell: bash
-        env:
-          CANDIDATE_REF: ${{ inputs.candidate_ref }}
-        run: |
-          if ! printf '%s' "${CANDIDATE_REF}" | grep -Eq '^[0-9a-f]{40}$'; then
-            echo 'candidate_ref must be an exact lowercase 40-character commit SHA' >&2
-            exit 2
-          fi
       - uses: actions/checkout@v6
         with:
-          ref: ${{ inputs.candidate_ref }}
-          persist-credentials: false
-      - name: Prepare native Rust storage
-        if: runner.os == 'Linux'
+          ref: e425b5b5e9670e05221b7a09e633d1c12122f486
+      - name: Verify exact correction source
         shell: bash
-        run: sh .github/prepare-rust-runner.sh
-      - name: Install pinned Rust toolchain
+        run: test "$(git rev-parse HEAD)" = e425b5b5e9670e05221b7a09e633d1c12122f486
+      - name: Install pinned Rust
         shell: bash
         run: rustup toolchain install 1.95.0 --profile minimal
-      - name: Prove native completion-assurance linking after workspace and docs graphs
-        if: runner.os == 'Linux'
+      - name: Run HTTP boundary suite
         shell: bash
-        timeout-minutes: 30
+        run: cargo test --locked -p vesper-provider-xai --lib --all-features tests::http:: -- --test-threads=1 --nocapture
+      - name: Repeat oversized rejection and fragmented UTF-8
+        shell: bash
         run: |
-          cargo test --locked --workspace --all-features --no-run
-          cargo test --locked --workspace --doc
-          cargo xtask acceptance
-          df -h / "$GITHUB_WORKSPACE"
-          du -sh target
-      - name: Run native RRC controller, adapter, persistence and process regressions
-        shell: bash
-        run: cargo test --locked -p vesper-harness --lib --all-features release_ -- --test-threads=1 --nocapture
-      - name: Run typed repair dispatch and retry acceptance
-        shell: bash
-        run: cargo test --locked -p vesper-harness --all-features --test release_repair_dispatch --test release_repair_retry -- --test-threads=1
-
-      - name: Run the isolated synthetic ACP provider lifecycle
-        shell: bash
-        timeout-minutes: 5
-        run: cargo test --locked -p agent-vesper-acp --all-features --test provider_selection -- --nocapture
-
-      - name: Run focused native command settlement
-        shell: bash
-        timeout-minutes: 5
-        run: cargo test --locked -p vesper-agent --test command_settlement -- --test-threads=1 --nocapture
-      - name: Repeat the Windows cancellation regression
-        if: runner.os == 'Windows'
-        shell: bash
-        timeout-minutes: 5
-        run: |
-          for attempt in 1 2 3; do
-            cargo test --locked -p vesper-agent --test command_settlement cancellation_preserves_partial_output_and_next_command_runs -- --exact --nocapture
+          set -euo pipefail
+          for iteration in $(seq 1 10); do
+            echo "Native boundary repetition ${iteration}"
+            cargo test --locked -p vesper-provider-xai --lib --all-features tests::http::oversized_sse_event_settles_as_protocol_error -- --exact --nocapture
+            cargo test --locked -p vesper-provider-xai --lib --all-features tests::http::fragmented_utf8_sse_settles_once -- --exact --nocapture
           done
-      - name: Verify voice pack fixture isolation
-        shell: bash
-        timeout-minutes: 10
-        run: cargo test --locked -p agent-vesper-tui --all-features --test r3_voice_pack -- --nocapture
