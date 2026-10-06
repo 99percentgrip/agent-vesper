@@ -71,7 +71,7 @@ dependencies = [
 
 [[package]]
 name = "agent-vesper-acp"
-version = "0.24.6"
+version = "0.24.7"
 dependencies = [
  "base64",
  "futures-util",
@@ -104,7 +104,7 @@ dependencies = [
 
 [[package]]
 name = "agent-vesper-tui"
-version = "0.24.6"
+version = "0.24.7"
 dependencies = [
  "arboard",
  "base64",
@@ -4176,7 +4176,7 @@ checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
 
 [[package]]
 name = "vesper-acp"
-version = "0.24.6"
+version = "0.24.7"
 dependencies = [
  "agent-client-protocol",
  "serde",
@@ -4191,7 +4191,7 @@ dependencies = [
 
 [[package]]
 name = "vesper-agent"
-version = "0.24.6"
+version = "0.24.7"
 dependencies = [
  "base64",
  "command-group",
@@ -4217,7 +4217,7 @@ dependencies = [
 
 [[package]]
 name = "vesper-auth"
-version = "0.24.6"
+version = "0.24.7"
 dependencies = [
  "keyring",
  "serde",
@@ -4230,7 +4230,7 @@ dependencies = [
 
 [[package]]
 name = "vesper-bridge"
-version = "0.24.6"
+version = "0.24.7"
 dependencies = [
  "serde",
  "serde_json",
@@ -4241,7 +4241,7 @@ dependencies = [
 
 [[package]]
 name = "vesper-checkpoints"
-version = "0.24.6"
+version = "0.24.7"
 dependencies = [
  "serde",
  "serde_json",
@@ -4254,7 +4254,7 @@ dependencies = [
 
 [[package]]
 name = "vesper-cognition"
-version = "0.24.6"
+version = "0.24.7"
 dependencies = [
  "chrono",
  "md-5",
@@ -4272,7 +4272,7 @@ dependencies = [
 
 [[package]]
 name = "vesper-config"
-version = "0.24.6"
+version = "0.24.7"
 dependencies = [
  "serde",
  "serde_json",
@@ -4284,7 +4284,7 @@ dependencies = [
 
 [[package]]
 name = "vesper-domain"
-version = "0.24.6"
+version = "0.24.7"
 dependencies = [
  "serde",
  "serde_json",
@@ -4293,7 +4293,7 @@ dependencies = [
 
 [[package]]
 name = "vesper-harness"
-version = "0.24.6"
+version = "0.24.7"
 dependencies = [
  "base64",
  "chrono",
@@ -4329,7 +4329,7 @@ dependencies = [
 
 [[package]]
 name = "vesper-mcp"
-version = "0.24.6"
+version = "0.24.7"
 dependencies = [
  "ed25519-dalek",
  "rand 0.8.7",
@@ -4345,7 +4345,7 @@ dependencies = [
 
 [[package]]
 name = "vesper-memory"
-version = "0.24.6"
+version = "0.24.7"
 dependencies = [
  "rust-stemmers",
  "serde",
@@ -4359,7 +4359,7 @@ dependencies = [
 
 [[package]]
 name = "vesper-observability"
-version = "0.24.6"
+version = "0.24.7"
 dependencies = [
  "serde",
  "serde_json",
@@ -4369,7 +4369,7 @@ dependencies = [
 
 [[package]]
 name = "vesper-policy"
-version = "0.24.6"
+version = "0.24.7"
 dependencies = [
  "regex",
  "serde",
@@ -4379,7 +4379,7 @@ dependencies = [
 
 [[package]]
 name = "vesper-provider"
-version = "0.24.6"
+version = "0.24.7"
 dependencies = [
  "chrono",
  "futures-core",
@@ -4391,7 +4391,7 @@ dependencies = [
 
 [[package]]
 name = "vesper-provider-glm"
-version = "0.24.6"
+version = "0.24.7"
 dependencies = [
  "futures-core",
  "futures-util",
@@ -4413,7 +4413,7 @@ dependencies = [
 
 [[package]]
 name = "vesper-provider-openai"
-version = "0.24.6"
+version = "0.24.7"
 dependencies = [
  "base64",
  "fs2",
@@ -4435,7 +4435,7 @@ dependencies = [
 
 [[package]]
 name = "vesper-provider-synthetic"
-version = "0.24.6"
+version = "0.24.7"
 dependencies = [
  "futures-core",
  "futures-util",
@@ -4447,7 +4447,7 @@ dependencies = [
 
 [[package]]
 name = "vesper-provider-xai"
-version = "0.24.6"
+version = "0.24.7"
 dependencies = [
  "base64",
  "fs2",
@@ -4473,7 +4473,7 @@ dependencies = [
 
 [[package]]
 name = "vesper-runtime"
-version = "0.24.6"
+version = "0.24.7"
 dependencies = [
  "futures-util",
  "serde",
@@ -4489,7 +4489,7 @@ dependencies = [
 
 [[package]]
 name = "vesper-sandbox"
-version = "0.24.6"
+version = "0.24.7"
 dependencies = [
  "libc",
  "tokio",
@@ -4498,7 +4498,7 @@ dependencies = [
 
 [[package]]
 name = "vesper-security"
-version = "0.24.6"
+version = "0.24.7"
 dependencies = [
  "serde",
  "serde_json",
@@ -4510,7 +4510,7 @@ dependencies = [
 
 [[package]]
 name = "vesper-sessions"
-version = "0.24.6"
+version = "0.24.7"
 dependencies = [
  "serde",
  "serde_json",
@@ -4523,7 +4523,7 @@ dependencies = [
 
 [[package]]
 name = "vesper-swarm"
-version = "0.24.6"
+version = "0.24.7"
 dependencies = [
  "arc-swap",
  "futures-util",
@@ -4537,7 +4537,7 @@ dependencies = [
 
 [[package]]
 name = "vesper-testkit"
-version = "0.24.6"
+version = "0.24.7"
 dependencies = [
  "futures-core",
  "jsonschema",
@@ -4555,7 +4555,7 @@ dependencies = [
 
 [[package]]
 name = "vesper-voice"
-version = "0.24.6"
+version = "0.24.7"
 dependencies = [
  "futures-core",
  "futures-util",
@@ -4570,7 +4570,7 @@ dependencies = [
 
 [[package]]
 name = "vesper-voice-kokoro"
-version = "0.24.6"
+version = "0.24.7"
 dependencies = [
  "futures-core",
  "futures-util",
@@ -4588,7 +4588,7 @@ dependencies = [
 
 [[package]]
 name = "vesper-web"
-version = "0.24.6"
+version = "0.24.7"
 dependencies = [
  "quick-xml",
  "rust-stemmers",
@@ -4600,7 +4600,7 @@ dependencies = [
 
 [[package]]
 name = "vesper-web-fetch"
-version = "0.24.6"
+version = "0.24.7"
 dependencies = [
  "flate2",
  "reqwest",
@@ -5070,7 +5070,7 @@ checksum = "ea6fc2961e4ef194dcbfe56bb845534d0dc8098940c7e5c012a258bfec6701bd"
 
 [[package]]
 name = "xtask"
-version = "0.24.6"
+version = "0.24.7"
 dependencies = [
  "clap",
  "serde",
