@@ -4,7 +4,8 @@
 
 Publish the requested patch release with the RRC parity and native OpenAI sign-in
 repairs while preserving the newer changes already committed to production.
-**In progress: native production push performed; exact-source hosted gates failed.
+**In progress: candidate `1dab7456` passed all native local steps and ten hosted jobs;
+canonical CI failed in a stale host-ledger fixture. Its focused correction passed.
 No release tag, publication or installation performed.**
 The latest public release is `v0.24.4`; production already contains the unpublished
 `0.24.5` version graph. The intended release target is `0.24.5`, subject to native
@@ -256,3 +257,62 @@ settled child. The evidence manifest binds final corrected Rust bytes and all
 preparation receipts; publication remains pending complete exact-source native and
 hosted gates. The canonical provenance marker certifies this source-integration
 work unit only, never release completion or unexecuted live-account acceptance.
+
+
+## Complete `1dab7456` matrix and native host fixture correction
+
+The registered native producer selected the strict canonical descendant and archived
+`477f9806` through native admission. Its unchanged default resource governor stopped
+only owned compilation groups under critical pressure, passively deferred and resumed
+the same epoch. All eight steps passed: version preparation, full workspace verify,
+100 exact acceptance cases, architecture, Rust 1.88, supply-chain policy, advisories
+and release binaries. Native progression pushed `1dab7456db34c95b1f3385656bbfa84301d56b06`.
+The complete four-workflow matrix settled with **10/11 successful jobs**: all five
+native platforms, MSRV, supply-chain and all three web-driver jobs passed. Canonical
+quality failed only at the subsequent native TUI/ACP observation fixture. Completion
+assurance mutations both passed before that failure.
+
+The native controller waited for all eleven jobs, captured the actual first causal
+failure and fingerprint `52210489f5afa6dd82d6545806abda9cbabab03059888d2fe8087b34b98e625b`,
+and retained unused retry budgets in `ClassifyingFailure`. Its temporary producer
+truthfully refused model repair because no active model transport was configured.
+No tag/publication was admitted. This corrective work does not claim live-model repair.
+
+`release_hosts_pty.py` used the workspace path for its seeded identity and hash,
+while both production hosts use the canonical Git common directory. The exact old
+fixture reproduced `release: no active or persisted epoch` against actual native
+release binaries. Correcting the identity exposed a second stale fixture field:
+the synthetic Published mutation omitted required `objective_evidence_reports` and
+`intended_commits` collections. Both are now explicit empty synthetic collections;
+production schema validation is unchanged. The corrected fixture passed once and
+three additional independent real TUI/ACP runs. Every pass retains partial matrix,
+no-write blocked retry, Published/main-degraded projection, cross-host cancellation,
+epoch/run/tag/assets preservation and zero provider dispatch assertions.
+
+Actual proof command: `python3 apps/agent-vesper-tui/tests/release_hosts_pty.py
+<governed-native-target>/release/agent-vesper-tui
+<governed-native-target>/release/agent-vesper-acp`. The companion manifest records
+both exact binary hashes, their verified `1dab7456` runtime source and corrected
+fixture hash. Runtime Rust bytes did not change in this correction.
+
+Fresh `1dab7456` public controlled runs executed red `37385308962`, repeated red
+`37386201129` and green `37386593835`; native incomplete-matrix handling, repeated
+fingerprint and retry refusal passed. Two initial partial probes failed by racing
+settlement/dispatch visibility. The corrected test-only observer scopes the actual
+GitHub adapter to its intended run and performs one native refresh per sample; it
+fabricates no job state or logs. Five synthetic Ubuntu labels are not native-platform
+certification. The native producer's initial temporary authorization helper also
+incorrectly required version preparation to have already resolved the version.
+It refused before Cargo/mutation. Corrected helper authorization binds the actual
+admitted `0.24.5` objective and permits a null version only during local preparation;
+natural-language admission resumed the same epoch with unchanged counters. All failed
+helper/probe receipts remain archived rather than counted as acceptance passes.
+
+[Host fixture evidence](2026-10-06-rrc-parity-production-release-host-fixture-evidence.json)
+and [receipt archive](2026-10-06-rrc-parity-production-release-host-fixture-receipts.tar.gz)
+bind 46 sanitized receipts, the complete matrix and native settled record, scoped
+controls, actual red/green host proofs, helper recovery and preserved primary checkout.
+The next clean canonical source must undergo fresh native gates, public controls and
+all hosted prerequisites. Publication/checksums/native closeout/Registry remain pending;
+Alex's installed application remains untouched. Nearest test and foundation contracts
+are updated; parent ownership boundaries and child indexes remain unchanged.

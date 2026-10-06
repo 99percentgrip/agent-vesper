@@ -1,0 +1,250 @@
+{
+  "failed_candidate_sha": "1dab7456db34c95b1f3385656bbfa84301d56b06",
+  "status": "complete eleven-job matrix: ten successes; canonical native host fixture failed; focused fixture correction passed four actual real-host runs",
+  "binding_prd_sha256": "e85011c696d769837c6ed5a83e4290e77eadc4ae27a9ea42cffe0966d37518db",
+  "archive": "2026-10-06-rrc-parity-production-release-host-fixture-receipts.tar.gz",
+  "archive_sha256": "eaafe535c05bc919c54af40e05b745761767dc93238ff8836e6d67d7ceacb471",
+  "receipts": [
+    {
+      "path": "vesper-release-1dab-complete-failed-native-epoch.json",
+      "sha256": "35dbf4e36ce47943d5f2cd7d17825463f1a2bc133766cc75112bb73ea726733e",
+      "bytes": 20877
+    },
+    {
+      "path": "vesper-release-corrective-controlled-complete.json",
+      "sha256": "f41f59aa8b55db7c69d4eb633755a55341bda374f37afd51ee64df67896bb929",
+      "bytes": 1194
+    },
+    {
+      "path": "vesper-release-corrective-controlled-green-jobs.json",
+      "sha256": "7725362a91de2d744c6752e12a37d6c9d31c1b669f421ee701aba4c878795290",
+      "bytes": 14251
+    },
+    {
+      "path": "vesper-release-corrective-controlled-green-run.json",
+      "sha256": "5da71e12a22fe95c6e99e616acdfad9a7877cd3f8d78afabb7ca8922fd69a626",
+      "bytes": 16407
+    },
+    {
+      "path": "vesper-release-corrective-controlled-green.log",
+      "sha256": "7fcdb24ec4358a6f3b036dd941957d95189777f58ef6f311cc8c22dbfdc21365",
+      "bytes": 210
+    },
+    {
+      "path": "vesper-release-corrective-controlled-partial-direct.log",
+      "sha256": "2740e468b0f3564b4564833e57efd221d755bea990a29b2b4f28021115e79fac",
+      "bytes": 285
+    },
+    {
+      "path": "vesper-release-corrective-controlled-partial-scoped.log",
+      "sha256": "89d46fe6f129397cf723c49e80790be4334a3cffc3a41149129a59f84a94a2e5",
+      "bytes": 1562
+    },
+    {
+      "path": "vesper-release-corrective-controlled-partial.log",
+      "sha256": "521c318d67da2c01935313c2cc8e5898f07ed0ca2c973257ff3c36613c835bfd",
+      "bytes": 232
+    },
+    {
+      "path": "vesper-release-corrective-controlled-red-jobs.json",
+      "sha256": "152a6d3cd1af20252d6840168bffd2b7303090ffd5d9aff210c51c21b97339e1",
+      "bytes": 14246
+    },
+    {
+      "path": "vesper-release-corrective-controlled-red-run.json",
+      "sha256": "8cabff723c21429d1c8363bf7cf8e7e68eab73aea62c58c263bc6775805e5571",
+      "bytes": 16405
+    },
+    {
+      "path": "vesper-release-corrective-controlled-red.log",
+      "sha256": "5cd2f21d44e59f7a26f2247c2f01e2343e25cf5fb8506193ef59020b8cbf9be5",
+      "bytes": 345
+    },
+    {
+      "path": "vesper-release-corrective-controlled-repeat-jobs.json",
+      "sha256": "049f1e0f6914b947dbeb42a7cd7a283e3b5c5d67ae414014f872bc52e64fefe4",
+      "bytes": 14251
+    },
+    {
+      "path": "vesper-release-corrective-controlled-repeat-run.json",
+      "sha256": "cfc537c6379a08109f1186c5f6346d45f30c405d4e4b6c4026c3869efeb6e072",
+      "bytes": 16407
+    },
+    {
+      "path": "vesper-release-corrective-controlled-repeat.log",
+      "sha256": "ce6fd7a404f3157ec5e31c2045bb1a798fbd517d74aac53864c234e357544bdf",
+      "bytes": 345
+    },
+    {
+      "path": "vesper-release-corrective-native-epoch-lineage.json",
+      "sha256": "5033862d6549985143b5a9c18b665b4f1dea4c1741a7eed9e9d244c38d0c89c0",
+      "bytes": 1121
+    },
+    {
+      "path": "vesper-release-corrective-native-linkage.json",
+      "sha256": "1509c152e30bd58a3d26f16ffe304adcc0f839536d2f77435ac46ac550c2a8cb",
+      "bytes": 3028
+    },
+    {
+      "path": "vesper-release-corrective-partial-scoped.rs",
+      "sha256": "313fdacbed3a78578a87c59e6a45aed641110979621fdfc1854e3946647d7f53",
+      "bytes": 2451
+    },
+    {
+      "path": "vesper-release-corrective-permission-resume.log",
+      "sha256": "3992f0933fff77c372d95378e95366e3195e45f9b157cfb5c3dfc7102c04fd99",
+      "bytes": 291
+    },
+    {
+      "path": "vesper-release-corrective-registered-producer-resumed.log",
+      "sha256": "dc13c1d51fad3b2bdec717688b3df991355da6f60e2dff89fd1f2ed33adfcd8c",
+      "bytes": 227549
+    },
+    {
+      "path": "vesper-release-corrective-registered-producer.log",
+      "sha256": "91ce8f16aeb13b27c9f8d32e694998a80cf78efc369910d3c3d0618f61d3f988",
+      "bytes": 1557
+    },
+    {
+      "path": "vesper-release-final-five-target-foundation-job-112030054359.log",
+      "sha256": "1ec40f84b275cb7a73f619c4b0d608b03b55441653989848fc6ae149b7c9746e",
+      "bytes": 596140
+    },
+    {
+      "path": "vesper-release-final-five-target-foundation-job-112030054543.log",
+      "sha256": "73007e9bd95ed5b4fa33f4cf3b418b78197780b27336d413b115e806b1308845",
+      "bytes": 604872
+    },
+    {
+      "path": "vesper-release-final-five-target-foundation-job-112030054555.log",
+      "sha256": "6b90fab9d304ebbd83d9015b261a759654391211ac84db064f7e63e6b789b9bf",
+      "bytes": 604509
+    },
+    {
+      "path": "vesper-release-final-five-target-foundation-job-112030054574.log",
+      "sha256": "2f6e4b9f0c0ffcdbae7dd903a5117707db53144d09bfb2a5a2f575f1ad4d65c1",
+      "bytes": 606003
+    },
+    {
+      "path": "vesper-release-final-five-target-foundation-job-112030054627.log",
+      "sha256": "d99df96574b1c08d109486f17959f9f726df484eb2b49ced7cd68518d3fc1c32",
+      "bytes": 591101
+    },
+    {
+      "path": "vesper-release-final-five-target-foundation-jobs.json",
+      "sha256": "fe61fccbd94ec79e4a5d6b400f9b322dd56a363db5a297b086d0608204d48345",
+      "bytes": 27803
+    },
+    {
+      "path": "vesper-release-final-five-target-foundation-run.json",
+      "sha256": "f35a1709c3ba62d1931a2895bc189565ceb32f52a28ec003a17790cf69805f48",
+      "bytes": 14757
+    },
+    {
+      "path": "vesper-release-final-msrv-job-112030055755.log",
+      "sha256": "8571b34a94e4b3ce93c65a0d34af0ea20d51fb2df1a1089952d30f785c8b5404",
+      "bytes": 548914
+    },
+    {
+      "path": "vesper-release-final-msrv-jobs.json",
+      "sha256": "27ea92b2d77f3b9aa26f04967257594dd74349f6014cfa0bfb938b0186fcf163",
+      "bytes": 4250
+    },
+    {
+      "path": "vesper-release-final-msrv-run.json",
+      "sha256": "049779455c67c99cd812cfb0745a7cb6062a205d64820adca564bcc7f59ae295",
+      "bytes": 14724
+    },
+    {
+      "path": "vesper-release-final-primary-preservation.json",
+      "sha256": "dfed8f5304bde3c94434c924a1353a3ec2d93c31029b7c8354e13dfe7e62f978",
+      "bytes": 301
+    },
+    {
+      "path": "vesper-release-final-production-matrix.json",
+      "sha256": "74b71a8983db649ada98b4c4e7bad95b42cec62cc197eee8a5c2f50f572e6127",
+      "bytes": 4016
+    },
+    {
+      "path": "vesper-release-final-pull-request-validation-job-112030055523.log",
+      "sha256": "86af2b32efcf7028b5d24f7d476543d88353149ab345f4e0f5464741d35076f8",
+      "bytes": 300907
+    },
+    {
+      "path": "vesper-release-final-pull-request-validation-job-112030055793.log",
+      "sha256": "ba901583ac1b11504d54bfa5c10f76c4386f4b844f83ecf344a37c3bdc4b5479",
+      "bytes": 619698
+    },
+    {
+      "path": "vesper-release-final-pull-request-validation-jobs.json",
+      "sha256": "2f0f50c9267acce58c5c347e349017432691c22e97913f215824d30dc2690580",
+      "bytes": 8001
+    },
+    {
+      "path": "vesper-release-final-pull-request-validation-run.json",
+      "sha256": "7a74e4b287b4ac691987dae342f108762d746a69a79111d44e4c26545a4cd20a",
+      "bytes": 14741
+    },
+    {
+      "path": "vesper-release-final-web-driver-job-112030055188.log",
+      "sha256": "b788715fc3e88658a290f48b5268d0eb5c2541561769ea3ad26f29402bc92334",
+      "bytes": 276592
+    },
+    {
+      "path": "vesper-release-final-web-driver-job-112030055435.log",
+      "sha256": "38417f8e96c239ef5add006aa85a20dc60135c607da21803bebaa267a7db6bb7",
+      "bytes": 283746
+    },
+    {
+      "path": "vesper-release-final-web-driver-job-112030055493.log",
+      "sha256": "cadada7057f20b534b8816835f0b60563a4b155ce526228e06b4d738caf669e3",
+      "bytes": 47555
+    },
+    {
+      "path": "vesper-release-final-web-driver-jobs.json",
+      "sha256": "b4833076e8f77cdd55eeb99306e13edd59b1fa83a14894683e389fe642c032ed",
+      "bytes": 11774
+    },
+    {
+      "path": "vesper-release-final-web-driver-run.json",
+      "sha256": "92b4ea0d06c72ecfe8cd6bbf219f7127f95878802ecaa2facef89f2bc894b0a7",
+      "bytes": 14736
+    },
+    {
+      "path": "vesper-release-host-ledger-identity-green.log",
+      "sha256": "c257b9542299b29307132a3db53f7b49839fe9e018085d5a7df4b7da27318133",
+      "bytes": 207
+    },
+    {
+      "path": "vesper-release-host-ledger-identity-only-red.log",
+      "sha256": "34e967a984be3c98d95abb1b4caf2b2b3626c2d7a75688a42bfe20cd56bbf088",
+      "bytes": 660
+    },
+    {
+      "path": "vesper-release-host-ledger-identity-red.log",
+      "sha256": "c28c31f632ad079b21b1e65a15ac9554f450beff4dad95dacb990a520b05430f",
+      "bytes": 662
+    },
+    {
+      "path": "vesper-release-host-ledger-identity-repeat-green.log",
+      "sha256": "f9ad3ee8d580e4b4b932bee65c19a6851bd41e27b85bd8ab3ca30a357dd0af52",
+      "bytes": 744
+    },
+    {
+      "path": "vesper-release-registered-producer-corrective.rs",
+      "sha256": "33b377a948f56c53f02d03681993bd20c9cb04157d7ff916936c57cea93dfe8b",
+      "bytes": 5804
+    }
+  ],
+  "focused_proof_binaries": {
+    "agent-vesper-tui": "f181f8794c31e4171bcaf69c836886a0637af6946f92182247668f7c44bfe24d",
+    "agent-vesper-acp": "478ffd65436517854326195decc1555e35265d9baf1617df26e01d136ea6bb59"
+  },
+  "focused_binary_source": "unchanged runtime binaries built by the registered native controller for 1dab7456",
+  "corrected_fixture_sha256": "08e261c39d9d9afd787b0662983abb93b005312ff6b2366abfbb1b37a775361f",
+  "scope_limits": [
+    "Native host fixture uses only synthetic isolated ledger/vault state, not real publication.",
+    "No tag/publication; successor requires fresh complete exact-SHA gates.",
+    "Public partial probe initial failures and helper authorization preparation error remain failed receipts."
+  ]
+}

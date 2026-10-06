@@ -1094,8 +1094,9 @@ reset, stashed or mutated by this process.
 
 ## 37. Current Implementation Status
 
-**Release integration in progress; native-pushed `477f9806` failed its complete hosted matrix.
-The corrective successor is not yet certified or published.**
+**Release integration in progress; native-pushed `1dab7456` passed all local steps and
+ten hosted jobs, including every native platform. Canonical failed in a stale host
+fixture; its correction has actual red/green proof. The successor is not published.**
 
 [The production release report](foundation/2026-10-06-rrc-parity-production-release.md)
 owns reconciliation with the newer production source, exact-source local verification,

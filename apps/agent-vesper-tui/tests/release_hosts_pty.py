@@ -17,13 +17,16 @@ from settings_pty import Host
 
 
 def seed(root, sha, published=False):
+    common = Path(subprocess.check_output(
+        ['git', 'rev-parse', '--git-common-dir'], cwd=root, text=True).strip())
+    identity = str((common if common.is_absolute() else root / common).resolve())
     now = '2026-10-05T00:00:00Z'
     jobs = [dict(workflow_id=10, run_id=20, attempt=1, job_id=100+i,
                  workflow_name='five-target-foundation', job_name=f'fixture-lane-{i}',
                  platform='fixture', state='failure' if i==0 else 'in_progress',
                  failed_step='exact regression' if i==0 else None,
                  url=f'https://example.invalid/jobs/{100+i}') for i in range(5)]
-    record = dict(schema_version=1, repo_identity=str(root), epoch_id='host-parity-epoch',
+    record = dict(schema_version=1, repo_identity=identity, epoch_id='host-parity-epoch',
                   objective=dict(bump='patch', branch_ref='main', post_release_main_epoch=published,
                                  required_gate_names=['five-target-foundation']),
                   state='post_release_main_degraded' if published else 'waiting_for_matrix',
@@ -36,11 +39,12 @@ def seed(root, sha, published=False):
                   transitions=[], consecutive_stagnant_actions=0, last_progress_at=now, created_at=now, updated_at=now)
     if published:
         record['mutation'] = dict(source_commit='1'*40, version_before='0.24.3', version_after='0.24.4',
+                objective_evidence_reports=[], intended_commits=[],
                 version_files=[], local_gates=[], candidate_committed=True, candidate_pushed=True,
                 candidate_push_ref='origin/main@'+'1'*40, tag_name='v0.24.4', tag_object='2'*40,
                 tag_pushed=True, publication_run_id=30, publication_verified=True,
                 published_asset_names=['fixture-immutable-asset'])
-    ledger = root/'release-state'/f'{hashlib.sha256(str(root).encode()).hexdigest()}.json'
+    ledger = root/'release-state'/f'{hashlib.sha256(identity.encode()).hexdigest()}.json'
     ledger.parent.mkdir(exist_ok=True)
     ledger.write_text(json.dumps(record))
     return ledger

@@ -16,7 +16,9 @@ Own evidence and decisions that close the pre-workspace blockers identified by r
   Its corrective companions retain the complete failed production matrix, fresh
   public controls, shell portability and semantic mutation receipts; the stopped
   epoch is preserved before native strict-descendant admission. Final exact-source
-  and publication evidence belongs in the report.
+  and publication evidence belongs in the report. Its host-fixture companions bind
+  the complete `1dab7456` matrix, native causal capture and actual canonical-identity/
+  Published-schema red/green host correction, preserving initial helper/probe failures.
 
 - `release-recovery-controller-parity-continuation.md` owns continued binding
   acceptance: publishing prerequisites, last-green lane evidence, measured

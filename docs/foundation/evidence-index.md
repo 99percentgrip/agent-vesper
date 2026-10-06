@@ -4,9 +4,10 @@
 
 - [Release execution report](2026-10-06-rrc-parity-production-release.md) owns the
   requested production integration and `0.24.5` release. Verification and publication
-  are in progress. Native-pushed `477f9806` passed all local gates but failed its
-  complete hosted matrix; its actual public controls and corrective regression
-  receipts remain scoped evidence. Earlier frozen receipts remain historical.
+  are in progress. Native-pushed `1dab7456` passed all eight local steps and ten of
+  eleven hosted jobs, including all five platforms. Canonical failed in a stale
+  native host-ledger fixture; its actual red/green correction and complete matrix
+  are archived. Earlier frozen receipts remain historical.
 
 ## Release Recovery Controller parity continuation (2026-10-05)
 

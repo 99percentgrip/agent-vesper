@@ -2,17 +2,18 @@
   "version": 1,
   "objective_id": "rrc-parity-source-integration-20261006",
   "objective_label": "RRC parity source integration for v0.24.5",
-  "variant_label": "Production parity integration with portable fixtures and governed repair Cargo",
-  "variant_id": "rrc-parity-production-portable-governed-repair-20261006",
+  "variant_label": "Production parity integration with canonical native host ledger fixtures",
+  "variant_id": "rrc-parity-production-host-ledger-fixture-20261006",
   "canonical_release_source": true,
   "supersedes": [
     "rrc-source-resolution-ux-repair-20260930",
     "corrected-v0.24.4-prerelease-integration-20261001",
     "corrected-v0.24.4-canonical-source-20261001",
     "rrc-parity-production-source-20261006",
-    "rrc-parity-production-runner-annotations-20261006"
+    "rrc-parity-production-runner-annotations-20261006",
+    "rrc-parity-production-portable-governed-repair-20261006"
   ],
-  "completed_at": "2026-10-05T22:51:20.621690Z",
+  "completed_at": "2026-10-06T00:22:51.867877Z",
   "evidence_reports": [
     "docs/foundation/2026-10-06-rrc-parity-production-release.md"
   ]
