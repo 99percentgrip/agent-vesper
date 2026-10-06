@@ -82,6 +82,12 @@ continuation state, and provider error mapping without changing the shared agent
 
 ## Verification
 
+- Loopback SSE tests separate three-byte UTF-8 fragmentation from oversized-event
+  rejection. Oversized events span bounded 16 KiB fixture writes, retain the
+  five-second observation bound, and require exactly one `ProtocolError` terminal.
+  Native Windows CI supplies Windows execution evidence; timeout extensions and
+  a Linux-only pass do not establish a Windows repair.
+
 - Run `cargo test -p vesper-provider-xai --all-features`.
 - Run strict Clippy for `vesper-provider-xai` and `cargo xtask architecture`.
 

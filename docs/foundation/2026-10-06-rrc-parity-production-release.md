@@ -4,9 +4,10 @@
 
 Publish the requested patch release with the RRC parity and native OpenAI sign-in
 repairs while preserving the newer changes already committed to production.
-**In progress: native-pushed `3614a98d` passed all eight local steps and ten
-hosted jobs. Canonical exposed an OpenAI startup fixture that required ambient
-credentials; all three corrected isolated real-PTY cases passed locally.
+**In progress: native-pushed `bd49a5b3` passed all eight local steps and ten of
+eleven settled hosted jobs. Windows exposed the previously documented xAI
+oversized-SSE fixture timeout. The corrected fifteen-case HTTP suite passed
+locally; native Windows focused proof and successor publication gates remain pending.
 No release tag, publication or installation performed.**
 The latest public release is `v0.24.4`; production already contains the unpublished
 `0.24.5` version graph. The intended release target is `0.24.5`, subject to native
@@ -370,3 +371,57 @@ DOX pass: the nearest TUI test contract now requires cleared child environments,
 private signed-out vaults, isolated roots and the selected-provider loopback route.
 Root/application parents retain their existing authentication and public-release
 contracts; their ownership/index did not change.
+
+## Recurrent Windows oversized-SSE fixture (correction prepared)
+
+The complete `bd49a5b3e481a831f8d5877a8854fc7060ef70fd` prerequisite matrix
+settled before diagnosis: canonical `37406416154`, MSRV `37406416250`, web-driver
+`37406416149`, and all four Unix foundation jobs passed. Foundation run
+`37406416111`, Windows job `112084880583`, failed only
+`tests::http::oversized_sse_event_settles_as_protocol_error` at `tests.rs:1103`,
+with `Elapsed(())` at its five-second observation bound; 55 other xAI cases passed.
+The native controller captured fingerprint
+`522896d09b630f4b49a8e2d3540fa5a9926644469931f546d7eb4db3afe2208b`
+only after all eleven jobs settled. It retained zero used retry counters, no tag
+and no publication. The 28-minute Windows duration includes earlier compilation
+and suites; the failed case itself exhausted its five-second observation.
+
+Alex requested inspection of previous Windows documentation. The
+[v0.24.0 release report](2026-09-25-v0.24.0-release-execution.md) identifies
+this same oversized-SSE observation failure and its earlier change to five seconds.
+The bound was retained in current source. Prior command-encoding, startup-readiness,
+path-canonicalization and frozen LF repairs also remain present; this failure is
+in the xAI HTTP fixture rather than those command or Git fixtures.
+
+`crates/vesper-provider-xai/src/tests.rs` reused the UTF-8 fragmentation helper for
+an event exceeding 1 MiB. That helper issued over 349,000 three-byte socket writes.
+The prepared correction keeps three-byte writes for the small fragmented UTF-8
+case and uses 16 KiB writes for oversized rejection, still spanning multiple reads.
+It preserves `MAX_EVENT`, the five-second bound and `ProtocolError`, and adds an
+explicit no-second-terminal assertion. Production transport code is unchanged.
+The observed timeout and excessive fixture writes are established; their precise
+Windows scheduling contribution is not independently profiled.
+
+Governed focused command:
+`cargo test --locked -p vesper-provider-xai --all-features tests::http:: -- --test-threads=1`
+passed **15/15** in **0.65 seconds**, including oversized rejection, fragmented UTF-8,
+cancellation, EOF and WebSocket behavior. Local Linux proof cannot close native
+Windows acceptance. Fresh focused Windows execution and complete successor gates
+remain required. The first formatting check reported one multiline assertion;
+`cargo fmt --all` corrected it and the repeated check passed.
+
+The default governor initially deferred the focused build for filesystem headroom.
+Exclusive governor/Cargo locks and process-reference inspection guarded removal of
+idle generated incremental files only; actual filesystem free space increased by
+**11,263,885,312 bytes**. Sources, executable/library artifacts, historical worktrees,
+ledgers, receipts and reserve policy were retained. Focused work then resumed under
+the existing default governor. No installation or private billing prerequisite applies.
+
+DOX: the xAI adapter contract now distinguishes fragmentation and oversize fixture
+budgets and requires native Windows proof. Root, crate parent and documentation
+parent contracts remain unchanged because ownership and release authority are unchanged.
+
+The full xAI package passed **56/56** in **10.58 seconds**; the independent HTTP
+repeat passed **15/15**. Frozen [Windows-SSE evidence](2026-10-06-rrc-parity-production-release-windows-sse-evidence.json)
+and [sanitized receipts](2026-10-06-rrc-parity-production-release-windows-sse-receipts.tar.gz)
+bind the complete failed matrix, native state and local correction.

@@ -694,6 +694,14 @@ mod http {
         }
     }
     async fn fixture_server(body: String) -> (XaiSession, tokio::task::JoinHandle<Value>) {
+        fixture_server_with_chunk_size(body, 3).await
+    }
+
+    async fn fixture_server_with_chunk_size(
+        body: String,
+        chunk_size: usize,
+    ) -> (XaiSession, tokio::task::JoinHandle<Value>) {
+        assert!(chunk_size > 0);
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let endpoint = format!("http://{}/responses", listener.local_addr().unwrap());
         let server = tokio::spawn(async move {
@@ -725,7 +733,7 @@ mod http {
             }
             let request = serde_json::from_slice(&bytes[start..start + length]).unwrap();
             socket.write_all(format!("HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nContent-Length: {}\r\nConnection: close\r\n\r\n", body.len()).as_bytes()).await.unwrap();
-            for chunk in body.as_bytes().chunks(3) {
+            for chunk in body.as_bytes().chunks(chunk_size) {
                 socket.write_all(chunk).await.unwrap();
             }
             request
@@ -1093,7 +1101,10 @@ mod http {
     #[tokio::test]
     async fn oversized_sse_event_settles_as_protocol_error() {
         let body = format!("data: {}\n\n", "x".repeat(wire::MAX_EVENT + 1));
-        let (session, server) = fixture_server(body).await;
+        // This exercises the size cap across multiple reads. Three-byte writes
+        // are reserved for the separate UTF-8 fragmentation case; sending this
+        // MiB-sized event that way requires over 349,000 socket writes.
+        let (session, server) = fixture_server_with_chunk_size(body, 16 * 1024).await;
         let mut stream = session
             .start(fixture_request(), Arc::new(Cancel(AtomicBool::new(false))))
             .await
@@ -1110,6 +1121,10 @@ mod http {
                 ..
             }
         ));
+        assert!(
+            stream.next().await.is_none(),
+            "size rejection must settle once"
+        );
         server.await.unwrap();
     }
 

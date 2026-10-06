@@ -22,6 +22,8 @@ Own evidence and decisions that close the pre-workspace blockers identified by r
   Its OpenAI-fixture companions bind the complete `3614a98d` matrix, native
   settlement, fresh public controls, guarded inactive-cache reclamation, and the
   isolated signed-out/loopback real-PTY startup correction.
+  Its Windows-SSE companions bind the complete `bd49a5b3` matrix, native
+  fingerprint, earlier documented failure and bounded-write fixture correction.
 
 - `release-recovery-controller-parity-continuation.md` owns continued binding
   acceptance: publishing prerequisites, last-green lane evidence, measured

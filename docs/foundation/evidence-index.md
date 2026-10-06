@@ -4,11 +4,11 @@
 
 - [Release execution report](2026-10-06-rrc-parity-production-release.md) owns the
   requested production integration and `0.24.5` release. Verification and publication
-  are in progress. Native-pushed `3614a98d` passed eight local steps and ten of
-  eleven settled hosted jobs, including all five platforms. Canonical exposed an
-  ambient-credential assumption in OpenAI startup verification; the three corrected
-  isolated cases passed. Complete matrices, native causal captures, public controls
-  and corrections remain archived in the report's evidence companions. Successor
+  are in progress. Native-pushed `bd49a5b3` passed eight local steps and ten of
+  eleven settled hosted jobs. Windows reproduced the previously documented xAI
+  oversized-SSE fixture timeout; the corrected fifteen-case HTTP suite passed locally.
+  Complete matrices, native causal captures, public controls and corrections remain
+  archived in the report's evidence companions. Native Windows proof and successor
   prerequisites/publication remain pending. Earlier frozen receipts are historical.
 
 ## Release Recovery Controller parity continuation (2026-10-05)

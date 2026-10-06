@@ -2,8 +2,8 @@
   "version": 1,
   "objective_id": "rrc-parity-source-integration-20261006",
   "objective_label": "RRC parity source integration for v0.24.5",
-  "variant_label": "Production parity integration with isolated OpenAI startup verification",
-  "variant_id": "rrc-parity-production-isolated-openai-startup-20261006",
+  "variant_label": "Production parity integration with bounded Windows SSE verification",
+  "variant_id": "rrc-parity-production-bounded-windows-sse-fixture-20261006",
   "canonical_release_source": true,
   "supersedes": [
     "rrc-source-resolution-ux-repair-20260930",
@@ -12,9 +12,10 @@
     "rrc-parity-production-source-20261006",
     "rrc-parity-production-runner-annotations-20261006",
     "rrc-parity-production-portable-governed-repair-20261006",
-    "rrc-parity-production-host-ledger-fixture-20261006"
+    "rrc-parity-production-host-ledger-fixture-20261006",
+    "rrc-parity-production-isolated-openai-startup-20261006"
   ],
-  "completed_at": "2026-10-06T02:07:00.521412Z",
+  "completed_at": "2026-10-06T03:38:50.318795+00:00",
   "evidence_reports": [
     "docs/foundation/2026-10-06-rrc-parity-production-release.md"
   ]

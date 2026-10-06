@@ -1,0 +1,325 @@
+{
+  "failed_candidate_sha": "bd49a5b3e481a831f8d5877a8854fc7060ef70fd",
+  "status": "Complete eleven-job matrix: ten successful; Windows oversized-SSE fixture exhausted five-second observation. Corrected Linux HTTP 15/15 and package 56/56 passed; native Windows and successor release gates pending.",
+  "archive": "2026-10-06-rrc-parity-production-release-windows-sse-receipts.tar.gz",
+  "archive_sha256": "50b4283d07e401a7c7b60515236705a0125cc5e8a47680c3ac2224d202363197",
+  "binding_prd_sha256": "e85011c696d769837c6ed5a83e4290e77eadc4ae27a9ea42cffe0966d37518db",
+  "receipt_scope": "Actual bd49 native producer, complete hosted matrix, public controlled runs, headroom reclamation, source/runtime linkage and local corrected fixture execution. No Windows execution claim from Linux.",
+  "corrected_files": [
+    {
+      "path": "crates/vesper-provider-xai/src/tests.rs",
+      "sha256": "8cb95592983304f400fabcfb404851ed6d454335fccfc2a2e5da2719623ac8aa"
+    },
+    {
+      "path": "crates/vesper-provider-xai/AGENTS.md",
+      "sha256": "9b19961547fdc096802763dee56af5cd0666dae06d6b0640cf5e8b31fbd1ded3"
+    }
+  ],
+  "receipts": [
+    {
+      "path": "vesper-release-bd49-complete-failed-native-epoch.json",
+      "bytes": 32540,
+      "sha256": "039560e0289715c4b7b5716b577f1cef45dad5106698eade7f6e05ac018bc929"
+    },
+    {
+      "path": "vesper-release-openai-fixture-complete-local-native-epoch.json",
+      "bytes": 29715,
+      "sha256": "64b190c6b9e2c46e9cbf82abee35536249fdddea4b203a4a95970dfafd8cb6be"
+    },
+    {
+      "path": "vesper-release-openai-fixture-controlled-complete.json",
+      "bytes": 895,
+      "sha256": "a284b8e62c72081ac0756889b5251dfa488e7062b68ccbd275e140d8207e0fe5"
+    },
+    {
+      "path": "vesper-release-openai-fixture-controlled-green-job-112073963701.log",
+      "bytes": 2916,
+      "sha256": "e06ef7d57abe6639dacadc9a3c1317c07d5c3b90cd1bb9e006f94f2c928aa822"
+    },
+    {
+      "path": "vesper-release-openai-fixture-controlled-green-job-112073963855.log",
+      "bytes": 2767,
+      "sha256": "bfc1202ff6a750671668ee5b96b8fcff77d235d668fae4a20c38ac5045f4b067"
+    },
+    {
+      "path": "vesper-release-openai-fixture-controlled-green-job-112073963927.log",
+      "bytes": 2764,
+      "sha256": "f9d21b88f0862d9f1f5e8c939ad66f3db5ba73435c523e696b89bcdbe06fa083"
+    },
+    {
+      "path": "vesper-release-openai-fixture-controlled-green-job-112073963956.log",
+      "bytes": 2772,
+      "sha256": "b0f8b995990a556643e3bc4fd44bae1eb32b0233ab2bddbfacfe7f2e4176de18"
+    },
+    {
+      "path": "vesper-release-openai-fixture-controlled-green-job-112073963977.log",
+      "bytes": 2769,
+      "sha256": "eca4ea3567c0e607d5a6eb3aa5dd16471c986229e040792f193e8f097b93daf9"
+    },
+    {
+      "path": "vesper-release-openai-fixture-controlled-green-jobs.json",
+      "bytes": 14251,
+      "sha256": "0beab1d5f479a98517e5a08edc8119f069555449031e87ee0c9e05ad6170aadb"
+    },
+    {
+      "path": "vesper-release-openai-fixture-controlled-green-run.json",
+      "bytes": 16406,
+      "sha256": "be1bc31180d4fcae364622af19bbd82946fbb3f60cfe8b5040b3b9e7d2003277"
+    },
+    {
+      "path": "vesper-release-openai-fixture-controlled-green.log",
+      "bytes": 210,
+      "sha256": "344812bd1b11ed11ba2f0f8b8190c38de5042b54d8255e2e615809398a68cc31"
+    },
+    {
+      "path": "vesper-release-openai-fixture-controlled-orchestration.log",
+      "bytes": 448,
+      "sha256": "07aaf80ab42e0f925fbb7d4df0925d3cec3c9079f47950ea529cd3885d1973e8"
+    },
+    {
+      "path": "vesper-release-openai-fixture-controlled-partial.log",
+      "bytes": 700,
+      "sha256": "3ef9c90c4fb204e5ff2dfdf89ed4557ff68ebf75fd9d75a492e89d938cc8f412"
+    },
+    {
+      "path": "vesper-release-openai-fixture-controlled-red-job-112073419485.log",
+      "bytes": 2142,
+      "sha256": "724e6e10501e8667344c0db2d966cfb908f29c8af549abec9c844b5cad1a319d"
+    },
+    {
+      "path": "vesper-release-openai-fixture-controlled-red-job-112073419622.log",
+      "bytes": 2144,
+      "sha256": "36e33dd80d9a1c5e752a48aeb056d006ec91275341f1ad4dfd1eecac73c9f54a"
+    },
+    {
+      "path": "vesper-release-openai-fixture-controlled-red-job-112073419638.log",
+      "bytes": 2779,
+      "sha256": "3da7cb443f6c6c89ff6bb5033f3338a187964e02468766d535572e4d98171dc3"
+    },
+    {
+      "path": "vesper-release-openai-fixture-controlled-red-job-112073419687.log",
+      "bytes": 2151,
+      "sha256": "99de2170ade25b4711b1c8670d27f53cf0e33ee4c760c113720e497a06a7d8a6"
+    },
+    {
+      "path": "vesper-release-openai-fixture-controlled-red-job-112073419689.log",
+      "bytes": 2147,
+      "sha256": "9d0c08aadb330a4806a3831fac64ec6f69547e814dc755e608952cf587a227f2"
+    },
+    {
+      "path": "vesper-release-openai-fixture-controlled-red-jobs.json",
+      "bytes": 14246,
+      "sha256": "c347ddf97098517e7d9a985f4d10f764b12e5031b31c1a080c71fe1aa3ff0de8"
+    },
+    {
+      "path": "vesper-release-openai-fixture-controlled-red-run.json",
+      "bytes": 16404,
+      "sha256": "b6e5dd1478a2eed2423da12ef0fc29496ec1ed1d91d9c6175dc95b0c9e5d1cd7"
+    },
+    {
+      "path": "vesper-release-openai-fixture-controlled-red.log",
+      "bytes": 345,
+      "sha256": "0b8d5a97095951ede1cbdfe002a7d2967e142b8894d269254470096a74f27c31"
+    },
+    {
+      "path": "vesper-release-openai-fixture-controlled-repeat-job-112073708096.log",
+      "bytes": 2786,
+      "sha256": "fd3e5506bf59bc9f9ad899bee43c8171bc12183d980318502eee91f3fa3dd07c"
+    },
+    {
+      "path": "vesper-release-openai-fixture-controlled-repeat-job-112073708304.log",
+      "bytes": 2143,
+      "sha256": "7cf960db14d887fc95fac60c6dde4fd44f590c913303ad2252ef9818066148cb"
+    },
+    {
+      "path": "vesper-release-openai-fixture-controlled-repeat-job-112073708310.log",
+      "bytes": 2151,
+      "sha256": "d4c79615b90acf254dd22da5f591c83045c9047629d9411860a26559a94ee130"
+    },
+    {
+      "path": "vesper-release-openai-fixture-controlled-repeat-job-112073708323.log",
+      "bytes": 2142,
+      "sha256": "768c070177e9a3289a1e2f49bb54d7198c088b8e31891e83853ef96659969674"
+    },
+    {
+      "path": "vesper-release-openai-fixture-controlled-repeat-job-112073708433.log",
+      "bytes": 2150,
+      "sha256": "a9ac3b14fcfae3f463ed225bf23f66397e2d58160288360607754628396621af"
+    },
+    {
+      "path": "vesper-release-openai-fixture-controlled-repeat-jobs.json",
+      "bytes": 14251,
+      "sha256": "7554c6c82192a11e27d5525281a00995611321558cfb151dc0d69c7048099349"
+    },
+    {
+      "path": "vesper-release-openai-fixture-controlled-repeat-run.json",
+      "bytes": 16406,
+      "sha256": "c5a2832b452b9564884bc0d3bf6aeccb9e295a01c038f4427eb391e5c751517c"
+    },
+    {
+      "path": "vesper-release-openai-fixture-controlled-repeat.log",
+      "bytes": 345,
+      "sha256": "0911deac300237bbef31873fffac279c3cb67c2e292fe81b3c9cebeb22613539"
+    },
+    {
+      "path": "vesper-release-openai-fixture-incremental-reclamation.json",
+      "bytes": 1421,
+      "sha256": "dae180cb59d898a3d4788cbcc9eb50ee6389c3aa8f3c52e2d658efe5f6ddba89"
+    },
+    {
+      "path": "vesper-release-openai-fixture-matrix-collection.log",
+      "bytes": 4236,
+      "sha256": "9b590ae6c9d572b8e8378a0c50ba04d457e0c8692d95dc60408421467d87fff6"
+    },
+    {
+      "path": "vesper-release-openai-fixture-native-admission.log",
+      "bytes": 345,
+      "sha256": "7ca4df860001040f63da5962ad3bf981adc8a39150eaa2064ec3c346c82a879a"
+    },
+    {
+      "path": "vesper-release-openai-fixture-native-epoch-lineage.json",
+      "bytes": 1298,
+      "sha256": "42739854f4fda85fd22cd11d7bd6bb7da277db058c27fdb2d1d8f000170f5377"
+    },
+    {
+      "path": "vesper-release-openai-fixture-native-linkage.json",
+      "bytes": 3831,
+      "sha256": "2d2e005fc4e82696048d515b090d07d3e3a4751ca801e9bdaf97ac9f188d5e80"
+    },
+    {
+      "path": "vesper-release-openai-fixture-production-five-target-foundation-job-112084880372.log",
+      "bytes": 604516,
+      "sha256": "65c94df29f39b4b93a84adf8ccfec3e4054a91aeb4ea6f00e30215d7721d7b5f"
+    },
+    {
+      "path": "vesper-release-openai-fixture-production-five-target-foundation-job-112084880583.log",
+      "bytes": 380259,
+      "sha256": "bf97a16dda9469cae1f80e057f3fa83dec9f8835f350da9b67b78095a0d4ab41"
+    },
+    {
+      "path": "vesper-release-openai-fixture-production-five-target-foundation-job-112084880585.log",
+      "bytes": 591108,
+      "sha256": "c7ff64aef031f4482d078482e18d5b69967e2f67b2ad6c2ab32fa04f5143c472"
+    },
+    {
+      "path": "vesper-release-openai-fixture-production-five-target-foundation-job-112084880622.log",
+      "bytes": 604865,
+      "sha256": "fecba9569b8c9ad6e89857dce7fe7e0e2676bbb81727c1ddd250b05739d816c4"
+    },
+    {
+      "path": "vesper-release-openai-fixture-production-five-target-foundation-job-112084880670.log",
+      "bytes": 596148,
+      "sha256": "afea7c8f631f4e010b24fd4dede37f9a3235b7aec3780d73281c402900e4021d"
+    },
+    {
+      "path": "vesper-release-openai-fixture-production-five-target-foundation-jobs.json",
+      "bytes": 27803,
+      "sha256": "3e4496c411537081a8ff6b7d10d9e4e3b66c03ecb99d85a8c5f1bb02ff133985"
+    },
+    {
+      "path": "vesper-release-openai-fixture-production-five-target-foundation-run.json",
+      "bytes": 14755,
+      "sha256": "47c33a64e24696e26231ed4da13f85391bb46b6a1dd432798cbdbb429b4fe975"
+    },
+    {
+      "path": "vesper-release-openai-fixture-production-matrix.json",
+      "bytes": 4236,
+      "sha256": "9b590ae6c9d572b8e8378a0c50ba04d457e0c8692d95dc60408421467d87fff6"
+    },
+    {
+      "path": "vesper-release-openai-fixture-production-msrv-job-112084880728.log",
+      "bytes": 549045,
+      "sha256": "64e30d3ccd188cbbaefb68c1f5e48855ebe1d2b12b53a98879265b90ae1b927b"
+    },
+    {
+      "path": "vesper-release-openai-fixture-production-msrv-jobs.json",
+      "bytes": 4250,
+      "sha256": "7ed7af48151e31f93a329f949420035bc4c14bf6151221cb03d42121b70f5a21"
+    },
+    {
+      "path": "vesper-release-openai-fixture-production-msrv-run.json",
+      "bytes": 14722,
+      "sha256": "bd01ca1dc489b56f938d5c60fe3f841751f8ec7faf8f883707fc57916ef867f4"
+    },
+    {
+      "path": "vesper-release-openai-fixture-production-pull-request-validation-job-112084880507.log",
+      "bytes": 289388,
+      "sha256": "09eed0c04ec5d3963853a5c616bd2dbfd2020cfe0a11c474cb2051f0d363a37b"
+    },
+    {
+      "path": "vesper-release-openai-fixture-production-pull-request-validation-job-112084880686.log",
+      "bytes": 620308,
+      "sha256": "85c62d094ab4b1809be7e5eb10a4a1b084ca1553da4bb99fb184e1be284ed319"
+    },
+    {
+      "path": "vesper-release-openai-fixture-production-pull-request-validation-jobs.json",
+      "bytes": 8001,
+      "sha256": "e253810af482b0df8cf82c336682b1d7102c833b408774ca1f88b0b30c1f3998"
+    },
+    {
+      "path": "vesper-release-openai-fixture-production-pull-request-validation-run.json",
+      "bytes": 14739,
+      "sha256": "fc443498f6ab25e929770ef180851f360a811881c379c245991ee95f18b211de"
+    },
+    {
+      "path": "vesper-release-openai-fixture-production-runs.json",
+      "bytes": 62574,
+      "sha256": "6f616e1e671f00737163f75aef6666e48bfeb137471cc970a0cf473e7fda560a"
+    },
+    {
+      "path": "vesper-release-openai-fixture-production-web-driver-job-112084880518.log",
+      "bytes": 47551,
+      "sha256": "b5b8eecbc83de1d9b62dde7716a75fb9b93ec947d08e1b101d86abf36ff4e172"
+    },
+    {
+      "path": "vesper-release-openai-fixture-production-web-driver-job-112084880762.log",
+      "bytes": 283271,
+      "sha256": "a30966db69f640831369e7361831df587f4cbb43abde2127f9f38c80fd558d68"
+    },
+    {
+      "path": "vesper-release-openai-fixture-production-web-driver-job-112084880771.log",
+      "bytes": 276565,
+      "sha256": "9456d0dff8a5d4833e3efdd250a38b992b7e4696bc84ec1da9ebf2ea5361d646"
+    },
+    {
+      "path": "vesper-release-openai-fixture-production-web-driver-jobs.json",
+      "bytes": 11774,
+      "sha256": "ca46edec20b5ca20b1f9c2cabce015984b1f2f67581f01a0be52447df5bde719"
+    },
+    {
+      "path": "vesper-release-openai-fixture-production-web-driver-run.json",
+      "bytes": 14734,
+      "sha256": "2edc3c5d34e95e7e47e8ec943719f025b0c8d958c8c5f83709081957899c236c"
+    },
+    {
+      "path": "vesper-release-openai-fixture-registered-producer.log",
+      "bytes": 267223,
+      "sha256": "48afaefe6232c6daff2912252a5a56b187ed7106a60eb726d0ef7fef1aab4dc4"
+    },
+    {
+      "path": "vesper-release-openai-fixture-source.json",
+      "bytes": 112386,
+      "sha256": "6a00cece1b403f0ed6e4f1a959ce0d432700d945b8dd34a289bfe5b1fc277bba"
+    },
+    {
+      "path": "vesper-release-windows-sse-focused-green.log",
+      "bytes": 4446,
+      "sha256": "5f25dfa51154ccf682cadf241e8b1781cccc9d267a28c0c42ab82f5d97117dbb"
+    },
+    {
+      "path": "vesper-release-windows-sse-focused-repeat.log",
+      "bytes": 1653,
+      "sha256": "c9e3509c4cbce5a492142cfcb9ea764a75a338188c14817dbdaa154bcb317606"
+    },
+    {
+      "path": "vesper-release-windows-sse-incremental-reclamation.json",
+      "bytes": 1400,
+      "sha256": "7cf8bef0f5a3693d71c4ef676a71fa60839d46f3194c6588e859f41dd2b30da2"
+    },
+    {
+      "path": "vesper-release-windows-sse-package-green.log",
+      "bytes": 5177,
+      "sha256": "6ae565e093884864e9503f4e64af8cb476e0ef9f14699d3f1daf22b92f94409b"
+    }
+  ]
+}
