@@ -54,7 +54,11 @@ Z.ai and Playwright MCP server descriptors.
   admissions outside the model tool registry.
   The repair factory uses a 24-iteration segment limit even when the invoking host
   disables its ordinary cap with zero; smaller positive host limits stay smaller.
-  The existing native plan continuation and progress heartbeat watchdog still apply.
+  Unplanned segment exhaustion continues with preserved complete history for at most
+  four segments in the same admitted attempt; the total role ceiling is at most
+  96 turns (smaller host caps remain smaller). Native plan continuation shares this
+  ceiling. Interruption never continues or replays ambiguous calls. Semantic and
+  heartbeat watchdogs span all segments; terminal refusals identify their outcome.
   This copied repair configuration never changes the ordinary host setting.
   Local repair preserves the version seed and includes new files; candidate
   commits include only admitted version/repair paths. Native version preparation

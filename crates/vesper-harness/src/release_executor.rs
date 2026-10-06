@@ -6489,8 +6489,16 @@ pub(crate) mod tests {
         ))];
         scripts.extend(commands.iter().enumerate().map(|(index, command)| {
             Ok(script(
-                "run_command",
-                serde_json::json!({"command":command}),
+                if command.starts_with("fixture-read:") {
+                    "read_file"
+                } else {
+                    "run_command"
+                },
+                if let Some(path) = command.strip_prefix("fixture-read:") {
+                    serde_json::json!({"path":path})
+                } else {
+                    serde_json::json!({"command":command})
+                },
                 index + 1,
             ))
         }));
@@ -6587,13 +6595,21 @@ pub(crate) mod tests {
 
     #[test]
     fn repair_iteration_budget_survives_disabled_host_cap() {
-        for (host_cap, expected_cap) in [(0, 24), (5, 5), (100, 24)] {
+        for (host_cap, expected_cap) in [(0, 96), (5, 20), (100, 96)] {
             let root = tempfile::tempdir().unwrap();
             fs::create_dir(root.path().join("src")).unwrap();
             fs::write(root.path().join("Cargo.toml"),
                 "[package]\nname = \"release-iteration-fixture\"\nversion = \"0.1.0\"\nedition = \"2024\"\n").unwrap();
-            let commands = (0..30)
-                .map(|index| format!("cargo check --offline --target-dir target/limit-{index}"))
+            let commands = (0..100)
+                .map(|index| {
+                    let path = format!("part-{index}");
+                    fs::write(
+                        root.path().join(&path),
+                        format!("distinct evidence {index}"),
+                    )
+                    .unwrap();
+                    format!("fixture-read:{path}")
+                })
                 .collect::<Vec<_>>();
             let command_refs = commands.iter().map(String::as_str).collect::<Vec<_>>();
             let (mut factory, session, runtime) = repair_test_factory_with_commands(
@@ -6623,6 +6639,57 @@ pub(crate) mod tests {
                 "ordinary host setting stays intact"
             );
         }
+    }
+
+    #[test]
+    fn repair_continues_unplanned_segments_for_two_provider_fixtures() {
+        for label in ["fixture.segment-a", "fixture.segment-b"] {
+            let root = tempfile::tempdir().unwrap();
+            fs::create_dir(root.path().join("src")).unwrap();
+            let commands = (0..30)
+                .map(|index| {
+                    let path = format!("part-{index}");
+                    fs::write(
+                        root.path().join(&path),
+                        format!("distinct evidence {index}"),
+                    )
+                    .unwrap();
+                    format!("fixture-read:{path}")
+                })
+                .collect::<Vec<_>>();
+            let refs = commands.iter().map(String::as_str).collect::<Vec<_>>();
+            let (factory, session, runtime) =
+                repair_test_factory_with_commands(label, "pub fn answer() {}\n", &refs);
+            let (outcome, history) = runtime
+                .block_on(factory.run_coding_turn_in_workspace(
+                    root.path().to_path_buf(),
+                    "Complete the isolated repair".into(),
+                    Arc::new(vesper_runtime::RuntimeCancellation::new()),
+                ))
+                .unwrap();
+            assert!(matches!(
+                outcome,
+                vesper_agent::AgentTurnOutcome::Completed { iterations: 32, .. }
+            ));
+            assert_eq!(session.requests().len(), 32);
+            assert!(history.iter().any(|message| message.content.iter().any(|part|
+                matches!(part, ContentPart::ToolCall(call) if call.id.as_str() == "fixture-read_file-30"))));
+            assert_eq!(
+                fs::read_to_string(root.path().join("src/lib.rs")).unwrap(),
+                "pub fn answer() {}\n"
+            );
+        }
+    }
+
+    #[test]
+    fn repair_terminal_diagnostics_identify_the_safety_stop() {
+        let outcome = vesper_agent::AgentTurnOutcome::MaxIterationsReached {
+            iterations: 96,
+            plan: None,
+        };
+        let text = repair_terminal_diagnostic(&outcome);
+        assert!(text.contains("96 turns"));
+        assert!(text.contains("unfinished_plan=false"));
     }
 
     #[test]
@@ -8252,6 +8319,32 @@ struct RepairVerification<'a> {
     verify: &'a dyn Fn(&NativeReleaseExecutor) -> Result<(), RrcError>,
 }
 
+fn repair_terminal_diagnostic(outcome: &vesper_agent::AgentTurnOutcome) -> String {
+    match outcome {
+        vesper_agent::AgentTurnOutcome::MaxIterationsReached { iterations, plan } => format!(
+            "iteration safety ceiling after {iterations} turns; unfinished_plan={}",
+            plan.is_some()
+        ),
+        vesper_agent::AgentTurnOutcome::Interrupted {
+            cause,
+            tool_call_started,
+            iterations,
+            ..
+        } => redact_secrets(&format!(
+            "provider interruption after {iterations} turns; cause={cause:?}; tool_call_started={tool_call_started}; ambiguous calls are never replayed"
+        )),
+        vesper_agent::AgentTurnOutcome::Acceptance {
+            report, iterations, ..
+        } => format!(
+            "acceptance outcome after {iterations} turns; verified={}; coding repair proof remains required",
+            report.is_verified()
+        ),
+        vesper_agent::AgentTurnOutcome::Completed { iterations, .. } => {
+            format!("normal stop after {iterations} turns")
+        }
+    }
+}
+
 fn repair_admission_counts(
     record: &ReleaseRecoveryRecord,
     families: &BTreeSet<String>,
@@ -8478,6 +8571,11 @@ fn run_bounded_repair_agent_with_verification(
         .build()
         .map_err(|error| RrcError::Invalid(format!("repair runtime failed: {error}")))?;
     reserve_repair_dispatch(record, &families, ledger)?;
+    record.note_progress_milestone(format!(
+        "Focused repair admitted for {} causal families; bounded continuation is active",
+        families.len()
+    ));
+    ledger.save(record)?;
     let repair_started = Instant::now();
     let turn = runtime.block_on(async {
         let tools = match verification.governor.clone() {
@@ -8569,9 +8667,10 @@ fn run_bounded_repair_agent_with_verification(
             .collect::<Vec<_>>()
             .join("\n"),
         _ => {
-            return Err(RrcError::Invalid(
-                "repair agent did not reach a completed terminal outcome".into(),
-            ));
+            return Err(RrcError::Invalid(format!(
+                "repair agent stopped before verified completion: {}",
+                repair_terminal_diagnostic(&outcome)
+            )));
         }
     };
     if assistant_summary.trim().is_empty() {

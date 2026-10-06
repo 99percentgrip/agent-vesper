@@ -2478,6 +2478,21 @@ fn acceptance_verify() -> Result<(), String> {
         (
             "vesper-harness",
             &["--lib"],
+            "release_executor::tests::repair_continues_unplanned_segments_for_two_provider_fixtures",
+        ),
+        (
+            "vesper-harness",
+            &["--lib"],
+            "release_executor::tests::repair_terminal_diagnostics_identify_the_safety_stop",
+        ),
+        (
+            "vesper-agent",
+            &["--test", "agent_loop"],
+            "role_ceiling_bounds_planned_continuation",
+        ),
+        (
+            "vesper-harness",
+            &["--lib"],
             "release_executor::tests::repair_worker_cannot_create_unadmitted_release_tags",
         ),
         (

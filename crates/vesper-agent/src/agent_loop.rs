@@ -451,6 +451,7 @@ pub trait AgentHistoryPort: Send + Sync {
 pub struct AgentLoop {
     text_only_response_bound: Option<usize>,
     maximum_output_tokens: Option<u64>,
+    tool_iteration_ceiling: Option<u32>,
     cache_routing_key: BoundedString<128>,
     registry: Arc<ProviderRegistry>,
     tools: ToolRegistry,
@@ -477,6 +478,7 @@ impl AgentLoop {
         Self {
             text_only_response_bound: None,
             maximum_output_tokens: None,
+            tool_iteration_ceiling: None,
             cache_routing_key: BoundedString::new(format!(
                 "vesper-conversation-{}",
                 uuid::Uuid::new_v4()
@@ -653,6 +655,14 @@ impl AgentLoop {
     #[must_use]
     pub fn with_active_plan(mut self, plan: Option<String>) -> Self {
         self.active_plan = plan;
+        self
+    }
+
+    /// Tighten a bounded role's total turn allowance, including plan continuation.
+    /// This never raises the shared absolute safety ceiling.
+    #[must_use]
+    pub fn with_tool_iteration_ceiling(mut self, iterations: u32) -> Self {
+        self.tool_iteration_ceiling = Some(iterations.clamp(1, ABSOLUTE_MAX_TOOL_ITERATIONS));
         self
     }
 
@@ -834,18 +844,23 @@ impl AgentLoop {
         let mut plan = self.active_plan.clone();
         let mut iteration: u32 = 0;
         let configured_limit = self.config.max_tool_iterations;
-        let mut iteration_limit = if configured_limit == 0 {
+        let role_ceiling = self
+            .tool_iteration_ceiling
+            .unwrap_or(ABSOLUTE_MAX_TOOL_ITERATIONS);
+        let mut iteration_limit = (if configured_limit == 0 {
             ABSOLUTE_MAX_TOOL_ITERATIONS
         } else {
             configured_limit.min(ABSOLUTE_MAX_TOOL_ITERATIONS)
-        };
-        let ultimate_plan_limit = if configured_limit == 0 {
+        })
+        .min(role_ceiling);
+        let ultimate_plan_limit = (if configured_limit == 0 {
             ABSOLUTE_MAX_TOOL_ITERATIONS
         } else {
             configured_limit
                 .saturating_mul(MAX_PLAN_CONTINUATION_SEGMENTS)
                 .min(ABSOLUTE_MAX_TOOL_ITERATIONS)
-        };
+        })
+        .min(role_ceiling);
         let mut loop_detector = LoopDetector::new();
         let mut pressure_level = self.context_pressure_level.load(Ordering::Relaxed);
         let completion = self.completion_port.as_ref().filter(|port| port.active());

@@ -818,6 +818,58 @@ async fn unfinished_plan_stops_truthfully_at_the_ultimate_segment_cap() {
 }
 
 #[tokio::test]
+async fn role_ceiling_bounds_planned_continuation() {
+    let provider_id = provider();
+    let mut scripts = vec![Ok(vec![
+        Ok(ProviderStreamEvent::ToolCallCompleted(update_plan_call(
+            "still-open",
+            "in_progress",
+        ))),
+        Ok(completed(FinishOutcome::ToolCalls)),
+    ])];
+    scripts.extend((0..7).map(|_| {
+        Ok(vec![
+            Ok(content_delta("premature stop")),
+            Ok(completed(FinishOutcome::Stop)),
+        ])
+    }));
+    let fake = FakeProviderSession::with_scripts(scripts);
+    let registry = Arc::new(ProviderRegistry::new());
+    registry
+        .register(FakeFactory {
+            id: provider_id.clone(),
+            session: fake,
+        })
+        .await
+        .unwrap();
+
+    let root = tempfile::tempdir().unwrap();
+    let mut agent_config = config(&provider_id, 2);
+    agent_config.workspace_roots = vec![vesper_domain::WorkspaceRoot {
+        name: BoundedString::new("workspace").unwrap(),
+        path: BoundedString::new(root.path().to_string_lossy().to_string()).unwrap(),
+        primary: true,
+    }];
+    let outcome = AgentLoop::new(registry, ToolRegistry::parity_default(), agent_config)
+        .with_tool_iteration_ceiling(3)
+        .run_prompt(
+            user_message("finish the plan autonomously"),
+            SessionOperatingMode::Code,
+            SessionPermissionMode::Bypass,
+        )
+        .await
+        .unwrap();
+
+    match outcome {
+        AgentTurnOutcome::MaxIterationsReached {
+            iterations: 3,
+            plan: Some(_),
+        } => {}
+        other => panic!("expected unfinished plan at the 3-turn role ceiling, got {other:?}"),
+    }
+}
+
+#[tokio::test]
 async fn direct_loop_stops_repeated_identical_tool_calls_before_iteration_cap() {
     let provider_id = provider();
     let repeated = || {

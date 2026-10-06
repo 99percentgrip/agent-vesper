@@ -515,6 +515,11 @@ the multi-turn, tool-executing layer above it.
 
 ## Local Contracts
 
+- Bounded composition roles may use `with_tool_iteration_ceiling` to tighten the
+  total turn allowance, including planned continuation. Zero clamps to one;
+  this port cannot raise the shared absolute ceiling. Ordinary hosts retain
+  their existing behavior unless their composition explicitly supplies it.
+
 - One `AgentLoop` owns one random, bounded, non-secret cache-routing identity
   and carries it across ordinary turns, tool continuations and provider-native
   compaction requests. Providers that do not support cache affinity ignore it.

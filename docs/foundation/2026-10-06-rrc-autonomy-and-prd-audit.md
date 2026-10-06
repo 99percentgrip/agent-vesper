@@ -28,7 +28,7 @@ Sequential local commands use the existing candidate target cache, `CARGO_BUILD_
 
 - `cargo test -p vesper-harness --lib --all-features`: 369 passed, zero failed, six ignored; log `/tmp/vesper-rrc-audit-harness-final.log`. The portable monotonic-clock case also passed in an exact follow-up.
 - `cargo xtask verify`: the earlier attempt failed the later-main link regression; the repaired full canonical gate must run through native RRC before candidate publication.
-- `cargo xtask acceptance`: all 119 exact cases passed after the additional live projection regression; log `/tmp/vesper-rrc-audit-acceptance-final.log`.
+- `cargo xtask acceptance`: all 122 exact cases passed after continuation and terminal-diagnostic regressions; log `/tmp/vesper-rrc-segments-acceptance.log`.
 - Changed harness, ACP, TUI and xtask Clippy passed with all targets/features and warnings denied; `/tmp/vesper-rrc-audit-clippy-final.log`.
 - Fresh controlled public runs on isolated SHA `897de26bd175dbb12a8fe5db26e603e5a0af721f`: red run 37487548629 exposed one failed/four active jobs and withheld diagnosis until settlement; repeated red run 37487842976 preserved fingerprint `3c6137dc79a06f05ae5269a436ef60372b2410631d7db1c131f3e13ed9e424dc` and refused an unchanged retry; green run 37488147422 settled five successful jobs. `/tmp/vesper-rrc-public-audit/orchestration.log` retains the native-reader observations.
 - Before the expanded audit changes, the closeout candidate passed 361 harness cases (6 ignored), 5 ACP process cases, changed-package Clippy and all 100 then-enrolled acceptance cases. These are scoped intermediate receipts, not evidence for the later changes.
@@ -55,7 +55,7 @@ The repairs remove confirmed premature completion, false receipt reuse, excessiv
 
 ## Archived local receipts
 
-[Local and public protocol receipts](2026-10-06-rrc-autonomy-and-prd-audit-receipts.tar.gz), SHA-256 a0aee9e39b4b34da3aec3043c9dc746d025b50f4d034c3070ce78b2b888f3315.
+[Local and public protocol receipts](2026-10-06-rrc-autonomy-and-prd-audit-receipts.tar.gz), SHA-256 f0093337bbc52402eb805fb855945485832d20b4fcf1f7e81ec3f8ce538226c2.
 
 The prior epoch was Complete/Idle without an in-flight operation or owner. Scoped Cargo cleaning of only its harness/ACP/TUI products preserved the dependency cache and increased observed free disk from 124 GiB to 155 GiB; native reserve thresholds remain unchanged.
 
@@ -64,3 +64,18 @@ The prior epoch was Complete/Idle without an in-flight operation or owner. Scope
 The first connected native ACP run on source 2c42ae69 bumped its isolated worktree to 0.24.7 and passed workspace verify, 118-case acceptance and architecture after version preparation. It recovered from resource pressure without a continue prompt. Before publication, live observation exposed a stale host projection: persisted gate-start milestones became visible only after the blocking gate returned. The active snapshot retained its earlier progress tree. Native cancellation stopped this candidate with commit/push/tag/publication flags false; its checkpoints and passing gate receipts remain preserved. This is an interrupted candidate, not a released result. The shared snapshot now projects current same-epoch persisted progress while retaining trusted acceptance-case units; mismatched epochs cannot overwrite a live snapshot. Both hosts already consume this shared snapshot. The added exact regression is enrolled in acceptance. Final-source native release gates remain required.
 
 The expanded progress candidate passed 119 exact acceptance cases (202732 ms). Same-epoch projection and final-case/outer-gate separation passed the focused regression; changed-package Clippy and rebuilt ACP receipts are retained with the final source. Native release gates remain pending.
+
+
+## Settled production matrix and native repair boundary
+
+Exact candidate `8c3263f3adbf223660f37b9f54f9980df93cd827` passed all eight native local gates. Hosted runs 37500934609 (foundation), 37500934696 (canonical), 37500934692 (MSRV) and 37500934654 (web-driver) all settled before diagnosis. Windows, both Linux targets, Apple Silicon, hosted MSRV, web-driver and supply-chain passed. Intel macOS OpenAI startup and canonical microphone-free voice lifecycle failed. Native RRC captured fingerprints `858a590bd4e234422293644c9673206b4a8b8cacb95ad25fa19225b8fcf488ff` and `4c1f54953946a0322fe3dd1bcca6fa7efd6c7367cb7ab457d53ed21dcaac69c0`, reserved one repair admission for each family and created an isolated worktree. It refused publication when the worker returned a non-completed outcome; the old message discarded the outcome variant, so the exact first live terminal reason cannot be reconstructed and is not asserted here.
+
+Inspection reproduced the unplanned 24-turn segment boundary without continuation. Repair continuation now preserves complete history, ownership, tool restrictions, permission and watchdog state within the same admission for at most four segments. A role ceiling also bounds native planned continuation, including a plan introduced after an earlier segment. Exhaustion and interruption remain explicit failures. Interrupted tool fragments never replay. Two synthetic providers demonstrate completion after the first segment, while hard-limit and native-plan fixtures prove bounded refusal.
+
+The first live worker's partial, unverified startup/voice fixture patch is preserved and adopted for focused verification, not counted as a completed native repair. Cursor query replies no longer replay from the full transcript; cold startup matches the other cases' existing 20-second budget while discovery stays stalled. Voice checks wait for actual frames instead of inspecting before rendering settles. Final-source gates and publication remain pending; the red candidate is not tagged.
+
+## Current continuation and UI focused proof
+
+The final continuation source passed changed-package all-target/all-feature Clippy with warnings denied and 122 exact acceptance cases (228822 ms). Explicit role-ceiling and two-provider preserved-history continuation regressions passed. All three OpenAI startup process cases passed with all features. The ignored microphone-free lifecycle wrapper was explicitly executed with the task-owned NumPy 2.5.3 Python environment: one passed, covering mouse/F5, elapsed recording, editable multi-chunk transcription, retry/discard, early exit, disk failure and shutdown cleanup. Default ignored status is not counted as passing proof. No microphone or provider inference was used by these focused checks.
+
+The initial wrapper invocation lacked its required integration feature, and the system Python lacked NumPy; neither is source regression proof. The corrected all-feature invocation and task-owned verification environment passed. Native final-source local gates and hosted matrices are still required. No release tag exists for the red 8c3263f3 candidate.

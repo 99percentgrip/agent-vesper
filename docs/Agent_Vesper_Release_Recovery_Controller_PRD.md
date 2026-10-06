@@ -1136,3 +1136,9 @@ and gate settlement are projected while blocking commands run, and trusted exact
 acceptance-case counts remain visible without certifying the outer gate early.
 The [autonomy audit](foundation/2026-10-06-rrc-autonomy-and-prd-audit.md) retains
 the interrupted native candidate and the regression evidence.
+
+Repair workers preserve history across bounded ordinary iteration segments under
+one persisted admission, with a role ceiling covering later native plans. Typed
+terminal diagnostics distinguish exhaustion, interruption and acceptance failure.
+The autonomy report preserves the settled red 0.24.7 candidate and focused UI
+repairs; final-source hosted/publication evidence remains required.

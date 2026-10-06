@@ -2,15 +2,21 @@
   "status": "local audit and current-source verification; hosted and producing proof pending",
   "base_commit": "a56f0ba76525bf4e7e288eefe2dff731cb120914",
   "candidate_commit": null,
-  "binding_prd_sha256": "9e61c80fa518ce0c02a59f1e3dae3dbeb06adefb68f5c76e86562670b26cb9e5",
+  "binding_prd_sha256": "622bdfe7e2c25ef90c3a4770958dc0ce47913b4174933b8ffe64723f0112792f",
   "source_sha256": {
     "crates/vesper-harness/src/release_closeout.rs": "ccc50f5517aa8b47c03bfe3afea127b469ed67176029326e6b20eadba2bf557b",
-    "crates/vesper-harness/src/release_executor.rs": "c82b7445b664b8a0a2c8efd25b3ce42d81ec0844e55bd747a34a6db6e52e8e06",
+    "crates/vesper-harness/src/release_executor.rs": "db87f7bac39da4e919e5488bc8613d9870f09c8b01f142d5ec771541a9aabdb1",
     "crates/vesper-harness/src/release_recovery.rs": "37044f6609ef70575df804ee88233a0c6b5d189143e918aaeeaf1fcc361afa62",
     "apps/agent-vesper-acp/src/lib.rs": "8cfb32ebcc0234c041e393d6de2a2e316304c27254c9d55284e345ed63e9cbbc",
     "apps/agent-vesper-acp/tests/release_resource_governor.rs": "0ace964fbee41fcc091ee57ca8c51816ab5c2f8eb6f9fe04ffda2a50df375dfc",
     "apps/agent-vesper-tui/src/main.rs": "71ec79ea067c5da6e738e5075743248afdd696634db698eaeaada26329c0ad26",
-    "xtask/src/main.rs": "46780fe56438d51c4e0354d1569e6db9bf79e66ac2837f699ce8f469d7bec32a"
+    "xtask/src/main.rs": "80480603b23f2537534fcaf2edc6c144bf93dc2072802759c07b410fc8d3166c",
+    "crates/vesper-harness/src/lib.rs": "a37aa5e01be91f2204cc988c77ae11855bf0ece6dfc86d0bcb57f4d0ff5af473",
+    "crates/vesper-agent/src/agent_loop.rs": "f28a08e73b3019a6d47154af2e952a80d4460122a050b90071172763e40b6b54",
+    "crates/vesper-agent/tests/agent_loop.rs": "f298d0496bd113a7bfc3a3ba5daa75d6044e4239659f93cdbea639e86fc4f1a6",
+    "apps/agent-vesper-tui/tests/openai_startup_responsiveness.rs": "efbe9b31326b2ab035e35aba9c2a7d1146b2283ecc742562d2d9f76d1c1bfb28",
+    "apps/agent-vesper-tui/tests/voice_pty.py": "a4f4cf1dbf77550bbd38a644e69bdbc34ad113ea9bb38600749fe9b417c5ad6f",
+    "apps/agent-vesper-tui/tests/voice_lifecycle.rs": "904fec12d6c60e9b8c15a5b05804cbf81bab284ecf322a5c75119ae016633dca"
   },
   "sections": [
     {
@@ -51,13 +57,17 @@
         "release_recovery::tests::verified_repair_is_the_only_path_to_one_full_gate_retry",
         "release_executor::tests::repair_factory_executes_real_tools_for_two_provider_fixtures",
         "release_recovery::tests::ledger_round_trip_preserves_job_ids",
-        "release_recovery::tests::status_projection_exposes_product_fields_without_causal_log_content"
+        "release_recovery::tests::status_projection_exposes_product_fields_without_causal_log_content",
+        "release_executor::tests::repair_continues_unplanned_segments_for_two_provider_fixtures",
+        "release_executor::tests::repair_terminal_diagnostics_identify_the_safety_stop"
       ],
       "linux_current_passed": [
         "release_recovery::tests::verified_repair_is_the_only_path_to_one_full_gate_retry",
         "release_executor::tests::repair_factory_executes_real_tools_for_two_provider_fixtures",
         "release_recovery::tests::ledger_round_trip_preserves_job_ids",
-        "release_recovery::tests::status_projection_exposes_product_fields_without_causal_log_content"
+        "release_recovery::tests::status_projection_exposes_product_fields_without_causal_log_content",
+        "release_executor::tests::repair_continues_unplanned_segments_for_two_provider_fixtures",
+        "release_executor::tests::repair_terminal_diagnostics_identify_the_safety_stop"
       ],
       "linux_unexecuted": [],
       "hosted_current_status": "pending exact commit"
@@ -377,14 +387,18 @@
         "release_recovery::tests::published_release_has_a_distinct_main_epoch_and_archived_history",
         "release_recovery::tests::published_docs_red_repair_then_other_platform_red_stops_speculation",
         "release_recovery::tests::completed_version_does_not_claim_a_different_objective_was_released",
-        "release_closeout::tests::closeout_later_main_has_a_distinct_report_without_overwriting_publication"
+        "release_closeout::tests::closeout_later_main_has_a_distinct_report_without_overwriting_publication",
+        "release_executor::tests::repair_continues_unplanned_segments_for_two_provider_fixtures",
+        "release_executor::tests::repair_terminal_diagnostics_identify_the_safety_stop"
       ],
       "linux_current_passed": [
         "release_recovery::tests::green_release_then_red_closeout_keeps_publication_immutable",
         "release_recovery::tests::published_release_has_a_distinct_main_epoch_and_archived_history",
         "release_recovery::tests::published_docs_red_repair_then_other_platform_red_stops_speculation",
         "release_recovery::tests::completed_version_does_not_claim_a_different_objective_was_released",
-        "release_closeout::tests::closeout_later_main_has_a_distinct_report_without_overwriting_publication"
+        "release_closeout::tests::closeout_later_main_has_a_distinct_report_without_overwriting_publication",
+        "release_executor::tests::repair_continues_unplanned_segments_for_two_provider_fixtures",
+        "release_executor::tests::repair_terminal_diagnostics_identify_the_safety_stop"
       ],
       "linux_unexecuted": [],
       "hosted_current_status": "pending exact commit"
@@ -414,11 +428,15 @@
       "behavior_scope": "Both hosts route release/CI commands to the shared deterministic controller",
       "named_cases": [
         "release_executor::tests::production_orchestrator_reaches_publication_only_through_settled_gates",
-        "release_executor::tests::persisted_cancellation_reaches_a_worker_in_another_host"
+        "release_executor::tests::persisted_cancellation_reaches_a_worker_in_another_host",
+        "release_executor::tests::repair_continues_unplanned_segments_for_two_provider_fixtures",
+        "release_executor::tests::repair_terminal_diagnostics_identify_the_safety_stop"
       ],
       "linux_current_passed": [
         "release_executor::tests::production_orchestrator_reaches_publication_only_through_settled_gates",
-        "release_executor::tests::persisted_cancellation_reaches_a_worker_in_another_host"
+        "release_executor::tests::persisted_cancellation_reaches_a_worker_in_another_host",
+        "release_executor::tests::repair_continues_unplanned_segments_for_two_provider_fixtures",
+        "release_executor::tests::repair_terminal_diagnostics_identify_the_safety_stop"
       ],
       "linux_unexecuted": [],
       "hosted_current_status": "pending exact commit"
@@ -1300,12 +1318,16 @@
       "named_cases": [
         "release_recovery::tests::watchdog_triggers_after_six_stagnant_actions",
         "release_executor::tests::background_controller_waits_then_publishes_without_continue_prompts",
-        "release_executor::tests::live_progress_uses_durable_milestones_without_losing_case_counts"
+        "release_executor::tests::live_progress_uses_durable_milestones_without_losing_case_counts",
+        "release_executor::tests::repair_continues_unplanned_segments_for_two_provider_fixtures",
+        "release_executor::tests::repair_terminal_diagnostics_identify_the_safety_stop"
       ],
       "linux_current_passed": [
         "release_recovery::tests::watchdog_triggers_after_six_stagnant_actions",
         "release_executor::tests::background_controller_waits_then_publishes_without_continue_prompts",
-        "release_executor::tests::live_progress_uses_durable_milestones_without_losing_case_counts"
+        "release_executor::tests::live_progress_uses_durable_milestones_without_losing_case_counts",
+        "release_executor::tests::repair_continues_unplanned_segments_for_two_provider_fixtures",
+        "release_executor::tests::repair_terminal_diagnostics_identify_the_safety_stop"
       ],
       "linux_unexecuted": [],
       "historical_receipts_are_current_proof": false,
@@ -1353,12 +1375,26 @@
       "scope": "Full suite before live-progress addition; added current-source projection regression passed separately. Final native full suite is required."
     },
     "acceptance": {
-      "passed": 119,
+      "passed": 122,
       "failed": 0,
-      "log": "vesper-rrc-live-progress-acceptance.log"
+      "log": "vesper-rrc-segments-acceptance.log",
+      "duration_ms": 228822
     },
     "clippy": "passed changed packages with all targets/features and warnings denied",
-    "clock_portability": "one exact current-source case passed"
+    "clock_portability": "one exact current-source case passed",
+    "continuation": "two fixture providers complete beyond first segment; total ceiling and planned ceiling passed",
+    "startup": {
+      "passed": 3,
+      "failed": 0,
+      "log": "vesper-rrc-openai-startup-focused.log"
+    },
+    "voice": {
+      "passed": 1,
+      "failed": 0,
+      "default_ignored": true,
+      "explicit_execution": true,
+      "log": "vesper-rrc-voice-lifecycle-focused.log"
+    }
   },
   "public_controls": {
     "repository": "99percentgrip/agent-vesper-rrc-public-acceptance",
@@ -1381,5 +1417,25 @@
     ],
     "stop": "Native cancellation before any commit/push/tag/publication; progress projection gap found live",
     "released": false
+  },
+  "native_red_candidate": {
+    "sha": "8c3263f3adbf223660f37b9f54f9980df93cd827",
+    "local_gates_passed": 8,
+    "all_required_jobs_settled": 11,
+    "runs": [
+      37500934609,
+      37500934696,
+      37500934692,
+      37500934654
+    ],
+    "failed_scopes": [
+      "Intel macOS OpenAI startup",
+      "canonical microphone-free voice fixture"
+    ],
+    "tagged": false,
+    "published": false,
+    "repair_admissions_per_family": 1,
+    "full_gate_retries_spent": 0,
+    "worker_terminal_variant": "not retained by old diagnostic; unknown"
   }
 }

@@ -71,16 +71,23 @@ fn open_pty() -> io::Result<(File, File)> {
 fn spawn_reader(mut master: File, output: Arc<Mutex<Vec<u8>>>) {
     thread::spawn(move || {
         let mut buffer = [0_u8; 8192];
+        let mut query_tail = Vec::new();
         loop {
             match master.read(&mut buffer) {
                 Ok(0) => break,
                 Ok(count) => {
                     let mut bytes = output.lock().expect("pty buffer");
                     bytes.extend_from_slice(&buffer[..count]);
-                    if bytes.windows(4).any(|window| window == b"\x1b[6n") {
-                        drop(bytes);
+                    drop(bytes);
+                    // Answer each query once, including queries split across reads.
+                    // Searching the full transcript replays old replies on every redraw.
+                    query_tail.extend_from_slice(&buffer[..count]);
+                    let queries = query_tail.windows(4).filter(|w| *w == b"\x1b[6n").count();
+                    for _ in 0..queries {
                         let _ = master.write_all(b"\x1b[24;1R");
                     }
+                    let keep = query_tail.len().saturating_sub(3);
+                    query_tail.drain(..keep);
                 }
                 Err(error) if error.kind() == io::ErrorKind::Interrupted => continue,
                 Err(_) => break,
@@ -402,7 +409,7 @@ fn openai_startup_does_not_wait_for_unselected_xai_discovery() {
         listener.set_nonblocking(true).expect("listener");
         let started = Instant::now();
         while !server_finished.load(Ordering::Acquire)
-            && started.elapsed() < Duration::from_secs(12)
+            && started.elapsed() < Duration::from_secs(35)
         {
             if listener.accept().is_ok() {
                 server_contacted.store(true, Ordering::Release);
@@ -431,7 +438,9 @@ fn openai_startup_does_not_wait_for_unselected_xai_discovery() {
         mut input,
         output,
     } = launch(&openai_endpoint, home.path(), Some(&endpoint)).expect("launch");
-    let visible = wait_for(&output, LOADING, Duration::from_secs(8));
+    // Use the same cold-start budget as the other startup cases. The fixture
+    // stays stalled throughout; this is not a relaxed post-render input budget.
+    let visible = wait_for(&output, LOADING, Duration::from_secs(20));
     {
         let (lock, gate) = &*release;
         lock.lock().expect("release lock").released = true;

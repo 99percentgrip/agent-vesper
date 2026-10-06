@@ -1196,6 +1196,14 @@ work (ACP mid-turn-slash-grace parity; see `apps/agent-vesper-acp/AGENTS.md`).
 
 ## Verification
 
+- Startup PTY readers answer each cursor-position query exactly once across
+  split reads. Cold startup uses the existing 20-second fixture budget while
+  unrelated discovery remains stalled; post-render input bounds remain separate.
+- `tests/voice_pty.py` waits for actual elapsed-time and editor frames before
+  assertions. `tests/voice_lifecycle.rs` is an explicitly invoked microphone-free
+  wrapper requiring `VESPER_TEST_PYTHON` with NumPy; its ignored default is not
+  passing evidence. Canonical CI separately runs the same real PTY lifecycle.
+
 - `tui_host_registry_settles_large_command_output_and_recovers` exercises the
   real hosted TUI registry for mixed large output, truncation, timeout,
   cancellation, descendant-held pipes, and a successful following command.

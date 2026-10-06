@@ -46,8 +46,7 @@ def run(binary, python):
             click_footer(host, 'Push to talk')
             host.wait('Recording microphone')
             host.wait('Stop')
-            host.pump(1.2)
-            assert '00:01' in host.text(), host.text()
+            host.wait('00:01')
             (root/'fail').touch()
             click_footer(host, 'Stop')
             host.wait('Retry voice')
@@ -58,6 +57,7 @@ def run(binary, python):
             (root/'fail').unlink()
             click_footer(host, 'Retry voice')
             host.wait('Push to talk')
+            host.wait('preserved dictation')
             assert 'preserved dictation' in '\n'.join(''.join(row) for row in host.screen[-3:-1]), host.text()
             assert not list(captures.glob('cap-*')), 'managed capture must be cleaned after use'
             host.key('\x7f'*250)
@@ -75,7 +75,7 @@ def run(binary, python):
             started = time.monotonic()
             host.wait('Transcribing')
             host.key(' editable')
-            assert 'editable' in host.text(), host.text()
+            host.wait('editable', timeout=1.2)
             host.wait('Push to talk', timeout=125)
             assert time.monotonic()-started > 9, f'capped capture must still give multi-chunk progressing transcription (took {time.monotonic()-started:.1f}s)'
             assert (root/'model-loads').read_text().count('loaded') == loads

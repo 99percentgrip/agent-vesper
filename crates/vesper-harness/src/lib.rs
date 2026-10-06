@@ -2809,20 +2809,48 @@ impl WorkerFactory {
                 .map_err(|error| error.to_string())?,
             primary: true,
         }];
+        let total_limit = config
+            .max_tool_iterations
+            .saturating_mul(vesper_agent::agent_loop::MAX_PLAN_CONTINUATION_SEGMENTS)
+            .min(vesper_agent::ABSOLUTE_MAX_TOOL_ITERATIONS);
         let mut worker = AgentLoop::new(self.registry.clone(), tools, config)
             .with_permission_port(self.permission.clone());
         if let Some(progress) = self.progress.clone() {
             worker = worker.with_progress_port(progress);
         }
-        worker
-            .run_prompt_with_history_with_cancellation(
-                vec![build_user_message(&prompt)],
-                self.release_mode,
-                self.release_permission,
-                cancellation,
-            )
-            .await
-            .map_err(|error| error.to_string())
+        let mut history = vec![build_user_message(&prompt)];
+        let mut spent = 0_u32;
+        for _ in 0..vesper_agent::agent_loop::MAX_PLAN_CONTINUATION_SEGMENTS {
+            worker = worker.with_tool_iteration_ceiling(total_limit.saturating_sub(spent));
+            let (mut outcome, next_history) = worker
+                .run_prompt_with_history_with_cancellation(
+                    history,
+                    self.release_mode,
+                    self.release_permission,
+                    cancellation.clone(),
+                )
+                .await
+                .map_err(|error| error.to_string())?;
+            let iterations = match &mut outcome {
+                AgentTurnOutcome::Completed { iterations, .. }
+                | AgentTurnOutcome::Acceptance { iterations, .. }
+                | AgentTurnOutcome::Interrupted { iterations, .. }
+                | AgentTurnOutcome::MaxIterationsReached { iterations, .. } => iterations,
+            };
+            spent = spent.saturating_add(*iterations);
+            *iterations = spent;
+            if !matches!(outcome, AgentTurnOutcome::MaxIterationsReached { .. })
+                || spent >= total_limit
+                || cancellation.is_cancelled()
+            {
+                return Ok((outcome, next_history));
+            }
+            history = next_history;
+            history.push(build_user_message(
+                "The ordinary repair segment ended with unfinished work. Continue this same isolated repair using the preserved history. Do not repeat completed actions. Keep the existing permissions and release prohibitions; finish all admitted families and run focused proof after the final edit.",
+            ));
+        }
+        Err("repair continuation segment ceiling reached with unfinished work".into())
     }
 }
 
