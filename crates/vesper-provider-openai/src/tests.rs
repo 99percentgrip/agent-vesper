@@ -128,7 +128,7 @@ fn complete_shared_tool_surface_serializes_identically_in_both_auth_modes() {
 
 #[test]
 fn every_catalog_model_and_advertised_effort_serializes_natively() {
-    assert!(OpenAiCatalog::snapshot().models.len() >= 8);
+    assert!(OpenAiCatalog::snapshot().models.len() >= 10);
     for model in OpenAiCatalog::snapshot().models {
         for mode in [
             auth::AuthenticationMode::ApiKey,
@@ -153,6 +153,79 @@ fn every_catalog_model_and_advertised_effort_serializes_natively() {
         .is_err()
     );
 }
+
+#[test]
+fn gpt_6_1_sol_metadata_and_responses_contract_are_exact() {
+    let model = OpenAiCatalog::find("gpt-6.1-sol").expect("verified catalog entry");
+    assert_eq!(model.display_name.as_str(), "GPT-6.1 Sol");
+    assert_eq!(OpenAiCatalog::context_tokens_for("gpt-6.1-sol"), 272_000);
+    assert_eq!(
+        OpenAiCatalog::reasoning_levels("gpt-6.1-sol"),
+        ["low", "medium", "high", "xhigh", "max"]
+    );
+    for mode in [
+        auth::AuthenticationMode::ApiKey,
+        auth::AuthenticationMode::ChatGpt,
+    ] {
+        let levels = OpenAiCatalog::reasoning_levels_for("gpt-6.1-sol", mode);
+        assert_eq!(levels, ["low", "medium", "high", "xhigh", "max"]);
+        assert!(!levels.contains(&"none"));
+        assert!(!levels.contains(&"minimal"));
+        assert!(!levels.contains(&"ultra"));
+
+        let mut request = fixture_request();
+        request.model = model.model.clone();
+        request.reasoning = Some(ReasoningIntent {
+            mode: Some(BoundedString::new("max").unwrap()),
+            stream_visible: true,
+            retention: ReasoningRetention::SessionOnly,
+        });
+        request.messages[0]
+            .content
+            .push(ContentPart::Image(ImageDescriptor {
+                media_type: "image/png".into(),
+                source: MediaSource::Reference {
+                    reference: "data:image/png;base64,iVBORw0KGgo=".into(),
+                },
+                alt_text: None,
+            }));
+        request.maximum_output_tokens = Some(128_000);
+        let body = wire::request(&request, mode, "medium").unwrap();
+        assert_eq!(body["model"], "gpt-6.1-sol");
+        assert_eq!(body["reasoning"]["effort"], "max");
+        assert!(body["input"].to_string().contains("input_image"));
+        if mode == auth::AuthenticationMode::ApiKey {
+            assert_eq!(body["max_output_tokens"], 128_000);
+        } else {
+            assert!(body.get("max_output_tokens").is_none());
+        }
+    }
+}
+
+#[test]
+fn current_gpt_6_sol_and_luna_catalog_rows_preserve_api_none_only() {
+    for id in ["gpt-6-sol", "gpt-6-luna"] {
+        let model = OpenAiCatalog::find(id).expect("verified catalog entry");
+        assert_eq!(OpenAiCatalog::context_tokens_for(id), 272_000);
+        assert_eq!(
+            OpenAiCatalog::reasoning_levels(id),
+            ["low", "medium", "high", "xhigh", "max"]
+        );
+        assert_eq!(
+            OpenAiCatalog::reasoning_levels_for(id, auth::AuthenticationMode::ApiKey),
+            ["none", "low", "medium", "high", "xhigh", "max"]
+        );
+        assert_eq!(
+            OpenAiCatalog::reasoning_levels_for(id, auth::AuthenticationMode::ChatGpt),
+            ["low", "medium", "high", "xhigh", "max"]
+        );
+        let mut request = fixture_request();
+        request.model = model.model;
+        assert!(wire::request(&request, auth::AuthenticationMode::ApiKey, "none").is_ok());
+        assert!(wire::request(&request, auth::AuthenticationMode::ChatGpt, "none").is_err());
+    }
+}
+
 #[test]
 fn tool_round_trip_preserves_call_identity_and_opaque_reasoning() {
     let mut request = fixture_request();

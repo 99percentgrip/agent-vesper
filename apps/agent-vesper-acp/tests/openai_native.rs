@@ -26,9 +26,9 @@ fn serve_models(listener: &TcpListener, mode: &str) {
         mode == "chatgpt"
     );
     let body = if mode == "chatgpt" {
-        json!({"models":[{"slug":"gpt-6-astra","visibility":"list"},{"slug":"gpt-5.3-codex-spark","visibility":"list"},{"slug":"gpt-5.4","visibility":"hide"},{"slug":"unverified-model","visibility":"list"}]})
+        json!({"models":[{"slug":"gpt-6-astra","visibility":"list"},{"slug":"gpt-6.1-sol","visibility":"list"},{"slug":"gpt-6-sol","visibility":"list"},{"slug":"gpt-6-luna","visibility":"list"},{"slug":"gpt-5.3-codex-spark","visibility":"list"},{"slug":"gpt-5.4","visibility":"hide"},{"slug":"unverified-model","visibility":"list"}]})
     } else {
-        json!({"data":[{"id":"gpt-6-astra"},{"id":"unverified-model"}]})
+        json!({"data":[{"id":"gpt-6-astra"},{"id":"gpt-6.1-sol"},{"id":"gpt-6-sol"},{"id":"gpt-6-luna"},{"id":"unverified-model"}]})
     }.to_string();
     write!(socket, "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",body.len()).unwrap();
 }
@@ -125,6 +125,12 @@ fn both_native_modes_honor_read_only_permission_and_return_the_denial() {
 fn spark_native_tool_round_trip_omits_summary() {
     tool_round_trip_model("chatgpt", false, "gpt-5.3-codex-spark", "high");
 }
+
+#[test]
+fn gpt_6_1_sol_native_subscription_tool_round_trip_uses_max() {
+    tool_round_trip_model("chatgpt", false, "gpt-6.1-sol", "max");
+}
+
 fn tool_round_trip(mode: &'static str, denied: bool) {
     tool_round_trip_model(mode, denied, "gpt-6-astra", "max");
 }
@@ -270,6 +276,9 @@ fn tool_round_trip_model(
         .unwrap();
     let advertised = model_options["options"].to_string();
     assert!(advertised.contains("gpt-6-astra"), "{model_options}");
+    assert!(advertised.contains("gpt-6.1-sol"), "{model_options}");
+    assert!(advertised.contains("gpt-6-sol"), "{model_options}");
+    assert!(advertised.contains("gpt-6-luna"), "{model_options}");
     assert!(!advertised.contains("gpt-5.4"), "{model_options}");
     assert!(!advertised.contains("unverified-model"), "{model_options}");
     process.send(json!({"jsonrpc":"2.0","id":7,"method":"session/set_config_option","params":{"sessionId":session,"configId":"model","value":"gpt-5.4"}}));

@@ -58,6 +58,10 @@ Own durable project documentation and evidence-backed engineering records.
   separation. `foundation/2026-09-30-openai-responses-live-prerelease-candidate.md`
   owns the clean isolated debug candidate identity, secret-canary host proof,
   direct OpenAI runtime receipt and explicit no-release/no-install boundary.
+  `foundation/2026-10-06-openai-catalog-audit-and-gpt-6-1-sol.md` owns the
+  current primary-source catalog audit, GPT-6.1 Sol/GPT-6 Sol/Luna additions,
+  0.155.0 subscription discovery floor, hermetic both-host receipts and the
+  exact-commit hosted-gates/no-release boundary.
 - `vro18-native-xai-provider-prd.md` owns VRO-18 native xAI reasoning-provider
   requirements, phased acceptance, billing-path isolation, and adjacent-service
   exclusions. `architecture/recon_xai_native_provider.md` and

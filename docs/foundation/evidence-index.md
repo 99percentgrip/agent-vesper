@@ -1,5 +1,15 @@
 # Foundation Evidence Index
 
+## OpenAI catalog audit and GPT-6.1 Sol (2026-10-06)
+
+- [Execution report](2026-10-06-openai-catalog-audit-and-gpt-6-1-sol.md)
+  records the current official/pinned-source audit, addition of GPT-6.1 Sol and
+  the concurrently discovered GPT-6 Sol/Luna omissions, exact reasoning and
+  context-budget boundaries, subscription discovery version 0.155.0, adapter
+  and both-host hermetic proof, canonical/MSRV receipts, and the explicit
+  no-live-account/no-release boundary. The source is locally ready to enter
+  exact-commit release CI; hosted five-target/publication gates remain unexecuted.
+
 ## Documentation CI and Windows readiness repair (2026-10-06)
 
 - [Repair report](2026-10-06-documentation-ci-and-windows-readiness-repair.md)

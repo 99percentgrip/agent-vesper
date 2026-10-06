@@ -11,6 +11,9 @@ pub const REASONING_LEVELS: &[&str] = &["low", "medium", "high", "xhigh"];
 // models-manager/models.json. Never infer capabilities from model-name patterns.
 const MODELS: &[(&str, &str)] = &[
     ("gpt-6-astra", "GPT-6 Astra"),
+    ("gpt-6.1-sol", "GPT-6.1 Sol"),
+    ("gpt-6-sol", "GPT-6 Sol"),
+    ("gpt-6-luna", "GPT-6 Luna"),
     ("gpt-5.6-sol", "GPT-5.6 Sol"),
     ("gpt-5.6-terra", "GPT-5.6 Terra"),
     ("gpt-5.6-luna", "GPT-5.6 Luna"),
@@ -64,7 +67,7 @@ impl OpenAiCatalog {
             && !levels.is_empty()
             && !matches!(
                 model,
-                "gpt-6-astra" | "gpt-5.3-codex" | "gpt-5.3-codex-spark"
+                "gpt-6-astra" | "gpt-6.1-sol" | "gpt-5.3-codex" | "gpt-5.3-codex-spark"
             )
         {
             levels.insert(0, "none");
@@ -79,7 +82,13 @@ impl OpenAiCatalog {
         let mut levels = REASONING_LEVELS.to_vec();
         if matches!(
             model,
-            "gpt-6-astra" | "gpt-5.6-sol" | "gpt-5.6-terra" | "gpt-5.6-luna"
+            "gpt-6-astra"
+                | "gpt-6.1-sol"
+                | "gpt-6-sol"
+                | "gpt-6-luna"
+                | "gpt-5.6-sol"
+                | "gpt-5.6-terra"
+                | "gpt-5.6-luna"
         ) {
             levels.push("max");
         }

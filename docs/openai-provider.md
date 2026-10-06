@@ -26,19 +26,24 @@ access is not interchangeable with API credit. See the official
 
 ## Models and harness features
 
-The verified capability catalog includes GPT-6 Astra, GPT-5.6 Sol, Terra and Luna,
-GPT-5.5, GPT-5.4, GPT-5.2, GPT-5.3 Codex, and GPT-5.3 Codex Spark. Menus show
-only entries also returned for your account. Fresh sessions use an available
-model; `/model` changes the active model. `/thinking` offers low, medium, high, and xhigh; Astra and
-the GPT-5.6 models also offer max. API mode additionally offers none for the
-non-Codex models except Astra. Subscription mode does not advertise none.
+The verified capability catalog includes GPT-6 Astra, GPT-6.1 Sol, GPT-6 Sol,
+GPT-6 Luna, GPT-5.6 Sol, Terra and Luna, GPT-5.5, GPT-5.4, GPT-5.2,
+GPT-5.3 Codex, and GPT-5.3 Codex Spark. Menus show only entries also returned
+for your account. Fresh sessions use an available model; `/model` changes the
+active model. `/thinking` offers low, medium, high, and xhigh; Astra, GPT-6.1
+Sol, GPT-6 Sol, GPT-6 Luna, and the GPT-5.6 models also offer max. API mode
+additionally offers none where the model supports it; GPT-6.1 Sol, Astra, and
+the Codex variants reject none. Subscription mode does not advertise none.
 Model switches repair incompatible selections. Unsupported combinations fail
 before dispatch. Codex's ultra is a host-owned automatic delegation mode,
 not a literal Responses effort, and is not advertised as one here. The shared
 working-context budget is conservatively 272,000 tokens, except Spark at 128,000;
 it is not a claim that the public models have only that capacity. Catalog
-evidence: [GPT-5.4](https://developers.openai.com/api/docs/models/gpt-5.4) and
-[GPT-6 Astra](https://developers.openai.com/api/docs/models/gpt-6-astra).
+evidence: [GPT-6.1 Sol](https://developers.openai.com/api/docs/models/gpt-6.1-sol),
+[GPT-6 Sol](https://developers.openai.com/api/docs/models/gpt-6-sol),
+[GPT-6 Luna](https://developers.openai.com/api/docs/models/gpt-6-luna),
+[GPT-6 Astra](https://developers.openai.com/api/docs/models/gpt-6-astra), and
+[GPT-5.4](https://developers.openai.com/api/docs/models/gpt-5.4).
 
 Both modes use Vesper's ordinary agent loop: confined file tools, shell tools,
 permissions, plans and continuation, skills, memory, MCP/plugins, workers,
@@ -69,10 +74,13 @@ credentials, the old account list is discarded. If discovery fails, check sign-i
 and connectivity, then choose **Retry model list** (Enter, R or click).
 Esc returns to Settings. Vesper shows the failure reason without a guessed fallback list.
 
-GPT-5.3 Codex Spark appears only when returned for your account. It accepts text,
-uses a 128K context budget, and does not request reasoning summaries. Other supported
-models retain their adapter-defined capabilities. Availability can change after
-loading the menu, so a later service rejection is still possible.
+GPT-6.1 Sol appears only when returned for the selected account. It accepts text
+and images and supports low, medium, high, xhigh, and max; Vesper rejects none,
+minimal, and Codex's host-owned ultra before dispatch. GPT-5.3 Codex Spark also
+appears only when returned for your account. It accepts text, uses a 128K context
+budget, and does not request reasoning summaries. Other supported models retain
+their adapter-defined capabilities. Availability can change after loading the
+menu, so a later service rejection is still possible.
 
 ## Usage and account limits
 

@@ -13,9 +13,11 @@ Both hosts register one provider with API-key and subscription authentication.
   mode, local logout, bounded refresh, and cross-process RAII file locking.
   An environment/scoped API key reports API authentication metadata when no stored
   mode is selected; a selected subscription or sign-out tombstone takes precedence.
-- `src/catalog.rs` owns verified model/effort/capability metadata. The conservative
-  context budget is 272K except text-only Codex Spark at 128K; Spark requests omit
-  `reasoning.summary` and reject images before transport.
+- `src/catalog.rs` owns verified model/effort/capability metadata. GPT-6.1 Sol
+  exposes low through max and rejects none/minimal; GPT-6 Sol/Luna permit API-only
+  none. Codex-host `ultra` is never exposed as a literal Responses effort. The
+  conservative context budget is 272K except text-only Codex Spark at 128K; Spark
+  requests omit `reasoning.summary` and reject images before transport.
 - `src/discovery.rs` owns authenticated account model choices: API `GET /v1/models`
   and subscription `GET /backend-api/codex/models`. Intersect returned identifiers
   with verified adapter capabilities; subscription rows require `visibility: list`.
@@ -26,7 +28,7 @@ Both hosts register one provider with API-key and subscription authentication.
   replacement/logout invalidates them; dispatch rejects absent models or a different
   authentication mode. The service remains authoritative after discovery.
   Subscription `client_version` is the pinned catalog protocol compatibility
-  version (0.153.0), independent of Vesper's package version. Keep Vesper's own
+  version (0.155.0), independent of Vesper's package version. Keep Vesper's own
   User-Agent identity. HTTP failures use the bounded shared rejection classifier.
 - `src/policy.rs` owns per-model/auth-mode reasoning choices and compatible
   model-switch cascades. API-only `none` is not offered in subscription mode.

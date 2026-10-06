@@ -27,6 +27,7 @@ not asserted by offline acceptance. User setup is in [the guide](openai-provider
 - [2026-09-30 Responses decoder reinspection](foundation/2026-09-30-openai-responses-reinspection.md) rechecks the historical and current first-party event shapes, preserves the already-correct acceptance of subscription metadata/reasoning events, and adds expected-shape detail to separate structured diagnostics.
 - [2026-09-30 Responses streaming boundary audit](foundation/2026-09-30-openai-responses-streaming-boundary-audit.md) classifies the recorded failure as a bounded JSON event with an unsupported string event type while preserving the unknown exact discriminant, adds framing/boundary/no-replay regressions, labels diagnostic byte measurements, and enforces safe user prose versus separate structured diagnostics in both hosts.
 - [2026-09-30 Responses live prerelease candidate](foundation/2026-09-30-openai-responses-live-prerelease-candidate.md) records the clean isolated debug source/binary identity, complete 60-test adapter receipt, TUI secret-canary surface proof and one successful direct OpenAI runtime turn. It does not reproduce the unavailable historical event or establish release/cross-platform readiness.
+- [2026-10-06 catalog audit and GPT-6.1 Sol implementation](foundation/2026-10-06-openai-catalog-audit-and-gpt-6-1-sol.md) records current primary-source metadata, the complete stale/missing-row audit, native catalog/discovery/Responses changes, both-host hermetic evidence, and the no-release/no-live-account boundary.
 
 Official documentation inspected on 2026-09-08:
 
@@ -101,10 +102,13 @@ evidence, not proof of a stable third-party API or live account entitlement.
   local logout, redacted secret wrappers, and cross-process credential locks.
   Auth fixtures cover pending/approved/expired/cancelled/oversized/invalid
   responses and refresh rotation. Storage tests use temporary private vaults.
-- Catalog: GPT-6 Astra, GPT-5.6 Sol/Terra/Luna, GPT-5.5, GPT-5.4,
-  GPT-5.2, GPT-5.3 Codex, and GPT-5.3 Codex Spark; per-model/auth-mode effort
-  choices and explicit capability controls. Spark is text-only with a 128K context
-  budget and no reasoning-summary parameter; other entries use a conservative 272K.
+- Catalog: GPT-6 Astra, GPT-6.1 Sol, GPT-6 Sol/Luna, GPT-5.6 Sol/Terra/Luna,
+  GPT-5.5, GPT-5.4, GPT-5.2, GPT-5.3 Codex, and GPT-5.3 Codex Spark;
+  per-model/auth-mode effort choices and explicit capability controls. GPT-6.1
+  Sol supports low through max but rejects none/minimal; GPT-6 Sol/Luna allow
+  API-only none. Codex-host `ultra` remains excluded. Spark is text-only with a
+  128K context budget and no reasoning-summary parameter; other entries use a
+  conservative 272K.
   Native authenticated discovery intersects API model identifiers or visible subscription
   entries with this capability index. Both hosts filter choices and the shared factory
   blocks dispatch outside its account snapshot. Failed refresh clears old choices.
@@ -203,13 +207,13 @@ foundation, and web-driver acceptance workflows before tagging.
 
 The public [Models list API](https://developers.openai.com/api/reference/resources/models/methods/list)
 returns available API identifiers; it does not establish tool, vision or reasoning
-capabilities. Subscription request shape follows
-[`codex-api/src/endpoint/models.rs`](https://github.com/openai/codex/blob/8e694e955ae02ca737230a5468c55d5847074072/codex-rs/codex-api/src/endpoint/models.rs)
-(`models` plus `client_version`) at the existing pinned protocol revision. Vesper
-identifies itself in User-Agent and uses only its own credentials. The query's
-`client_version=0.153.0` is a separate protocol compatibility floor, matching Astra's
-`minimal_client_version` in the pinned
-[`models.json`](https://github.com/openai/codex/blob/8e694e955ae02ca737230a5468c55d5847074072/codex-rs/models-manager/models.json).
+capabilities. Subscription request shape follows the pinned OpenAI Codex source's
+[`codex-api/src/endpoint/models.rs`](https://github.com/openai/codex/blob/d63a9b8344cfe58bc78bbe319b560378fc8756ef/codex-rs/codex-api/src/endpoint/models.rs)
+(`models` plus `client_version`). Vesper identifies itself in User-Agent and uses
+only its own credentials. The query's `client_version=0.155.0` is a separate
+protocol compatibility floor, matching GPT-6 Sol/Luna's `minimal_client_version`
+in the pinned
+[`models.json`](https://github.com/openai/codex/blob/d63a9b8344cfe58bc78bbe319b560378fc8756ef/codex-rs/models-manager/models.json).
 It must not follow Vesper's independent release number. Subscription
 picker visibility comes from the returned rows, not a copied screenshot.
 [OpenAI's Spark announcement](https://openai.com/index/introducing-gpt-5-3-codex-spark/)
@@ -236,6 +240,39 @@ credential vault to verify visible connection failure, retry and back navigation
 Neither walkthrough submitted a prompt. Workspace verification passed 2,129 tests
 with zero failures and 34 explicitly ignored tests; Clippy and the 27-package
 architecture check passed. This does not certify unexecuted release/platform gates.
+
+## Catalog audit and GPT-6.1 Sol evidence (2026-10-06)
+
+Current official model pages establish that
+[GPT-6.1 Sol](https://developers.openai.com/api/docs/models/gpt-6.1-sol)
+accepts text and image, returns text, advertises a 1,050,000-token context window
+and 128,000 maximum output, and accepts exactly low, medium, high, xhigh, and max
+reasoning effort. None and minimal are explicitly unsupported; Responses is required
+for tool calling. The [GPT-6 Sol](https://developers.openai.com/api/docs/models/gpt-6-sol)
+and [GPT-6 Luna](https://developers.openai.com/api/docs/models/gpt-6-luna) pages
+establish the same modalities and public limits, with API none also supported.
+Vesper continues to use the pinned Codex catalog's conservative 272,000-token
+operational input budget rather than advertise the larger public capacity as its
+working budget.
+
+The OpenAI Codex catalog at commit
+[`d63a9b8344cfe58bc78bbe319b560378fc8756ef`](https://github.com/openai/codex/blob/d63a9b8344cfe58bc78bbe319b560378fc8756ef/codex-rs/models-manager/models.json)
+(SHA-256 `943ca7fe1d19ed019054158303f0dbbd80b3bef43b3aa425a71aa7cb3fb52c2b`)
+lists Astra, GPT-6.1 Sol, GPT-6 Sol/Luna, GPT-5.6 Sol/Terra/Luna and GPT-5.5 as
+visible API-supported rows. GPT-6.1 Sol and Astra require catalog protocol 0.153.0;
+GPT-6 Sol/Luna require 0.155.0, which is now the discovery floor. Its `ultra` row
+remains excluded because it is a Codex-host delegation mode, not a literal Vesper
+Responses effort.
+
+The audit removed no existing entry. GPT-5.3 Codex is deprecated with an announced
+April 1, 2027 shutdown, not yet removed; other older verified entries have no
+applicable base-model shutdown in the current
+[deprecations table](https://platform.openai.com/docs/deprecations). Preserving them
+also preserves saved selections and API accounts that still return them. Authenticated
+discovery remains the availability authority, so absent/hidden rows never appear or
+dispatch merely because they remain in the capability index. The linked execution
+report records hermetic implementation evidence; no live account call, user-state
+write, installation, version change, push, tag or release was performed.
 
 ## Device sign-in UI repair evidence (2026-10-05)
 

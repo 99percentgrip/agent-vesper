@@ -6,6 +6,11 @@ Own evidence and decisions that close the pre-workspace blockers identified by r
 
 ## Ownership
 
+- `2026-10-06-openai-catalog-audit-and-gpt-6-1-sol.md` owns the current
+  primary-source OpenAI catalog audit, GPT-6.1 Sol/GPT-6 Sol/Luna capability
+  additions, subscription discovery floor, both-host hermetic evidence, retained
+  older-model rationale and the exact-commit hosted-gates/no-release boundary.
+
 - `2026-10-06-documentation-ci-and-windows-readiness-repair.md` owns the
   post-publication documentation-trigger mistake, complete cancelled matrix,
   retained Windows readiness and Intel macOS MCP timeout failures,

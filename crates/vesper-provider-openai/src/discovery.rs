@@ -6,8 +6,8 @@ use vesper_provider::*;
 
 // Subscription discovery gates rows on the upstream protocol client version,
 // not Vesper's independent release number. This floor matches the newest model
-// in our capability catalog (upstream models.json at 8e694e955ae02ca737230a5468c55d5847074072).
-const SUBSCRIPTION_CATALOG_VERSION: &str = "0.153.0";
+// in our capability catalog (upstream models.json at d63a9b8344cfe58bc78bbe319b560378fc8756ef).
+const SUBSCRIPTION_CATALOG_VERSION: &str = "0.155.0";
 
 /// One explicit discovery result, never a process-global or cross-account cache.
 #[derive(Clone)]
@@ -267,19 +267,23 @@ mod tests {
     use serde_json::json;
     #[test]
     fn subscription_excludes_hidden_unknown_and_missing_visibility() {
-        let got = parse(&json!({"models":[{"slug":"gpt-5.4","visibility":"hide"},{"slug":"gpt-5.5","visibility":"list"},{"slug":"invented","visibility":"list"},{"slug":"gpt-5.2"}]}), AuthenticationMode::ChatGpt).unwrap();
-        assert_eq!(got.models.len(), 1);
+        let got = parse(&json!({"models":[{"slug":"gpt-5.4","visibility":"hide"},{"slug":"gpt-6.1-sol","visibility":"list"},{"slug":"gpt-6-sol","visibility":"list"},{"slug":"gpt-6-luna","visibility":"list"},{"slug":"gpt-5.5","visibility":"list"},{"slug":"invented","visibility":"list"},{"slug":"gpt-5.2"}]}), AuthenticationMode::ChatGpt).unwrap();
+        assert_eq!(got.models.len(), 4);
+        assert!(got.contains("gpt-6.1-sol"));
+        assert!(got.contains("gpt-6-sol"));
+        assert!(got.contains("gpt-6-luna"));
         assert!(got.contains("gpt-5.5"));
         assert!(!got.contains("gpt-5.4"));
     }
     #[test]
     fn api_uses_only_returned_verified_ids_and_failures_never_restore_static_list() {
         let got = parse(
-            &json!({"data":[{"id":"gpt-5.4"},{"id":"unknown"}]}),
+            &json!({"data":[{"id":"gpt-5.4"},{"id":"gpt-6.1-sol"},{"id":"unknown"}]}),
             AuthenticationMode::ApiKey,
         )
         .unwrap();
-        assert_eq!(got.models.len(), 1);
+        assert_eq!(got.models.len(), 2);
+        assert!(got.contains("gpt-6.1-sol"));
         assert!(got.contains("gpt-5.4"));
         for bad in [
             json!({}),
@@ -335,7 +339,7 @@ mod transport_tests {
             if mode == AuthenticationMode::ChatGpt {
                 // The service version-gates account rows. Vesper's 0.21.x
                 // application version silently produced an empty live catalog.
-                assert!(request.starts_with("get /models?client_version=0.153.0 "));
+                assert!(request.starts_with("get /models?client_version=0.155.0 "));
             }
             socket.write_all(format!("HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}", body.len()).as_bytes()).await.unwrap();
         }

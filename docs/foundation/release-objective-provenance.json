@@ -1,25 +1,13 @@
 {
   "version": 1,
-  "objective_id": "rrc-parity-source-integration-20261006",
-  "objective_label": "RRC parity source integration for v0.24.5",
-  "variant_label": "Published v0.24.5 retained; documentation-trigger and command/MCP startup fixture correction",
-  "variant_id": "rrc-post-release-documentation-readiness-repair-20261006",
+  "objective_id": "openai-catalog-gpt-6-1-sol-20261006",
+  "objective_label": "OpenAI coding-model catalog audit and GPT-6.1 Sol support",
+  "variant_label": "Verified provider-owned catalog, account discovery, and both-host integration",
+  "variant_id": "openai-catalog-gpt-6-1-sol-verified-source-20261006",
   "canonical_release_source": true,
-  "supersedes": [
-    "rrc-source-resolution-ux-repair-20260930",
-    "corrected-v0.24.4-prerelease-integration-20261001",
-    "corrected-v0.24.4-canonical-source-20261001",
-    "rrc-parity-production-source-20261006",
-    "rrc-parity-production-runner-annotations-20261006",
-    "rrc-parity-production-portable-governed-repair-20261006",
-    "rrc-parity-production-host-ledger-fixture-20261006",
-    "rrc-parity-production-isolated-openai-startup-20261006",
-    "rrc-parity-production-bounded-windows-sse-fixture-20261006",
-    "rrc-parity-production-windows-sse-verified-source-20261006"
-  ],
-  "completed_at": "2026-10-06T06:20:39.596821+00:00",
+  "supersedes": [],
+  "completed_at": "2026-10-06T09:50:54+00:00",
   "evidence_reports": [
-    "docs/foundation/2026-10-06-rrc-parity-production-release.md",
-    "docs/foundation/2026-10-06-documentation-ci-and-windows-readiness-repair.md"
+    "docs/foundation/2026-10-06-openai-catalog-audit-and-gpt-6-1-sol.md"
   ]
 }

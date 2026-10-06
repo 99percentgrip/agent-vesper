@@ -16319,6 +16319,11 @@ mod tests {
             ["none", "low", "medium", "high", "xhigh", "max"]
         );
         assert!(!choices(&api, "gpt-6-astra").contains(&"none".into()));
+        assert_eq!(
+            choices(&api, "gpt-6.1-sol"),
+            ["low", "medium", "high", "xhigh", "max"]
+        );
+        assert!(surface.by_alias("model").unwrap().allowed_values.iter().any(|v| matches!(v, vesper_provider::SuperpowerValue::Choice { value } if value.as_str() == "gpt-6.1-sol")));
         assert!(surface.by_alias("model").unwrap().allowed_values.iter().any(|v| matches!(v, vesper_provider::SuperpowerValue::Choice { value } if value.as_str() == "gpt-5.3-codex-spark")));
     }
 
@@ -16384,7 +16389,7 @@ mod tests {
             build_agent_config(&provider).unwrap(),
         );
         let mut state = SessionState::new();
-        for (alias, value) in [("model", "gpt-6-astra"), ("thinking", "max")] {
+        for (alias, value) in [("model", "gpt-6.1-sol"), ("thinking", "max")] {
             state.overrides.set(
                 surface.by_alias(alias).unwrap().id.as_str(),
                 SuperpowerValue::Choice {
@@ -16393,7 +16398,7 @@ mod tests {
             );
         }
         let config = turn_configuration(&agent, &state, &surface).unwrap();
-        assert_eq!(config.model.model_id.as_str(), "gpt-6-astra");
+        assert_eq!(config.model.model_id.as_str(), "gpt-6.1-sol");
         assert_eq!(config.context_window_tokens, 272_000);
         assert_eq!(
             config
