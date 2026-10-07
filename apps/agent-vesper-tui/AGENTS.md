@@ -379,6 +379,12 @@ business logic.
   Each frame retires requests whose waiting operation ended, clears the mobile
   approval capability, and skips expired queued requests with a bounded drain.
   A stale approval must never block input or consume a fresh operation's decision.
+  The configured `cancel_turn` binding (default Ctrl+C) is handled before modal
+  input. It cancels the ordinary foreground turn first, preserves explicit voice
+  Stop, and otherwise invokes shared `/release cancel` for a registered RRC worker.
+  Pending cleanup remains cancellation-requested; a failed release cancellation
+  never reports success. Native cancellation preserves the checkpoint and does
+  not claim to cancel remote workflows. ACP uses its existing `session/cancel` port.
   VRO-8 (PRD §8.1): `ReasoningDiagnostics` is a label-typed struct (snake_case
   strategy + kebab-case mode + lowercase risk + numeric budget fields)
   exposed via `lib.rs`. Since VRO-11.5 it renders as the ONE-line inline

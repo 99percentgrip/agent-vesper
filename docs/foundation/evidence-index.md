@@ -1,5 +1,7 @@
 # Foundation Evidence Index
 
+- [RRC native cancellation keybinding repair](2026-10-07-rrc-native-cancellation-keybinding-repair.md) — configured Cancel reaches RRC and pending approvals; foreground/voice priority and truthful cleanup preserved.
+
 - [RRC adaptive resource admission repair](2026-10-07-rrc-adaptive-resource-admission-repair.md) — reproduced two-job/one-job budget mismatch, unchanged-margin lower-concurrency admission, native release verification pending.
 
 - [RRC native permission and stop repair](2026-10-07-rrc-native-permission-and-stop-repair.md) — actual ACP protocol approval/rejection/cancellation, strict options and request-bound cleanup, combined repair verification.

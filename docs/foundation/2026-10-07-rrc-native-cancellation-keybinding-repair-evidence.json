@@ -1,0 +1,36 @@
+{
+  "version": 1,
+  "observed_at": "2026-10-07T13:41:39.805700+00:00",
+  "parent": "b2f88f4e23f5eabd5fa8c5284c4a5274b0ef8c7d",
+  "scope": "focused TUI cancellation repair; final versioned native gates and exact-main CI required",
+  "source_sha256": {
+    "apps/agent-vesper-tui/src/main.rs": "78f1408fb2d8b72d606623df10aceb419d4940ff536626ef7e67d064ddead5e9"
+  },
+  "native_host_sha256": "ae0670b88a3c1eabbc064df4e974719c5b497d27fc36cdcd6bd253c236376c1a",
+  "archive_sha256": "bf4168109d29c381215ed12325c4834efc7ae5a5691d9c41ce80a42619a3539c",
+  "receipts": {
+    "vesper-rrc-cancel-keybinding-red.log": "24c2a927c382fd863d1600334c0670b60311bd323554c4993cd64afc79cc0bc3",
+    "vesper-rrc-cancel-keybinding-green.log": "4b6437b66a04d49f66ed58bff65c94b6106eb41de07998d9d57fd3a5ee09272c",
+    "vesper-rrc-cancel-keybinding-green-v2.log": "ec70b30d3469c65d5c7a6b941dd2b97555f24cf2bf23daa083cc934a0fa45824",
+    "vesper-rrc-cancel-keybinding-all.log": "3fb8066a3094e113f1b31dccb7dd55c558b6b7415c6d05258dd12d4bc9397639",
+    "vesper-rrc-cancel-keybinding-all-final.log": "29bccf7eb89feb5539af39703f211a5b113c21142245b9113cb73cffa757e2ee",
+    "vesper-rrc-cancel-keybinding-clippy.log": "3b04d746cf4a45dff929a346c5ac2c434796b566a0069de5e6d76b867c34bcd7",
+    "vesper-rrc-cancel-keybinding-host-build.log": "74b2276747e73cb2c7205a29fdb6488d94fc0fa2f9a272776fcca8efaa2a1968",
+    "vesper-rrc-cancel-keybinding-interrupted-native.json": "0d7ab4af6c1bc40b2fcec820e74c2f3f95f811de9eeb639d3978eeea4bfc0b78"
+  },
+  "checks": {
+    "default_cancellation": {
+      "passed": 17,
+      "failed": 0
+    },
+    "all_feature_tui_binary": {
+      "passed": 175,
+      "failed": 0,
+      "ignored": 1
+    },
+    "strict_all_target_all_feature_tui_clippy": "passed",
+    "native_host_build": "passed",
+    "native_previous_gate_result": "4/8 passed; MSRV intentionally interrupted; no final gate certification",
+    "publication": "not performed"
+  }
+}

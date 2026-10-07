@@ -6,6 +6,10 @@ Own evidence and decisions that close the pre-workspace blockers identified by r
 
 ## Ownership
 
+- `2026-10-07-rrc-native-cancellation-keybinding-repair.md` owns configured TUI cancellation through active native RRC
+  and approval dialogs, truthful pending cleanup, focused regressions and the
+  interrupted integrated-candidate boundary.
+
 - `2026-10-07-rrc-adaptive-resource-admission-repair.md` owns the prolonged native
   wait, matched admission/Cargo budgets, unchanged safety margins, red/green and
   refusal regressions, and final native release readiness boundaries.

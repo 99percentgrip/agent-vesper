@@ -1179,3 +1179,6 @@ The [2026-10-07 reverification](foundation/2026-10-06-rrc-autonomy-and-prd-audit
 ### 2026-10-07 adaptive resource admission follow-up
 
 [Adaptive resource admission repair](foundation/2026-10-07-rrc-adaptive-resource-admission-repair.md) reproduces a prolonged native wait caused by calculating a two-job near-full-swap envelope before reporting a one-job Cargo policy. Shared admission now selects a bounded lower concurrency only when every existing safety check passes for that same budget. Focused red/green and refusal tests are scoped evidence; final versioned native gates and hosted release receipts remain separately required.
+
+
+[Native cancellation keybinding repair](foundation/2026-10-07-rrc-native-cancellation-keybinding-repair.md) closes the TUI gap where Ctrl+C ignored the registered native controller and approval dialogs swallowed cancellation. Configured Cancel uses the shared local controller cancellation route with ordinary foreground/voice priority, preserves pending cleanup and reports errors truthfully. Focused evidence and interrupted candidate receipts remain distinct from final exact-version release gates.

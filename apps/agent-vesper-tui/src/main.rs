@@ -2150,6 +2150,18 @@ async fn drive_loop(
             continue;
         };
 
+        if handle_cancellation_keybinding(
+            code,
+            modifiers,
+            session,
+            registry_commands,
+            surface,
+            provider_id,
+            checkpoint_stores,
+        ) {
+            refresh_command_menu(session, registry_commands, surface);
+            continue;
+        }
         if code == KeyCode::F(5) {
             session.voice.toggle();
             continue;
@@ -2229,7 +2241,8 @@ async fn drive_loop(
         // Tool-permission modal interceptor: when a one-time approval is
         // pending, the modal overlays the conversation and consumes the
         // keyboard. Only Tab/Left/Right (toggle focus), Enter (submit), and
-        // Esc (deny) reach the runtime — every other key is swallowed so the
+        // Esc (deny) reach the runtime; configured Cancel was handled above.
+        // Every other key is swallowed so the
         // user cannot accidentally type into the composer while the modal
         // is up.
         if session.pending_approval.is_some() {
@@ -5285,6 +5298,53 @@ fn bound_action(
     })
 }
 
+/// Route foreground cancellation without starting a provider turn. The release
+/// port is consulted only when there is no ordinary active turn.
+fn cancel_keybinding_work(
+    session: &mut TuiSession,
+    release_cancel: impl FnOnce() -> Option<Result<String, vesper_harness::release_recovery::RrcError>>,
+) -> bool {
+    if session.agent_running {
+        cancel_active_turn_preserving_partial(session, "cancelled by user");
+        if !session.agent_running {
+            session.state.status = Some("Active turn cancelled.".into());
+        }
+        return true;
+    }
+    let Some(result) = release_cancel() else {
+        return false;
+    };
+    let body = result.unwrap_or_else(|error| format!("release: {error}"));
+    session.state.status = Some(body.lines().next().unwrap_or("release").to_owned());
+    session.state.transcript.push(body);
+    true
+}
+
+/// Cancellation has priority over modal input, using the configured binding.
+#[allow(clippy::too_many_arguments)]
+fn handle_cancellation_keybinding(
+    code: KeyCode,
+    modifiers: KeyModifiers,
+    session: &mut TuiSession,
+    registry: &CommandRegistry,
+    surface: &ProviderSuperpowerSurface,
+    provider_id: &ProviderId,
+    checkpoints: &CheckpointStores,
+) -> bool {
+    if bound_action(&session.keybindings, code, modifiers).as_deref() != Some("cancel_turn") {
+        return false;
+    }
+    apply_keybinding_action(
+        "cancel_turn",
+        session,
+        registry,
+        surface,
+        provider_id,
+        checkpoints,
+    );
+    true
+}
+
 #[allow(clippy::too_many_arguments)]
 fn apply_keybinding_action(
     action: &str,
@@ -5319,10 +5379,21 @@ fn apply_keybinding_action(
                 session.voice_conversation_phase =
                     voice_conversation_glue::ConversationPhase::Interrupted;
             }
-            if session.agent_running {
-                cancel_active_turn_preserving_partial(session, "cancelled by user");
-                session.state.status = Some("Active turn cancelled.".into());
-            } else {
+            if !cancel_keybinding_work(session, || {
+                #[cfg(feature = "voice-conversation")]
+                if voice_stopped {
+                    return None;
+                }
+                vesper_harness::release_executor::active_release_worker_for_workspace(
+                    &checkpoints.workspace_root,
+                )
+                .map(|_| {
+                    vesper_harness::release_recovery::release_command_for_workspace(
+                        &checkpoints.workspace_root,
+                        "cancel",
+                    )
+                })
+            }) {
                 #[cfg(feature = "voice-conversation")]
                 if voice_stopped {
                     session.state.status = Some("Voice playback stopped.".into());
@@ -20828,6 +20899,128 @@ mod tests {
         );
         assert_eq!(session.conversation.len(), 1);
         assert_eq!(session.conversation[0].role, MessageRole::Assistant);
+    }
+
+    #[test]
+    fn cancel_keybinding_reaches_native_release_without_provider_turn() {
+        let mut session = fresh_tui_session_for_trajectory_tests();
+        let receipt = "Release recovery cancelled locally. Checkpoint preserved; remote workflows were not claimed cancelled.";
+        let called = std::cell::Cell::new(false);
+        assert!(cancel_keybinding_work(&mut session, || {
+            called.set(true);
+            Some(Ok(receipt.into()))
+        }));
+        assert!(called.get());
+        assert!(!session.agent_running);
+        assert_eq!(session.state.status.as_deref(), Some(receipt));
+        assert_eq!(
+            session.state.transcript.last().map(String::as_str),
+            Some(receipt)
+        );
+    }
+
+    #[test]
+    fn cancel_keybinding_preserves_foreground_priority_and_truthful_errors() {
+        let mut session = fresh_tui_session_for_trajectory_tests();
+        session.agent_running = true;
+        let cancellation = Arc::new(vesper_runtime::RuntimeCancellation::new());
+        session.turn_cancellation = Some(Arc::clone(&cancellation));
+        assert!(cancel_keybinding_work(&mut session, || {
+            panic!("foreground turn cancellation must not cancel a background release")
+        }));
+        assert!(cancellation.is_cancelled());
+        assert!(
+            session
+                .state
+                .status
+                .as_deref()
+                .unwrap()
+                .contains("Cancellation requested")
+        );
+        let mut session = fresh_tui_session_for_trajectory_tests();
+        assert!(!cancel_keybinding_work(&mut session, || None));
+        assert!(cancel_keybinding_work(&mut session, || {
+            Some(Err(vesper_harness::release_recovery::RrcError::Invalid(
+                "checkpoint unavailable".into(),
+            )))
+        }));
+        let status = session.state.status.as_deref().unwrap();
+        assert!(status.contains("checkpoint unavailable"));
+        assert!(!status.contains("cancelled locally"));
+    }
+
+    #[tokio::test]
+    async fn configured_cancel_binding_precedes_pending_permission_modal() {
+        use vesper_agent::{ApprovalBroker, PermissionPort, ToolRegistry};
+        let mut session = fresh_tui_session_for_trajectory_tests();
+        session
+            .keybindings
+            .insert("cancel_turn".into(), "f6".into());
+        session.agent_running = true;
+        let cancellation = Arc::new(vesper_runtime::RuntimeCancellation::new());
+        session.turn_cancellation = Some(Arc::clone(&cancellation));
+        let (broker, receiver) = ApprovalBroker::channel();
+        session.approval_rx = receiver;
+        let tools = ToolRegistry::parity_default();
+        let definition = tools.definition("run_command").unwrap();
+        let context = vesper_agent::executor::uncancellable_context(
+            Vec::new(),
+            vesper_domain::SessionOperatingMode::Code,
+            vesper_domain::SessionPermissionMode::Ask,
+        );
+        let call = vesper_domain::ToolCall {
+            id: vesper_domain::ToolCallId::new("pending").unwrap(),
+            tool_id: vesper_domain::ToolId::new("run_command").unwrap(),
+            arguments: serde_json::json!({}),
+            extensions: vesper_domain::ExtensionMap::default(),
+        };
+        let mut waiting = broker.authorize(&call, definition, &context);
+        assert!(
+            tokio::time::timeout(std::time::Duration::from_millis(1), &mut waiting)
+                .await
+                .is_err()
+        );
+        drain_permission_request(&mut session);
+        session.mobile_approval_id = Some("pending-mobile-token".into());
+        assert!(session.pending_approval.is_some());
+        let checkpoints = CheckpointStores {
+            ledger: None,
+            sessions: None,
+            cron: None,
+            exporter: None,
+            clipboard: None,
+            workspace_root: std::env::current_dir().unwrap(),
+            root_display: "test".into(),
+            active_session_id: "test".into(),
+        };
+        let registry = CommandRegistry::stage_11b();
+        let surface = palette_surface();
+        let provider = ProviderId::new("test-provider").unwrap();
+        assert!(!handle_cancellation_keybinding(
+            KeyCode::Char('c'),
+            KeyModifiers::CONTROL,
+            &mut session,
+            &registry,
+            &surface,
+            &provider,
+            &checkpoints,
+        ));
+        assert!(!cancellation.is_cancelled());
+        assert!(handle_cancellation_keybinding(
+            KeyCode::F(6),
+            KeyModifiers::NONE,
+            &mut session,
+            &registry,
+            &surface,
+            &provider,
+            &checkpoints,
+        ));
+        assert!(cancellation.is_cancelled());
+        assert!(session.pending_approval.as_ref().unwrap().is_pending());
+        drop(waiting);
+        drain_permission_request(&mut session);
+        assert!(session.pending_approval.is_none());
+        assert!(session.mobile_approval_id.is_none());
     }
 
     #[test]
