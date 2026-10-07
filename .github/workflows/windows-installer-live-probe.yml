@@ -27,7 +27,16 @@ jobs:
             if (-not (Test-Path -LiteralPath $launcher -PathType Leaf)) { throw "missing launcher: $launcher" }
             $version = & $launcher --version
             if ($LASTEXITCODE -ne 0 -or $version -notmatch '0\.24\.7') { throw "installed version failure for ${launcher}: $version" }
-            $helpText = & $launcher --help
-            if ($LASTEXITCODE -ne 0 -or -not $helpText) { throw "installed help failure for $launcher" }
-            Write-Host "PASS real release: $launcher --version => $version; --help returned content"
+            # ACP deliberately prints meta help to stderr to protect protocol stdout.
+            # WinPS 5.1 treats native stderr as an error record under Stop.
+            $previousPreference = $ErrorActionPreference
+            try {
+              $ErrorActionPreference = 'Continue'
+              $helpText = & $launcher --help 2>&1
+              $helpExit = $LASTEXITCODE
+            } finally {
+              $ErrorActionPreference = $previousPreference
+            }
+            if ($helpExit -ne 0 -or (($helpText -join "`n") -notmatch 'USAGE:|Usage:')) { throw "installed help failure for ${launcher}: exit $helpExit" }
+            Write-Host "PASS real release: $launcher --version => $version; --help exit $helpExit and usage content"
           }
