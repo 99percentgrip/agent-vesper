@@ -6,6 +6,10 @@ Own evidence and decisions that close the pre-workspace blockers identified by r
 
 ## Ownership
 
+- `2026-10-07-rrc-adaptive-resource-admission-repair.md` owns the prolonged native
+  wait, matched admission/Cargo budgets, unchanged safety margins, red/green and
+  refusal regressions, and final native release readiness boundaries.
+
 - `2026-10-07-rrc-native-permission-and-stop-repair.md` owns the native ACP
   approval/stop regressions, request-bound cleanup, strict offered-option gate,
   TUI stale-request retirement, scoped source/receipt companions and release

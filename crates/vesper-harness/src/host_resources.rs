@@ -756,24 +756,35 @@ impl HostResourceGovernor {
         let memory_available_bytes = capacity.effective_available_bytes();
         let reserve_bytes = self.policy.reserve_bytes(effective_memory_bytes);
         let normal_headroom_bytes = self.policy.normal_headroom_bytes(effective_memory_bytes);
-        let affordable_jobs = memory_available_bytes
-            .saturating_sub(reserve_bytes)
-            .checked_div(self.policy.estimated_rustc_bytes)
-            .unwrap_or(0)
-            .clamp(1, u64::from(self.policy.max_cargo_jobs));
-        let required_gate_headroom_bytes = normal_headroom_bytes.max(
-            self.policy
-                .estimated_rustc_bytes
-                .saturating_mul(affordable_jobs),
-        );
-        let decision = classify_pressure(
+        let mut selected_jobs = cargo_jobs_for(
             &capacity,
-            &process,
             memory_available_bytes,
             reserve_bytes,
-            required_gate_headroom_bytes,
+            ResourcePressure::Normal,
             self.policy,
         );
+        // Admission and the inherited Cargo policy must describe the same
+        // budget. Try lower concurrency with every safety margin intact;
+        // physical contention/critical signals cannot become safe this way.
+        let (required_gate_headroom_bytes, decision) = loop {
+            let headroom = normal_headroom_bytes.max(
+                self.policy
+                    .estimated_rustc_bytes
+                    .saturating_mul(u64::from(selected_jobs)),
+            );
+            let decision = classify_pressure(
+                &capacity,
+                &process,
+                memory_available_bytes,
+                reserve_bytes,
+                headroom,
+                self.policy,
+            );
+            if decision.pressure != ResourcePressure::Pressure || selected_jobs <= 1 {
+                break (headroom, decision);
+            }
+            selected_jobs -= 1;
+        };
         let mut normal_admission_available_bytes =
             reserve_bytes.saturating_add(required_gate_headroom_bytes);
         if process.rss_bytes > required_gate_headroom_bytes {
@@ -791,7 +802,8 @@ impl HostResourceGovernor {
             reserve_bytes,
             pressure,
             self.policy,
-        );
+        )
+        .min(selected_jobs);
         ResourceTelemetry {
             platform: std::env::consts::OS.into(),
             host_memory_total_bytes: capacity.host_memory_total_bytes,
@@ -1357,6 +1369,137 @@ mod tests {
     }
 
     #[test]
+    fn stable_full_swap_admits_one_job_when_two_job_margin_does_not_fit() {
+        let temp = tempfile::tempdir().unwrap();
+        let governor = HostResourceGovernor::new(
+            ResourcePolicy::default(),
+            temp.path().join("locks"),
+            temp.path().join("target"),
+        )
+        .unwrap();
+        let mut snapshot = capacity(18 * GIB, 99, 20);
+        snapshot.host_memory_total_bytes = 27 * GIB;
+        snapshot.linux.swap_growth_bytes_per_minute = Some(0);
+        snapshot.linux.zram_physical_used_bytes = Some(4 * GIB);
+        let telemetry =
+            governor.telemetry_from(snapshot, ProcessTreeUsage::default(), disk(160 * GIB));
+        assert_eq!(
+            telemetry.pressure,
+            ResourcePressure::Normal,
+            "one job fits the unchanged reserve and doubled near-full-swap burst margin"
+        );
+        assert_eq!(telemetry.cargo_jobs, 1);
+        assert_eq!(telemetry.required_gate_headroom_bytes, 3 * GIB);
+        assert_eq!(
+            telemetry.normal_admission_available_bytes,
+            telemetry.reserve_bytes + 6 * GIB
+        );
+        let admission = governor
+            .preflight_telemetry(GateCost::Expensive, telemetry)
+            .unwrap();
+        assert_eq!(admission.cargo.cargo_jobs, 1);
+    }
+
+    #[test]
+    fn reduced_concurrency_preserves_physical_pressure_and_disk_refusals() {
+        let temp = tempfile::tempdir().unwrap();
+        let governor = HostResourceGovernor::new(
+            ResourcePolicy::default(),
+            temp.path().join("locks"),
+            temp.path().join("target"),
+        )
+        .unwrap();
+        let mut healthy = capacity(18 * GIB, 99, 20);
+        healthy.host_memory_total_bytes = 27 * GIB;
+        healthy.linux.swap_growth_bytes_per_minute = Some(0);
+        for signal in [
+            "ram",
+            "critical-ram",
+            "psi",
+            "critical-psi",
+            "swap-growth",
+            "critical-swap-growth",
+            "zram",
+            "critical-zram",
+            "owned-tree",
+            "disk",
+        ] {
+            let mut snapshot = healthy.clone();
+            let mut process = ProcessTreeUsage::default();
+            let mut storage = disk(160 * GIB);
+            let expected = match signal {
+                "ram" => {
+                    snapshot.memory_available_bytes = 12 * GIB;
+                    ResourcePressure::Pressure
+                }
+                "critical-ram" => {
+                    snapshot.memory_available_bytes = 6 * GIB;
+                    ResourcePressure::Critical
+                }
+                "psi" => {
+                    snapshot.linux.memory_psi_some_avg10_bps = Some(250);
+                    ResourcePressure::Pressure
+                }
+                "critical-psi" => {
+                    snapshot.linux.memory_psi_full_avg10_bps = Some(600);
+                    ResourcePressure::Critical
+                }
+                "swap-growth" => {
+                    snapshot.linux.swap_growth_bytes_per_minute = Some(GIB);
+                    ResourcePressure::Pressure
+                }
+                "critical-swap-growth" => {
+                    snapshot.linux.swap_growth_bytes_per_minute = Some(3 * GIB);
+                    ResourcePressure::Critical
+                }
+                "zram" => {
+                    snapshot.linux.zram_physical_used_bytes = Some(6 * GIB);
+                    ResourcePressure::Pressure
+                }
+                "critical-zram" => {
+                    snapshot.linux.zram_physical_used_bytes = Some(9 * GIB);
+                    ResourcePressure::Critical
+                }
+                "owned-tree" => {
+                    process.rss_bytes = 14 * GIB;
+                    ResourcePressure::Critical
+                }
+                "disk" => {
+                    storage.available_bytes = 79 * GIB;
+                    ResourcePressure::Normal
+                }
+                _ => unreachable!(),
+            };
+            let telemetry = governor.telemetry_from(snapshot, process, storage);
+            assert_eq!(telemetry.pressure, expected, "{signal}");
+            assert!(
+                governor
+                    .preflight_telemetry(GateCost::Expensive, telemetry)
+                    .is_err(),
+                "{signal}"
+            );
+        }
+    }
+
+    #[test]
+    fn cpu_job_limit_and_admission_headroom_use_the_same_budget() {
+        let temp = tempfile::tempdir().unwrap();
+        let governor = HostResourceGovernor::new(
+            ResourcePolicy::default(),
+            temp.path().join("locks"),
+            temp.path().join("target"),
+        )
+        .unwrap();
+        let mut snapshot = capacity(18 * GIB, 99, 1);
+        snapshot.host_memory_total_bytes = 27 * GIB;
+        let telemetry =
+            governor.telemetry_from(snapshot, ProcessTreeUsage::default(), disk(160 * GIB));
+        assert_eq!(telemetry.pressure, ResourcePressure::Normal);
+        assert_eq!(telemetry.cargo_jobs, 1);
+        assert_eq!(telemetry.required_gate_headroom_bytes, 3 * GIB);
+    }
+
+    #[test]
     fn swap_growth_window_rejects_subsecond_rate_amplification() {
         let now = Instant::now();
         let mut history = None;
@@ -1440,7 +1583,7 @@ mod tests {
             temp.path().join("target"),
         )
         .unwrap();
-        let mut snapshot = capacity(16 * GIB, 98, 4);
+        let mut snapshot = capacity(13 * GIB, 98, 4);
         snapshot.host_memory_total_bytes = 32 * GIB;
         let telemetry =
             governor.telemetry_from(snapshot, ProcessTreeUsage::default(), disk(100 * GIB));
@@ -1457,7 +1600,8 @@ mod tests {
         );
         let mut snapshot = capacity(16 * GIB, 30, 4);
         snapshot.host_memory_total_bytes = 32 * GIB;
-        let rss = 2 * telemetry.required_gate_headroom_bytes;
+        let rss =
+            2 * governor.policy.estimated_rustc_bytes * u64::from(governor.policy.max_cargo_jobs);
         let process = ProcessTreeUsage {
             rss_bytes: rss,
             ..ProcessTreeUsage::default()

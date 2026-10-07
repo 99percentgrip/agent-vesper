@@ -1,0 +1,25 @@
+{
+  "status": "focused_verified_native_release_pending",
+  "recorded_at": "2026-10-07T12:41:39.266266+00:00",
+  "parent_commit": "8ef28db4c9710da3e65e650d9266a2f025f9f9bc",
+  "source_sha256": {
+    "crates/vesper-harness/src/host_resources.rs": "96e841cd9107bdd9a792697eb3fb348fbb64e111880a57c8ab3a0d70a30792b8",
+    "crates/vesper-harness/src/release_executor.rs": "6131e8f5554dcc1bf88680ef26ef3bcd6ccdd6152cd822010be3b17e9b128de1",
+    "crates/vesper-harness/src/release_recovery.rs": "187bd5493a16e11f79f14e009645d8af6c28f3aefcc611b554ab118e008e981a",
+    "apps/agent-vesper-tui/src/main.rs": "e8150f265b5551dbd8610198b64f1d7f7a174cc9c8d9c4ceb870182c0064e0ca"
+  },
+  "host_binary_sha256": "d5c3e1ed3eed2064a49305944b9d643a467bf6c506d19d1fca7b4ef6a61793e4",
+  "host_binary": "/tmp/vesper-rrc-native-host-adaptive-20261007",
+  "focused_passed": 21,
+  "focused_failed": 0,
+  "native_publication": "pending",
+  "logs_sha256": {
+    "/tmp/vesper-rrc-adaptive-admission-red.log": "6447471d0739190ff9ff0968977f932bf869d22c65e5c402d4d05947a84c0cb3",
+    "/tmp/vesper-rrc-adaptive-admission-green.log": "d52ef0243346b9e2891d25e00a7030d88dab791bb45866523ce3146457ada225",
+    "/tmp/vesper-rrc-adaptive-admission-final.log": "e4074470bd2105ff627f5a050aefe5e2d1664d02792ca4987393b834807f2389",
+    "/tmp/vesper-rrc-adaptive-admission-final-v2.log": "fcc045f9703ec9a6943245ea4d1e023b41c875ad7637714403a1dbabdbab38cf",
+    "/tmp/vesper-rrc-adaptive-admission-clippy.log": "21ab150121cb974979b9f9f5b4600da23b1e1bf60e5752d2b9358ce152613181",
+    "/tmp/vesper-rrc-adaptive-native-host-build.log": "9705af2674dfa07add2e2506828616b75794befd6c79879b36df78c3a15c350d"
+  },
+  "scope": "hermetic resource admission, preserved margins; full final versioned gates and publication pending"
+}

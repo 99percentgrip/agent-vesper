@@ -1,5 +1,7 @@
 # Foundation Evidence Index
 
+- [RRC adaptive resource admission repair](2026-10-07-rrc-adaptive-resource-admission-repair.md) — reproduced two-job/one-job budget mismatch, unchanged-margin lower-concurrency admission, native release verification pending.
+
 - [RRC native permission and stop repair](2026-10-07-rrc-native-permission-and-stop-repair.md) — actual ACP protocol approval/rejection/cancellation, strict options and request-bound cleanup, combined repair verification.
 
 - [RRC authorization stall diagnosis and scoped repair](2026-10-07-rrc-authorization-stall-diagnosis.md) — installed-client permission denial, continued polling, local typed stop; unreleased.

@@ -273,7 +273,11 @@ Z.ai and Playwright MCP server descriptors.
   swap growth uses a minimum five-second observation window and retains the last
   measured trend between windows; startup warming is explicit and default pressure
   thresholds remain unchanged. Reported normal RAM requirements include the same
-  near-full-swap and owned-tree burst margins enforced by admission. It observes
+  near-full-swap and owned-tree burst margins enforced by admission.
+  Admission selects the highest bounded Cargo concurrency whose full safety
+  envelope fits; retrying the same snapshot with one job preserves every reserve,
+  PSI/swap/zram/process and disk bound. The exported job count and reported gate
+  headroom must use the same selected budget. Reduced jobs never waive pressure. It observes
   zram logical/compressed/physical values, the owned process tree and managed-target
   filesystem; logical zram occupancy is never treated as physical RAM consumption.
   It reserves desktop headroom, exports one inherited

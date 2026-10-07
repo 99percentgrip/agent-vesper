@@ -1175,3 +1175,7 @@ The [2026-10-07 reverification](foundation/2026-10-06-rrc-autonomy-and-prd-audit
 ### 2026-10-07 native permission and stop verification
 
 [Native permission and stop repair](foundation/2026-10-07-rrc-native-permission-and-stop-repair.md) extends the diagnosis with real ACP protocol proofs of approval, rejection, cancellation, late approval isolation and exactly one terminal response. It also closes unoffered approval-option acceptance, old-request cancellation-hook cleanup races and stale TUI approval dialogs after their operation ends. The source includes the promotion/inventory repair; exact current-source local and hosted release receipts remain separately recorded.
+
+### 2026-10-07 adaptive resource admission follow-up
+
+[Adaptive resource admission repair](foundation/2026-10-07-rrc-adaptive-resource-admission-repair.md) reproduces a prolonged native wait caused by calculating a two-job near-full-swap envelope before reporting a one-job Cargo policy. Shared admission now selects a bounded lower concurrency only when every existing safety check passes for that same budget. Focused red/green and refusal tests are scoped evidence; final versioned native gates and hosted release receipts remain separately required.
