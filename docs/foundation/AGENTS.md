@@ -6,6 +6,11 @@ Own evidence and decisions that close the pre-workspace blockers identified by r
 
 ## Ownership
 
+- `2026-10-07-rrc-publication-observation-recovery.md` owns the real v0.24.8
+  publication-read timeout, persisted bounded automatic observation recovery,
+  cumulative active-watch deadline, same-tagged-request admission, red/green regressions and corrective release scope.
+
+
 - `2026-10-07-rrc-native-cancellation-keybinding-repair.md` owns configured TUI cancellation through active native RRC
   and approval dialogs, truthful pending cleanup, focused regressions and the
   interrupted integrated-candidate boundary.

@@ -2298,6 +2298,31 @@ fn acceptance_verify() -> Result<(), String> {
         (
             "vesper-harness",
             &["--lib"],
+            "release_executor::tests::publication_watch_budget_survives_reload_and_read_recovery",
+        ),
+        (
+            "vesper-harness",
+            &["--lib"],
+            "release_executor::tests::publication_read_timeout_continues_same_candidate_without_another_tag",
+        ),
+        (
+            "vesper-harness",
+            &["--lib"],
+            "release_executor::tests::publication_read_watchdog_recovery_is_persisted_and_bounded",
+        ),
+        (
+            "vesper-harness",
+            &["--lib"],
+            "release_executor::tests::publication_read_recovery_never_retries_cancellation_denials_or_invalid_evidence",
+        ),
+        (
+            "vesper-harness",
+            &["--lib"],
+            "release_recovery::tests::same_tagged_publication_request_resumes_without_replacing_epoch",
+        ),
+        (
+            "vesper-harness",
+            &["--lib"],
             "release_executor::tests::publication_requires_all_fourteen_nonempty_uploaded_assets",
         ),
         (

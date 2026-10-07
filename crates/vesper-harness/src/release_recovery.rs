@@ -689,6 +689,12 @@ pub struct ReleaseMutationRecord {
     pub tag_pushed: bool,
     pub publication_run_id: Option<u64>,
     pub publication_verified: bool,
+    /// Cumulative read-only publication timeout recovery attempts for this epoch.
+    #[serde(default)]
+    pub publication_read_retries: u8,
+    /// Measured active publication observation/wait time; excludes idle host time.
+    #[serde(default)]
+    pub publication_watch_millis: u64,
     pub published_asset_names: Vec<String>,
     #[serde(default)]
     pub in_flight_operation: Option<String>,
@@ -4633,7 +4639,15 @@ fn reconcile_active_epoch(
     version: &ReleaseVersionSelector,
     state_root: &Path,
 ) -> Result<ActiveEpochReconciliation, RrcError> {
-    if record.mutation.publication_verified
+    let matching_tagged_observation = record.mutation.tag_pushed
+        && matches!(
+            record.state,
+            ReleaseRecoveryState::Tagging | ReleaseRecoveryState::Publishing
+        )
+        && record.mutation.in_flight_operation.is_none()
+        && (record.mutation.source_commit.as_deref() == Some(source.source_commit.as_str())
+            || record.release_commit.as_deref() == Some(source.source_commit.as_str()));
+    if (record.mutation.publication_verified || matching_tagged_observation)
         && source_repository_matches_epoch(&record, source)?
         && same_release_objective(&record, source) == Some(true)
         && resolved_record_release_target(&record)
@@ -4641,7 +4655,9 @@ fn reconcile_active_epoch(
         && record.mutation.closeout_receipt.is_none()
         && matches!(
             record.state,
-            ReleaseRecoveryState::Published
+            ReleaseRecoveryState::Tagging
+                | ReleaseRecoveryState::Publishing
+                | ReleaseRecoveryState::Published
                 | ReleaseRecoveryState::PostReleaseCloseout
                 | ReleaseRecoveryState::Complete
         )
@@ -5986,6 +6002,43 @@ mod tests {
             PathBuf::from(after.mutation.release_workspace.as_deref().unwrap())
         );
         assert!(!ledger.superseded_path(&before.epoch_id).exists());
+    }
+
+    #[test]
+    fn same_tagged_publication_request_resumes_without_replacing_epoch() {
+        let fixture = active_epoch_fixture();
+        let ledger = ReleaseLedger::open(fixture.state.clone(), &fixture.identity).unwrap();
+        let mut active = ledger.load().unwrap().unwrap();
+        active.state = ReleaseRecoveryState::Publishing;
+        active.mutation.version_before = Some("0.24.4".into());
+        active.mutation.version_after = Some("0.24.5".into());
+        active.mutation.tag_pushed = true;
+        active.mutation.tag_name = Some("v0.24.5".into());
+        active.mutation.tag_object = Some("immutable-tag".into());
+        active.mutation.publication_read_retries = 1;
+        active.mutation.publication_watch_millis = 60000;
+        ledger.save(&active).unwrap();
+        let mut launched = false;
+        let outcome = admit_natural_release_with_launcher(
+            &fixture.primary,
+            "Release version 0.24.5.",
+            &fixture.state,
+            |_, _, _| {
+                launched = true;
+                Ok(())
+            },
+        )
+        .unwrap();
+        assert!(
+            matches!(outcome, NaturalReleaseAdmission::Started(_)),
+            "{outcome:?}"
+        );
+        assert!(launched);
+        let after = ledger.load().unwrap().unwrap();
+        assert_eq!(after.epoch_id, active.epoch_id);
+        assert_eq!(after.mutation, active.mutation);
+        assert_eq!(after.retry_budget, active.retry_budget);
+        assert!(!ledger.superseded_path(&active.epoch_id).exists());
     }
 
     #[test]

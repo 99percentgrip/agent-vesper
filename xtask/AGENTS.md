@@ -90,6 +90,12 @@ architecture, MSRV, and source-oracle checks.
   preserve existing frozen identities/counts; never regenerate from current hits
   merely to make the gate pass. Unit fixtures enforce these distinctions.
 
+- Publication recovery acceptance pins persisted two-retry read bounds, ledger
+  reload, two-provider timeout-to-Published progression without another tag,
+  cancellation/denial/invalid-evidence/uncertain-write refusal and unchanged-epoch
+  matching tagged-request admission. The cumulative active publication watch survives
+  reload/read recovery and stops at its deadline. Missing or renamed cases fail every target.
+
 - RRC acceptance includes shared worker cancellation before GitHub/status/publication dispatch
   and exact admission scope for failed-job-only reruns.
   Causal selection/fingerprint regressions cover passing error-module tests, long

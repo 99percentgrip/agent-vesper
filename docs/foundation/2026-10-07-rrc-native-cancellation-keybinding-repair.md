@@ -33,3 +33,14 @@ This is an additional confirmed gap, so the previous running candidate was stopp
 ## Receipt binding
 
 [Evidence JSON](2026-10-07-rrc-native-cancellation-keybinding-repair-evidence.json) and [raw receipts](2026-10-07-rrc-native-cancellation-keybinding-repair-receipts.tar.gz) bind the source, exact successes/failures and interrupted native state. Archive digest is recorded in the JSON.
+
+## Subsequent exact-version release outcome
+
+The successor at `9fada0cd06714ba1e754b332b5d44b39d3d9f373` completed v0.24.8.
+[Native closeout](release-v0.24.8-closeout.md) and its three JSON companions retain
+all eight local gates, twelve prerequisite jobs, unchanged immutable tag, producing
+run `37648330813`, fourteen verified assets and Registry PR #539 readback.
+A publication observation timeout required explicit recovery; the later
+[observation repair](2026-10-07-rrc-publication-observation-recovery.md) is outside
+v0.24.8. The earlier interrupted attempt above remains historical and is not
+relabelled successful. Alex's installation was not replaced.

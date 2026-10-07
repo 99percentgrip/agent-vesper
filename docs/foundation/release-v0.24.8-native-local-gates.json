@@ -1,0 +1,67 @@
+{
+  "observed_at": "2026-10-07T15:22:38.770362+00:00",
+  "source_commit": "b7cda1d78bebec842347731602a7b071a476b4b6",
+  "candidate_commit": "9fada0cd06714ba1e754b332b5d44b39d3d9f373",
+  "version": "0.24.8",
+  "local_gates": [
+    {
+      "command": "cargo check --workspace --all-targets",
+      "evidence_ref": "local:version-preparation",
+      "name": "version-preparation",
+      "state": "succeeded"
+    },
+    {
+      "command": "cargo xtask verify",
+      "evidence_ref": "local:workspace-verify:05be11e0e97e5ece6e0b7adb8fb769814259f8d3735a65cdb8192d792fd81943",
+      "name": "workspace-verify",
+      "state": "succeeded"
+    },
+    {
+      "command": "cargo xtask acceptance",
+      "evidence_ref": "local:acceptance:636e0452e16201d58418acfe5fe2cd144d8116362c17bfe2173a9fb68ab59af0",
+      "name": "acceptance",
+      "state": "succeeded"
+    },
+    {
+      "command": "cargo xtask architecture",
+      "evidence_ref": "local:architecture:c0e0aebe9b7a8443b26cdb032c4570c955b9dc2cbb395ecb23471f7b441fe176",
+      "name": "architecture",
+      "state": "succeeded"
+    },
+    {
+      "command": "cargo xtask msrv",
+      "evidence_ref": "local:msrv:c955b4fbfb5e310a6f847f95dd6d4dbea254f954049003e6a9c4c44bbcae3cd7",
+      "name": "msrv",
+      "state": "succeeded"
+    },
+    {
+      "command": "cargo deny --all-features check",
+      "evidence_ref": "local:supply-chain-policy:f1a0fca39d4280363937aabd77783990ea6480bd9ca257816de3b68fc8efa845",
+      "name": "supply-chain-policy",
+      "state": "succeeded"
+    },
+    {
+      "command": "cargo audit",
+      "evidence_ref": "local:advisories:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "name": "advisories",
+      "state": "succeeded"
+    },
+    {
+      "command": "cargo build --locked --release --package agent-vesper-acp --package agent-vesper-tui --package vesper-web-fetch --package vesper-sandbox --features agent-vesper-acp/docker,agent-vesper-tui/docker,agent-vesper-acp/swarm,agent-vesper-tui/swarm,agent-vesper-acp/bridge,agent-vesper-tui/bridge,agent-vesper-tui/voice-kokoro,agent-vesper-tui/voice-flm",
+      "evidence_ref": "local:release-build:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "name": "release-build",
+      "state": "succeeded"
+    }
+  ],
+  "retry_budget": {
+    "full_gate_limit": 1,
+    "full_gate_used": 0,
+    "infrastructure_limit": 1,
+    "infrastructure_used": 0,
+    "repair_attempt_limit_per_family": 2,
+    "targeted_diagnostic_limit": 2,
+    "targeted_diagnostic_used": 0
+  },
+  "native_owner": 2401546,
+  "scope": "Eight native local gates passed; exact-main CI and publication still pending"
+}

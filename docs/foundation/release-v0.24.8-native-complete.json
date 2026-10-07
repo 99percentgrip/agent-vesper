@@ -1,0 +1,1067 @@
+{
+  "cancelled_from": null,
+  "consecutive_stagnant_actions": 0,
+  "created_at": "2026-10-07T13:43:47.377379151Z",
+  "current_main": "9fada0cd06714ba1e754b332b5d44b39d3d9f373",
+  "epoch_id": "20261007T134347.377334367Z-b7cda1d78beb",
+  "external_block": null,
+  "failures": [],
+  "last_green_release_commit": null,
+  "last_progress_at": "2026-10-07T16:22:41.601054183Z",
+  "liveness": {
+    "detail": "",
+    "observed_at": null,
+    "operation": "",
+    "owner_pid": null,
+    "state": "idle"
+  },
+  "metrics": {
+    "ci_wait_millis": 3860000,
+    "model_active_millis": 0,
+    "repeated_fingerprints_blocked": 0,
+    "retries_rejected": 0,
+    "speculative_reruns_prevented": 0
+  },
+  "mutation": {
+    "base_sha": "b7cda1d78bebec842347731602a7b071a476b4b6",
+    "candidate_committed": true,
+    "candidate_push_ref": "origin/main@9fada0cd06714ba1e754b332b5d44b39d3d9f373",
+    "candidate_pushed": true,
+    "canonical_release_source": true,
+    "closeout_receipt": {
+      "registry_blob": "897252a97046551a8f904a75199176317aa1b28a",
+      "registry_url": "https://github.com/agentclientprotocol/registry/pull/539",
+      "report": "/home/Alex/.local/state/agent-vesper/release-recovery/worktrees/abde39a508845675/20261007T134243820Z-b7cda1d78beb/docs/foundation/release-v0.24.8-closeout.md"
+    },
+    "closeout_registry": {
+      "branch": "agent-vesper/v0.20.51",
+      "manifest": "{\n  \"authors\": [\n    \"Aleksejs Kozlitins\"\n  ],\n  \"description\": \"Agent Vesper \u2014 a Rust-native ACP coding-agent runtime featuring the Vesper Reasoning Orchestrator (VRO), transactional sessions, hosted tools, provider-routed authentication, cognitive memory, semantic context compaction, and provider-neutral skill orchestration. The release bundle includes a native TUI and ACP v1 stdio server with real Z.ai GLM, native OpenAI, xAI / Grok, and LM Studio adapters, installable in Zed and other ACP-compatible editors.\",\n  \"distribution\": {\n    \"binary\": {\n      \"darwin-aarch64\": {\n        \"archive\": \"https://github.com/99percentgrip/agent-vesper/releases/download/v0.24.8/agent-vesper-acp-darwin-aarch64.tar.gz\",\n        \"cmd\": \"./agent-vesper-acp/agent-vesper-acp\",\n        \"sha256\": \"aa0f3ca68a9aaa49f73d1075828e69468f592e9dcc69b1e85f55e5df7988d7fb\"\n      },\n      \"darwin-x86_64\": {\n        \"archive\": \"https://github.com/99percentgrip/agent-vesper/releases/download/v0.24.8/agent-vesper-acp-darwin-x86_64.tar.gz\",\n        \"cmd\": \"./agent-vesper-acp/agent-vesper-acp\",\n        \"sha256\": \"cd8ae751cf0a755bdea22152371cce60ee46d476ef283571bbd0339e5fef001f\"\n      },\n      \"linux-aarch64\": {\n        \"archive\": \"https://github.com/99percentgrip/agent-vesper/releases/download/v0.24.8/agent-vesper-acp-linux-aarch64.tar.gz\",\n        \"cmd\": \"./agent-vesper-acp/agent-vesper-acp\",\n        \"sha256\": \"e31755cf19fa3f3fb5de4556649799867818f3259a19d7d3b7454051acf133b1\"\n      },\n      \"linux-x86_64\": {\n        \"archive\": \"https://github.com/99percentgrip/agent-vesper/releases/download/v0.24.8/agent-vesper-acp-linux-x86_64.tar.gz\",\n        \"cmd\": \"./agent-vesper-acp/agent-vesper-acp\",\n        \"sha256\": \"b78ed9220a891b1285c26fa9a57d60209c70acb12d81f38ca0dc0dd2ac37477a\"\n      },\n      \"windows-x86_64\": {\n        \"archive\": \"https://github.com/99percentgrip/agent-vesper/releases/download/v0.24.8/agent-vesper-acp-windows-x86_64.zip\",\n        \"cmd\": \"./agent-vesper-acp/agent-vesper-acp.exe\",\n        \"sha256\": \"ca16c02767a5a3e15cb0b308b613c42af4689a608bf9a1082d7a55f43e26d20e\"\n      }\n    }\n  },\n  \"id\": \"agent-vesper\",\n  \"license\": \"Apache-2.0\",\n  \"license_url\": \"https://github.com/99percentgrip/agent-vesper/blob/main/LICENSE\",\n  \"name\": \"Agent Vesper\",\n  \"repository\": \"https://github.com/99percentgrip/agent-vesper\",\n  \"version\": \"0.24.8\",\n  \"website\": \"https://github.com/99percentgrip/agent-vesper\"\n}\n",
+      "original_blob": "54ce9686307d71f2973b2353cedb589579461c52",
+      "path": "agent-vesper/agent.json",
+      "pull_request": 539,
+      "repository": "99percentgrip/registry"
+    },
+    "final_candidate_commit": "9fada0cd06714ba1e754b332b5d44b39d3d9f373",
+    "in_flight_operation": null,
+    "intended_commits": [],
+    "intended_diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "local_gates": [
+      {
+        "command": "cargo check --workspace --all-targets",
+        "evidence_ref": "local:version-preparation",
+        "name": "version-preparation",
+        "state": "succeeded"
+      },
+      {
+        "command": "cargo xtask verify",
+        "evidence_ref": "local:workspace-verify:05be11e0e97e5ece6e0b7adb8fb769814259f8d3735a65cdb8192d792fd81943",
+        "name": "workspace-verify",
+        "state": "succeeded"
+      },
+      {
+        "command": "cargo xtask acceptance",
+        "evidence_ref": "local:acceptance:636e0452e16201d58418acfe5fe2cd144d8116362c17bfe2173a9fb68ab59af0",
+        "name": "acceptance",
+        "state": "succeeded"
+      },
+      {
+        "command": "cargo xtask architecture",
+        "evidence_ref": "local:architecture:c0e0aebe9b7a8443b26cdb032c4570c955b9dc2cbb395ecb23471f7b441fe176",
+        "name": "architecture",
+        "state": "succeeded"
+      },
+      {
+        "command": "cargo xtask msrv",
+        "evidence_ref": "local:msrv:c955b4fbfb5e310a6f847f95dd6d4dbea254f954049003e6a9c4c44bbcae3cd7",
+        "name": "msrv",
+        "state": "succeeded"
+      },
+      {
+        "command": "cargo deny --all-features check",
+        "evidence_ref": "local:supply-chain-policy:f1a0fca39d4280363937aabd77783990ea6480bd9ca257816de3b68fc8efa845",
+        "name": "supply-chain-policy",
+        "state": "succeeded"
+      },
+      {
+        "command": "cargo audit",
+        "evidence_ref": "local:advisories:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "name": "advisories",
+        "state": "succeeded"
+      },
+      {
+        "command": "cargo build --locked --release --package agent-vesper-acp --package agent-vesper-tui --package vesper-web-fetch --package vesper-sandbox --features agent-vesper-acp/docker,agent-vesper-tui/docker,agent-vesper-acp/swarm,agent-vesper-tui/swarm,agent-vesper-acp/bridge,agent-vesper-tui/bridge,agent-vesper-tui/voice-kokoro,agent-vesper-tui/voice-flm",
+        "evidence_ref": "local:release-build:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "name": "release-build",
+        "state": "succeeded"
+      }
+    ],
+    "objective_evidence_reports": [
+      "docs/foundation/windows-powershell-installer-repair.md",
+      "docs/foundation/windows-installer-v0.24.8-release-execution.md",
+      "docs/foundation/2026-10-07-rrc-native-permission-and-stop-repair.md",
+      "docs/foundation/2026-10-07-rrc-adaptive-resource-admission-repair.md",
+      "docs/foundation/2026-10-07-rrc-native-cancellation-keybinding-repair.md"
+    ],
+    "objective_id": "rrc-native-permission-and-windows-installer-20261007",
+    "objective_label": "Native provider-neutral RRC permission, promotion and Windows installer repairs",
+    "publication_run_id": 37648330813,
+    "publication_verified": true,
+    "published_asset_names": [
+      "agent-vesper-acp-darwin-aarch64.tar.gz",
+      "agent-vesper-acp-darwin-aarch64.tar.gz.sha256",
+      "agent-vesper-acp-darwin-x86_64.tar.gz",
+      "agent-vesper-acp-darwin-x86_64.tar.gz.sha256",
+      "agent-vesper-acp-linux-aarch64.tar.gz",
+      "agent-vesper-acp-linux-aarch64.tar.gz.sha256",
+      "agent-vesper-acp-linux-x86_64.tar.gz",
+      "agent-vesper-acp-linux-x86_64.tar.gz.sha256",
+      "agent-vesper-acp-windows-x86_64.zip",
+      "agent-vesper-acp-windows-x86_64.zip.sha256",
+      "vesper-web-driver-linux-aarch64.image-id",
+      "vesper-web-driver-linux-aarch64.tar.gz",
+      "vesper-web-driver-linux-aarch64.tar.gz.sha256",
+      "vesper-web-driver-linux-x86_64.image-id",
+      "vesper-web-driver-linux-x86_64.tar.gz",
+      "vesper-web-driver-linux-x86_64.tar.gz.sha256"
+    ],
+    "release_workspace": "/home/Alex/.local/state/agent-vesper/release-recovery/worktrees/abde39a508845675/20261007T134346674Z-b7cda1d78beb",
+    "repair_admissions": {},
+    "repair_files": [],
+    "source_commit": "b7cda1d78bebec842347731602a7b071a476b4b6",
+    "source_variant_id": "rrc-permission-windows-integrated-20261007",
+    "source_variant_label": "Integrated RRC approval, immutable promotion, adaptive admission, native cancellation and Windows installer repairs",
+    "source_workspace": "/home/Alex/.local/state/agent-vesper/release-recovery/worktrees/abde39a508845675/20261007T134243820Z-b7cda1d78beb",
+    "supersedes": [
+      "windows-powershell-51-installer-hosted-20261007",
+      "windows-ps51-installer-hosted-20261007",
+      "rrc-autonomy-prd-audit-20261006"
+    ],
+    "tag_name": "v0.24.8",
+    "tag_object": "a4e8975221019611a6c44e3246e9d9ef94af4980",
+    "tag_pushed": true,
+    "version_after": "0.24.8",
+    "version_before": "0.24.7",
+    "version_files": [
+      "Cargo.toml",
+      "apps/agent-vesper-acp/Cargo.toml",
+      "apps/agent-vesper-tui/Cargo.toml",
+      "crates/vesper-acp/Cargo.toml",
+      "crates/vesper-agent/Cargo.toml",
+      "crates/vesper-auth/Cargo.toml",
+      "crates/vesper-bridge/Cargo.toml",
+      "crates/vesper-checkpoints/Cargo.toml",
+      "crates/vesper-cognition/Cargo.toml",
+      "crates/vesper-config/Cargo.toml",
+      "crates/vesper-harness/Cargo.toml",
+      "crates/vesper-mcp/Cargo.toml",
+      "crates/vesper-memory/Cargo.toml",
+      "crates/vesper-policy/Cargo.toml",
+      "crates/vesper-provider/Cargo.toml",
+      "crates/vesper-provider-glm/Cargo.toml",
+      "crates/vesper-provider-openai/Cargo.toml",
+      "crates/vesper-provider-synthetic/Cargo.toml",
+      "crates/vesper-provider-xai/Cargo.toml",
+      "crates/vesper-runtime/Cargo.toml",
+      "crates/vesper-sandbox/Cargo.toml",
+      "crates/vesper-sessions/Cargo.toml",
+      "crates/vesper-swarm/Cargo.toml",
+      "crates/vesper-testkit/Cargo.toml",
+      "crates/vesper-voice/Cargo.toml",
+      "crates/vesper-voice-kokoro/Cargo.toml",
+      "crates/vesper-web-fetch/Cargo.toml",
+      "xtask/Cargo.toml",
+      "registry/agent.json",
+      "Cargo.lock"
+    ]
+  },
+  "objective": {
+    "branch_ref": "HEAD",
+    "bump": "0.24.8",
+    "post_release_main_epoch": true,
+    "request": "Release version 0.24.8.",
+    "required_gate_names": [
+      "pull-request-validation",
+      "msrv",
+      "five-target-foundation",
+      "web-driver"
+    ]
+  },
+  "progress": {
+    "completed_local_gates": 8,
+    "current_gate": null,
+    "headline": "Release recovery is complete",
+    "milestones": [
+      {
+        "at": "2026-10-07T14:47:10.988163541Z",
+        "phase": "local_verification",
+        "sequence": 12,
+        "summary": "Passed local gate 5/8: msrv"
+      },
+      {
+        "at": "2026-10-07T14:47:11.063859754Z",
+        "phase": "local_verification",
+        "sequence": 13,
+        "summary": "Running local gate 6/8: supply-chain-policy"
+      },
+      {
+        "at": "2026-10-07T14:47:12.937032291Z",
+        "phase": "local_verification",
+        "sequence": 14,
+        "summary": "Passed local gate 6/8: supply-chain-policy"
+      },
+      {
+        "at": "2026-10-07T14:47:13.017198136Z",
+        "phase": "local_verification",
+        "sequence": 15,
+        "summary": "Running local gate 7/8: advisories"
+      },
+      {
+        "at": "2026-10-07T14:47:17.331951169Z",
+        "phase": "local_verification",
+        "sequence": 16,
+        "summary": "Passed local gate 7/8: advisories"
+      },
+      {
+        "at": "2026-10-07T14:47:17.411826669Z",
+        "phase": "local_verification",
+        "sequence": 17,
+        "summary": "Running local gate 8/8: release-build"
+      },
+      {
+        "at": "2026-10-07T15:00:56.583054927Z",
+        "phase": "local_verification",
+        "sequence": 18,
+        "summary": "Passed local gate 8/8: release-build"
+      },
+      {
+        "at": "2026-10-07T15:00:58.388853501Z",
+        "phase": "remote_verification",
+        "sequence": 19,
+        "summary": "Remote verification \u2014 local release verification passed"
+      },
+      {
+        "at": "2026-10-07T15:01:03.953567722Z",
+        "phase": "remote_verification",
+        "sequence": 20,
+        "summary": "Remote verification \u2014 exact-commit remote gates dispatched"
+      },
+      {
+        "at": "2026-10-07T15:01:04.787307867Z",
+        "phase": "remote_verification",
+        "sequence": 21,
+        "summary": "Remote verification \u2014 required workflow runs have not appeared for the exact candidate SHA"
+      },
+      {
+        "at": "2026-10-07T15:01:27.091525940Z",
+        "phase": "remote_verification",
+        "sequence": 22,
+        "summary": "Remote matrix update: 0/3 jobs terminal"
+      },
+      {
+        "at": "2026-10-07T15:01:53.956863104Z",
+        "phase": "remote_verification",
+        "sequence": 23,
+        "summary": "Remote matrix update: 1/12 jobs terminal"
+      },
+      {
+        "at": "2026-10-07T15:02:48.473937762Z",
+        "phase": "remote_verification",
+        "sequence": 24,
+        "summary": "Remote matrix update: 2/12 jobs terminal"
+      },
+      {
+        "at": "2026-10-07T15:08:03.218215502Z",
+        "phase": "remote_verification",
+        "sequence": 25,
+        "summary": "Remote matrix update: 3/12 jobs terminal"
+      },
+      {
+        "at": "2026-10-07T15:08:57.288812894Z",
+        "phase": "remote_verification",
+        "sequence": 26,
+        "summary": "Remote matrix update: 4/12 jobs terminal"
+      },
+      {
+        "at": "2026-10-07T15:10:37.036954682Z",
+        "phase": "remote_verification",
+        "sequence": 27,
+        "summary": "Remote matrix update: 5/12 jobs terminal"
+      },
+      {
+        "at": "2026-10-07T15:22:12.420455357Z",
+        "phase": "remote_verification",
+        "sequence": 28,
+        "summary": "Remote matrix update: 6/12 jobs terminal"
+      },
+      {
+        "at": "2026-10-07T15:27:26.908052147Z",
+        "phase": "remote_verification",
+        "sequence": 29,
+        "summary": "Remote matrix update: 8/12 jobs terminal"
+      },
+      {
+        "at": "2026-10-07T15:30:35.277633557Z",
+        "phase": "remote_verification",
+        "sequence": 30,
+        "summary": "Remote matrix update: 9/12 jobs terminal"
+      },
+      {
+        "at": "2026-10-07T15:31:02.659170812Z",
+        "phase": "remote_verification",
+        "sequence": 31,
+        "summary": "Remote matrix update: 10/12 jobs terminal"
+      },
+      {
+        "at": "2026-10-07T15:46:52.426350914Z",
+        "phase": "remote_verification",
+        "sequence": 32,
+        "summary": "Remote matrix update: 11/12 jobs terminal"
+      },
+      {
+        "at": "2026-10-07T15:58:28.770231482Z",
+        "phase": "remote_verification",
+        "sequence": 33,
+        "summary": "Remote matrix update: 12/12 jobs terminal"
+      },
+      {
+        "at": "2026-10-07T15:58:28.770448960Z",
+        "phase": "remote_verification",
+        "sequence": 34,
+        "summary": "Remote verification \u2014 all exact-commit required gates are terminal and green"
+      },
+      {
+        "at": "2026-10-07T15:58:32.231643114Z",
+        "phase": "publication",
+        "sequence": 35,
+        "summary": "Publication \u2014 annotated immutable tag verified at exact green commit"
+      },
+      {
+        "at": "2026-10-07T15:58:32.231901629Z",
+        "phase": "publication",
+        "sequence": 36,
+        "summary": "Publication \u2014 release publication started after exact-commit gates"
+      },
+      {
+        "at": "2026-10-07T16:13:52.605090703Z",
+        "phase": "publication",
+        "sequence": 37,
+        "summary": "release watchdog stopped publication evidence request after 120s without progress"
+      },
+      {
+        "at": "2026-10-07T16:22:07.865330354Z",
+        "phase": "publication",
+        "sequence": 38,
+        "summary": "Publication \u2014 release assets and metadata published and verified"
+      },
+      {
+        "at": "2026-10-07T16:22:12.388281528Z",
+        "phase": "publication",
+        "sequence": 39,
+        "summary": "Publication \u2014 post-release main-health closeout started"
+      },
+      {
+        "at": "2026-10-07T16:22:13.289341935Z",
+        "phase": "remote_verification",
+        "sequence": 40,
+        "summary": "Remote verification \u2014 post-release closeout refreshes current main gates"
+      },
+      {
+        "at": "2026-10-07T16:22:41.600942544Z",
+        "phase": "remote_verification",
+        "sequence": 41,
+        "summary": "Remote matrix update: 12/12 jobs terminal"
+      },
+      {
+        "at": "2026-10-07T16:22:41.601149312Z",
+        "phase": "publication",
+        "sequence": 42,
+        "summary": "Publication \u2014 post-release main is green; published release remains unchanged"
+      },
+      {
+        "at": "2026-10-07T16:22:50.292469374Z",
+        "phase": "settled",
+        "sequence": 43,
+        "summary": "Release completed \u2014 registry and execution report verified; final summary ready"
+      }
+    ],
+    "next_sequence": 43,
+    "phase": "settled",
+    "tasks": [
+      {
+        "children": [
+          {
+            "children": [],
+            "name": "version-preparation",
+            "state": "passed",
+            "units": {
+              "completed": 1,
+              "total": 1
+            }
+          },
+          {
+            "children": [],
+            "name": "workspace-verify",
+            "state": "passed",
+            "units": {
+              "completed": 1,
+              "total": 1
+            }
+          },
+          {
+            "children": [
+              {
+                "children": [],
+                "name": "Exact acceptance cases",
+                "state": "passed",
+                "units": {
+                  "completed": 0,
+                  "total": null
+                }
+              }
+            ],
+            "name": "acceptance",
+            "state": "passed",
+            "units": {
+              "completed": 1,
+              "total": 1
+            }
+          },
+          {
+            "children": [],
+            "name": "architecture",
+            "state": "passed",
+            "units": {
+              "completed": 1,
+              "total": 1
+            }
+          },
+          {
+            "children": [],
+            "name": "msrv",
+            "state": "passed",
+            "units": {
+              "completed": 1,
+              "total": 1
+            }
+          },
+          {
+            "children": [],
+            "name": "supply-chain-policy",
+            "state": "passed",
+            "units": {
+              "completed": 1,
+              "total": 1
+            }
+          },
+          {
+            "children": [],
+            "name": "advisories",
+            "state": "passed",
+            "units": {
+              "completed": 1,
+              "total": 1
+            }
+          },
+          {
+            "children": [],
+            "name": "release-build",
+            "state": "passed",
+            "units": {
+              "completed": 1,
+              "total": 1
+            }
+          }
+        ],
+        "name": "Local verification",
+        "state": "passed",
+        "units": {
+          "completed": 8,
+          "total": 8
+        }
+      },
+      {
+        "children": [
+          {
+            "children": [
+              {
+                "children": [],
+                "name": "quality \u00b7 ubuntu-24.04",
+                "state": "passed",
+                "units": {
+                  "completed": 1,
+                  "total": 1
+                }
+              },
+              {
+                "children": [],
+                "name": "supply-chain \u00b7 ubuntu-24.04",
+                "state": "passed",
+                "units": {
+                  "completed": 1,
+                  "total": 1
+                }
+              },
+              {
+                "children": [],
+                "name": "windows-installer \u00b7 windows-2025",
+                "state": "passed",
+                "units": {
+                  "completed": 1,
+                  "total": 1
+                }
+              }
+            ],
+            "name": "pull-request-validation",
+            "state": "passed",
+            "units": {
+              "completed": 3,
+              "total": 3
+            }
+          },
+          {
+            "children": [
+              {
+                "children": [],
+                "name": "rust-1-88 \u00b7 ubuntu-24.04",
+                "state": "passed",
+                "units": {
+                  "completed": 1,
+                  "total": 1
+                }
+              }
+            ],
+            "name": "msrv",
+            "state": "passed",
+            "units": {
+              "completed": 1,
+              "total": 1
+            }
+          },
+          {
+            "children": [
+              {
+                "children": [],
+                "name": "linux-x86_64 \u00b7 ubuntu-24.04",
+                "state": "passed",
+                "units": {
+                  "completed": 1,
+                  "total": 1
+                }
+              },
+              {
+                "children": [],
+                "name": "macos-intel \u00b7 macos-15-intel",
+                "state": "passed",
+                "units": {
+                  "completed": 1,
+                  "total": 1
+                }
+              },
+              {
+                "children": [],
+                "name": "linux-arm64 \u00b7 ubuntu-24.04-arm",
+                "state": "passed",
+                "units": {
+                  "completed": 1,
+                  "total": 1
+                }
+              },
+              {
+                "children": [],
+                "name": "windows-x86_64 \u00b7 windows-2025",
+                "state": "passed",
+                "units": {
+                  "completed": 1,
+                  "total": 1
+                }
+              },
+              {
+                "children": [],
+                "name": "macos-apple-silicon \u00b7 macos-15",
+                "state": "passed",
+                "units": {
+                  "completed": 1,
+                  "total": 1
+                }
+              }
+            ],
+            "name": "five-target-foundation",
+            "state": "passed",
+            "units": {
+              "completed": 5,
+              "total": 5
+            }
+          },
+          {
+            "children": [
+              {
+                "children": [],
+                "name": "Native namespace Hive \u00b7 ubuntu-22.04",
+                "state": "passed",
+                "units": {
+                  "completed": 1,
+                  "total": 1
+                }
+              },
+              {
+                "children": [],
+                "name": "Contained browser linux-x86_64 \u00b7 ubuntu-24.04",
+                "state": "passed",
+                "units": {
+                  "completed": 1,
+                  "total": 1
+                }
+              },
+              {
+                "children": [],
+                "name": "Contained browser linux-aarch64 \u00b7 ubuntu-24.04-arm",
+                "state": "passed",
+                "units": {
+                  "completed": 1,
+                  "total": 1
+                }
+              }
+            ],
+            "name": "web-driver",
+            "state": "passed",
+            "units": {
+              "completed": 3,
+              "total": 3
+            }
+          }
+        ],
+        "name": "Required CI",
+        "state": "passed",
+        "units": {
+          "completed": 4,
+          "total": 4
+        }
+      },
+      {
+        "children": [],
+        "name": "Publication",
+        "state": "passed",
+        "units": {
+          "completed": 0,
+          "total": null
+        }
+      }
+    ],
+    "terminal_remote_jobs": 12,
+    "total_local_gates": 8,
+    "total_remote_jobs": 12
+  },
+  "release_commit": "9fada0cd06714ba1e754b332b5d44b39d3d9f373",
+  "release_version": "0.24.8",
+  "repair_attempts": [],
+  "repo_identity": "/home/Alex/Projects/agent-vesper/.git",
+  "required_gates": [
+    {
+      "head_sha": "9fada0cd06714ba1e754b332b5d44b39d3d9f373",
+      "jobs": [
+        {
+          "attempt": 1,
+          "failed_step": null,
+          "job_id": 112861472886,
+          "job_name": "quality",
+          "platform": "ubuntu-24.04",
+          "run_id": 37641534734,
+          "state": "success",
+          "url": "https://github.com/99percentgrip/agent-vesper/actions/runs/37641534734/job/112861472886",
+          "workflow_id": 324058982,
+          "workflow_name": "pull-request-validation"
+        },
+        {
+          "attempt": 1,
+          "failed_step": null,
+          "job_id": 112861473461,
+          "job_name": "supply-chain",
+          "platform": "ubuntu-24.04",
+          "run_id": 37641534734,
+          "state": "success",
+          "url": "https://github.com/99percentgrip/agent-vesper/actions/runs/37641534734/job/112861473461",
+          "workflow_id": 324058982,
+          "workflow_name": "pull-request-validation"
+        },
+        {
+          "attempt": 1,
+          "failed_step": null,
+          "job_id": 112861473618,
+          "job_name": "windows-installer",
+          "platform": "windows-2025",
+          "run_id": 37641534734,
+          "state": "success",
+          "url": "https://github.com/99percentgrip/agent-vesper/actions/runs/37641534734/job/112861473618",
+          "workflow_id": 324058982,
+          "workflow_name": "pull-request-validation"
+        }
+      ],
+      "name": "pull-request-validation",
+      "run_attempt": 1,
+      "run_id": 37641534734,
+      "run_state": "success",
+      "url": "https://github.com/99percentgrip/agent-vesper/actions/runs/37641534734"
+    },
+    {
+      "head_sha": "9fada0cd06714ba1e754b332b5d44b39d3d9f373",
+      "jobs": [
+        {
+          "attempt": 1,
+          "failed_step": null,
+          "job_id": 112861473180,
+          "job_name": "linux-x86_64",
+          "platform": "ubuntu-24.04",
+          "run_id": 37641534510,
+          "state": "success",
+          "url": "https://github.com/99percentgrip/agent-vesper/actions/runs/37641534510/job/112861473180",
+          "workflow_id": 324058986,
+          "workflow_name": "five-target-foundation"
+        },
+        {
+          "attempt": 1,
+          "failed_step": null,
+          "job_id": 112861473357,
+          "job_name": "macos-intel",
+          "platform": "macos-15-intel",
+          "run_id": 37641534510,
+          "state": "success",
+          "url": "https://github.com/99percentgrip/agent-vesper/actions/runs/37641534510/job/112861473357",
+          "workflow_id": 324058986,
+          "workflow_name": "five-target-foundation"
+        },
+        {
+          "attempt": 1,
+          "failed_step": null,
+          "job_id": 112861473402,
+          "job_name": "linux-arm64",
+          "platform": "ubuntu-24.04-arm",
+          "run_id": 37641534510,
+          "state": "success",
+          "url": "https://github.com/99percentgrip/agent-vesper/actions/runs/37641534510/job/112861473402",
+          "workflow_id": 324058986,
+          "workflow_name": "five-target-foundation"
+        },
+        {
+          "attempt": 1,
+          "failed_step": null,
+          "job_id": 112861473426,
+          "job_name": "windows-x86_64",
+          "platform": "windows-2025",
+          "run_id": 37641534510,
+          "state": "success",
+          "url": "https://github.com/99percentgrip/agent-vesper/actions/runs/37641534510/job/112861473426",
+          "workflow_id": 324058986,
+          "workflow_name": "five-target-foundation"
+        },
+        {
+          "attempt": 1,
+          "failed_step": null,
+          "job_id": 112861473443,
+          "job_name": "macos-apple-silicon",
+          "platform": "macos-15",
+          "run_id": 37641534510,
+          "state": "success",
+          "url": "https://github.com/99percentgrip/agent-vesper/actions/runs/37641534510/job/112861473443",
+          "workflow_id": 324058986,
+          "workflow_name": "five-target-foundation"
+        }
+      ],
+      "name": "five-target-foundation",
+      "run_attempt": 1,
+      "run_id": 37641534510,
+      "run_state": "success",
+      "url": "https://github.com/99percentgrip/agent-vesper/actions/runs/37641534510"
+    },
+    {
+      "head_sha": "9fada0cd06714ba1e754b332b5d44b39d3d9f373",
+      "jobs": [
+        {
+          "attempt": 1,
+          "failed_step": null,
+          "job_id": 112861471833,
+          "job_name": "rust-1-88",
+          "platform": "ubuntu-24.04",
+          "run_id": 37641534461,
+          "state": "success",
+          "url": "https://github.com/99percentgrip/agent-vesper/actions/runs/37641534461/job/112861471833",
+          "workflow_id": 324058985,
+          "workflow_name": "msrv"
+        }
+      ],
+      "name": "msrv",
+      "run_attempt": 1,
+      "run_id": 37641534461,
+      "run_state": "success",
+      "url": "https://github.com/99percentgrip/agent-vesper/actions/runs/37641534461"
+    },
+    {
+      "head_sha": "9fada0cd06714ba1e754b332b5d44b39d3d9f373",
+      "jobs": [
+        {
+          "attempt": 1,
+          "failed_step": null,
+          "job_id": 112861478636,
+          "job_name": "Native namespace Hive",
+          "platform": "ubuntu-22.04",
+          "run_id": 37641534454,
+          "state": "success",
+          "url": "https://github.com/99percentgrip/agent-vesper/actions/runs/37641534454/job/112861478636",
+          "workflow_id": 351737017,
+          "workflow_name": "web-driver"
+        },
+        {
+          "attempt": 1,
+          "failed_step": null,
+          "job_id": 112861479526,
+          "job_name": "Contained browser linux-x86_64",
+          "platform": "ubuntu-24.04",
+          "run_id": 37641534454,
+          "state": "success",
+          "url": "https://github.com/99percentgrip/agent-vesper/actions/runs/37641534454/job/112861479526",
+          "workflow_id": 351737017,
+          "workflow_name": "web-driver"
+        },
+        {
+          "attempt": 1,
+          "failed_step": null,
+          "job_id": 112861479579,
+          "job_name": "Contained browser linux-aarch64",
+          "platform": "ubuntu-24.04-arm",
+          "run_id": 37641534454,
+          "state": "success",
+          "url": "https://github.com/99percentgrip/agent-vesper/actions/runs/37641534454/job/112861479579",
+          "workflow_id": 351737017,
+          "workflow_name": "web-driver"
+        }
+      ],
+      "name": "web-driver",
+      "run_attempt": 1,
+      "run_id": 37641534454,
+      "run_state": "success",
+      "url": "https://github.com/99percentgrip/agent-vesper/actions/runs/37641534454"
+    }
+  ],
+  "resource_deferred": null,
+  "retry_budget": {
+    "full_gate_limit": 1,
+    "full_gate_used": 0,
+    "infrastructure_limit": 1,
+    "infrastructure_used": 0,
+    "repair_attempt_limit_per_family": 2,
+    "targeted_diagnostic_limit": 2,
+    "targeted_diagnostic_used": 0
+  },
+  "retry_run_floors": [],
+  "schema_version": 1,
+  "state": "complete",
+  "state_changes": [],
+  "transitions": [
+    {
+      "at": "2026-10-07T13:43:47.377387897Z",
+      "evidence_refs": [],
+      "from": "idle",
+      "full_gate_retries": 0,
+      "infrastructure_retries": 0,
+      "job_id": null,
+      "reason": "release intent accepted by RRC",
+      "repair_attempts": 0,
+      "run_id": null,
+      "sequence": 1,
+      "source_commit": "b7cda1d78bebec842347731602a7b071a476b4b6",
+      "to": "preparing",
+      "workflow_id": null
+    },
+    {
+      "at": "2026-10-07T13:43:47.377960442Z",
+      "evidence_refs": [],
+      "from": "preparing",
+      "full_gate_retries": 0,
+      "infrastructure_retries": 0,
+      "job_id": null,
+      "reason": "local release verification required before candidate creation",
+      "repair_attempts": 0,
+      "run_id": null,
+      "sequence": 2,
+      "source_commit": "b7cda1d78bebec842347731602a7b071a476b4b6",
+      "to": "local_verification",
+      "workflow_id": null
+    },
+    {
+      "at": "2026-10-07T15:00:58.386655243Z",
+      "evidence_refs": [
+        "local:version-preparation",
+        "local:workspace-verify:05be11e0e97e5ece6e0b7adb8fb769814259f8d3735a65cdb8192d792fd81943",
+        "local:acceptance:636e0452e16201d58418acfe5fe2cd144d8116362c17bfe2173a9fb68ab59af0",
+        "local:architecture:c0e0aebe9b7a8443b26cdb032c4570c955b9dc2cbb395ecb23471f7b441fe176",
+        "local:msrv:c955b4fbfb5e310a6f847f95dd6d4dbea254f954049003e6a9c4c44bbcae3cd7",
+        "local:supply-chain-policy:f1a0fca39d4280363937aabd77783990ea6480bd9ca257816de3b68fc8efa845",
+        "local:advisories:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "local:release-build:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      ],
+      "from": "local_verification",
+      "full_gate_retries": 0,
+      "infrastructure_retries": 0,
+      "job_id": null,
+      "reason": "local release verification passed",
+      "repair_attempts": 0,
+      "run_id": null,
+      "sequence": 3,
+      "source_commit": "9fada0cd06714ba1e754b332b5d44b39d3d9f373",
+      "to": "candidate_ready",
+      "workflow_id": null
+    },
+    {
+      "at": "2026-10-07T15:01:03.953334333Z",
+      "evidence_refs": [
+        "origin/main@9fada0cd06714ba1e754b332b5d44b39d3d9f373"
+      ],
+      "from": "candidate_ready",
+      "full_gate_retries": 0,
+      "infrastructure_retries": 0,
+      "job_id": null,
+      "reason": "exact-commit remote gates dispatched",
+      "repair_attempts": 0,
+      "run_id": null,
+      "sequence": 4,
+      "source_commit": "9fada0cd06714ba1e754b332b5d44b39d3d9f373",
+      "to": "remote_gate_running",
+      "workflow_id": null
+    },
+    {
+      "at": "2026-10-07T15:01:04.787047168Z",
+      "evidence_refs": [
+        "github:exact-sha-matrix"
+      ],
+      "from": "remote_gate_running",
+      "full_gate_retries": 0,
+      "infrastructure_retries": 0,
+      "job_id": null,
+      "reason": "required workflow runs have not appeared for the exact candidate SHA",
+      "repair_attempts": 0,
+      "run_id": null,
+      "sequence": 5,
+      "source_commit": "9fada0cd06714ba1e754b332b5d44b39d3d9f373",
+      "to": "waiting_for_matrix",
+      "workflow_id": null
+    },
+    {
+      "at": "2026-10-07T15:58:28.770359382Z",
+      "evidence_refs": [
+        "github:exact-sha-matrix"
+      ],
+      "from": "waiting_for_matrix",
+      "full_gate_retries": 0,
+      "infrastructure_retries": 0,
+      "job_id": 112861472886,
+      "reason": "all exact-commit required gates are terminal and green",
+      "repair_attempts": 0,
+      "run_id": 37641534734,
+      "sequence": 6,
+      "source_commit": "9fada0cd06714ba1e754b332b5d44b39d3d9f373",
+      "to": "remote_gates_green",
+      "workflow_id": 324058982
+    },
+    {
+      "at": "2026-10-07T15:58:32.231407341Z",
+      "evidence_refs": [
+        "git:tag:a4e8975221019611a6c44e3246e9d9ef94af4980"
+      ],
+      "from": "remote_gates_green",
+      "full_gate_retries": 0,
+      "infrastructure_retries": 0,
+      "job_id": 112861472886,
+      "reason": "annotated immutable tag verified at exact green commit",
+      "repair_attempts": 0,
+      "run_id": 37641534734,
+      "sequence": 7,
+      "source_commit": "9fada0cd06714ba1e754b332b5d44b39d3d9f373",
+      "to": "tagging",
+      "workflow_id": 324058982
+    },
+    {
+      "at": "2026-10-07T15:58:32.231857196Z",
+      "evidence_refs": [
+        "git:tag:v0.24.8"
+      ],
+      "from": "tagging",
+      "full_gate_retries": 0,
+      "infrastructure_retries": 0,
+      "job_id": 112861472886,
+      "reason": "release publication started after exact-commit gates",
+      "repair_attempts": 0,
+      "run_id": 37641534734,
+      "sequence": 8,
+      "source_commit": "9fada0cd06714ba1e754b332b5d44b39d3d9f373",
+      "to": "publishing",
+      "workflow_id": 324058982
+    },
+    {
+      "at": "2026-10-07T16:22:07.865121542Z",
+      "evidence_refs": [
+        "github:run:37648330813",
+        "github:release:v0.24.8"
+      ],
+      "from": "publishing",
+      "full_gate_retries": 0,
+      "infrastructure_retries": 0,
+      "job_id": 112861472886,
+      "reason": "release assets and metadata published and verified",
+      "repair_attempts": 0,
+      "run_id": 37641534734,
+      "sequence": 9,
+      "source_commit": "9fada0cd06714ba1e754b332b5d44b39d3d9f373",
+      "to": "published",
+      "workflow_id": 324058982
+    },
+    {
+      "at": "2026-10-07T16:22:12.388058349Z",
+      "evidence_refs": [
+        "rrc:verified-publication-closeout"
+      ],
+      "from": "published",
+      "full_gate_retries": 0,
+      "infrastructure_retries": 0,
+      "job_id": 112861472886,
+      "reason": "post-release main-health closeout started",
+      "repair_attempts": 0,
+      "run_id": 37641534734,
+      "sequence": 10,
+      "source_commit": "9fada0cd06714ba1e754b332b5d44b39d3d9f373",
+      "to": "post_release_closeout",
+      "workflow_id": 324058982
+    },
+    {
+      "at": "2026-10-07T16:22:13.289254892Z",
+      "evidence_refs": [],
+      "from": "post_release_closeout",
+      "full_gate_retries": 0,
+      "infrastructure_retries": 0,
+      "job_id": null,
+      "reason": "post-release closeout refreshes current main gates",
+      "repair_attempts": 0,
+      "run_id": null,
+      "sequence": 11,
+      "source_commit": "9fada0cd06714ba1e754b332b5d44b39d3d9f373",
+      "to": "waiting_for_matrix",
+      "workflow_id": null
+    },
+    {
+      "at": "2026-10-07T16:22:41.601066647Z",
+      "evidence_refs": [
+        "github:exact-sha-matrix"
+      ],
+      "from": "waiting_for_matrix",
+      "full_gate_retries": 0,
+      "infrastructure_retries": 0,
+      "job_id": 112861472886,
+      "reason": "post-release main is green; published release remains unchanged",
+      "repair_attempts": 0,
+      "run_id": 37641534734,
+      "sequence": 12,
+      "source_commit": "9fada0cd06714ba1e754b332b5d44b39d3d9f373",
+      "to": "complete",
+      "workflow_id": 324058982
+    }
+  ],
+  "updated_at": "2026-10-07T16:22:50.292469374Z"
+}

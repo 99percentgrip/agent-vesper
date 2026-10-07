@@ -1,0 +1,51 @@
+{
+  "version": 1,
+  "observed_at": "2026-10-07T16:58:48.526707+00:00",
+  "parent": "9fada0cd06714ba1e754b332b5d44b39d3d9f373",
+  "scope": "Final local provider-neutral publication recovery source; exact-version native gates and hosted corrective release pending",
+  "source_sha256": {
+    "crates/vesper-harness/src/release_executor.rs": "31395fd1714b4a4c39815ec600d7abcf1e7e29b32fb6959d8ca473c369c70f72",
+    "crates/vesper-harness/src/release_recovery.rs": "8cbfb62fd095af9d1cbe2b497e52a3bef34235ebb1b9364a4b9428107261e9c2",
+    "xtask/src/main.rs": "db7a91d3145a90ed89f485695b4604854a954494a32447bc2c851dce8b349879"
+  },
+  "native_host_sha256": "586470c932d7ebe77f7c0ffdb1cdb0c7a45b02f511d6f3bd75fed8d636e3a8c5",
+  "archive_sha256": "443351de77b76cc0c63b2086f4d8479edaf4fc049d7f0eb21999781985931c7a",
+  "receipts": {
+    "vesper-rrc-publication-admission-red.log": "4f5b4b30613488c60494fa34d08ac63671d5b572e1e99766f0183c2ce28f819e",
+    "vesper-rrc-publication-read-red.log": "1cae0789f8827348202cb36c3756722f2e1e3ffb84f6a4020744bdb06a171527",
+    "vesper-rrc-publication-recovery-acceptance-v2.log": "60170c008d1487ba4460a462025cb8d07ed577a6c317541c9533c7c052321ca9",
+    "vesper-rrc-publication-recovery-acceptance.log": "5cd7ea8df0ff9b083a03bb0320ce5aa25ea9f2d4c6608ae1fea8a8999f33b824",
+    "vesper-rrc-publication-recovery-clippy-v2.log": "7ef6ca401baa734f8dd8a162312a58597158960ca2eadab4b5a537dc411e584e",
+    "vesper-rrc-publication-recovery-clippy-v3.log": "669a0e278e745de242b9ccfce13bbda9acd6fb7ee78c25fead987b35b5bc7059",
+    "vesper-rrc-publication-recovery-clippy.log": "d77a039caa054666366efccd002e7b1ca973333616cafe5d2be71deb1af5e91e",
+    "vesper-rrc-publication-recovery-final-focused.log": "f6aa30978bb47bbe3cdd4f4124c527028fe1f31eaeb8dff71a67b1242ae6f600",
+    "vesper-rrc-publication-recovery-final-v2.log": "2d8c7c9f9b90638c88e120c50102ad0eb76eed0b80fc132bab8cb152ceb74245",
+    "vesper-rrc-publication-recovery-green.log": "fc69ffebc4df3bc2ac5b96b58aacb1ffdb3197fe14b8423c45bb2086ad99745a",
+    "vesper-rrc-publication-recovery-host-build-v2.log": "c00f145fec321897e0ad4b2d454185d0d0e921c4cf98e76d5c544617413ed968",
+    "vesper-rrc-publication-recovery-host-build.log": "605abc4e9da591e7f82328fbbc81b71ff0028bf32c45fac8934bbfbbc225a8c5",
+    "vesper-rrc-publication-recovery-managed-cache-preparation.log": "ab35c7e41a9b39fdffcfd411183ceb52c554dbd004a0e19531ecf7b2bb80ea77",
+    "vesper-rrc-publication-recovery-release-suite.log": "1d0296a03ca13813e198147c4779b0a32dcab713e5263c5a57bf712be9b7e26c",
+    "vesper-rrc-publication-watch-red.log": "15e2d0cc344cdad258ed2122890e04cd5559576f4bf7482f5d173eea3cf6afe8"
+  },
+  "checks": {
+    "final_publication_focused": {
+      "passed": 13,
+      "failed": 0
+    },
+    "intermediate_all_feature_rrc": {
+      "passed": 196,
+      "failed": 0,
+      "scope": "before cumulative-watch addition"
+    },
+    "final_acceptance": {
+      "passed": 132,
+      "failed": 0,
+      "new_named_cases": 5
+    },
+    "final_strict_clippy": "passed",
+    "formatting": "passed",
+    "native_default_host_build": "passed",
+    "live_model_effectiveness": "not measured",
+    "corrective_release": "pending"
+  }
+}

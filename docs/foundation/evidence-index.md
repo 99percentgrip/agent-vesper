@@ -1,12 +1,15 @@
 # Foundation Evidence Index
 
+- [RRC publication observation recovery](2026-10-07-rrc-publication-observation-recovery.md) — persisted bounded read recovery, cumulative watch deadline and unchanged tagged-epoch admission; current-source release pending.
+- [Release v0.24.8 closeout](release-v0.24.8-closeout.md) — eight local gates, all twelve prerequisite jobs, producing workflow/assets and existing Registry PR delivery; live read timeout retained.
+
 - [RRC native cancellation keybinding repair](2026-10-07-rrc-native-cancellation-keybinding-repair.md) — configured Cancel reaches RRC and pending approvals; foreground/voice priority and truthful cleanup preserved.
 
-- [RRC adaptive resource admission repair](2026-10-07-rrc-adaptive-resource-admission-repair.md) — reproduced two-job/one-job budget mismatch, unchanged-margin lower-concurrency admission, native release verification pending.
+- [RRC adaptive resource admission repair](2026-10-07-rrc-adaptive-resource-admission-repair.md) — reproduced two-job/one-job budget mismatch, unchanged-margin lower-concurrency admission, integrated v0.24.8 release gates recorded in its closeout.
 
 - [RRC native permission and stop repair](2026-10-07-rrc-native-permission-and-stop-repair.md) — actual ACP protocol approval/rejection/cancellation, strict options and request-bound cleanup, combined repair verification.
 
-- [RRC authorization stall diagnosis and scoped repair](2026-10-07-rrc-authorization-stall-diagnosis.md) — installed-client permission denial, continued polling, local typed stop; unreleased.
+- [RRC authorization stall diagnosis and scoped repair](2026-10-07-rrc-authorization-stall-diagnosis.md) — installed-client permission denial, continued polling, local typed stop; integrated v0.24.8 release recorded above.
 
 ## Further RRC promotion and inventory gap audit (2026-10-07)
 

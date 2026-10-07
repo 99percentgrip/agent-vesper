@@ -7,7 +7,7 @@ use std::collections::{BTreeSet, HashMap, VecDeque};
 
 use std::fs;
 
-use std::io::{Read, Seek, SeekFrom};
+use std::io::Read;
 
 use std::path::{Path, PathBuf};
 
@@ -92,6 +92,8 @@ pub(crate) const REMOTE_COMMAND_WATCHDOG: CommandWatchdogPolicy = CommandWatchdo
     inactivity_timeout: Duration::from_secs(2 * 60),
     hard_deadline: Some(Duration::from_secs(5 * 60)),
 };
+
+const PUBLICATION_WATCH_LIMIT_MILLIS: u64 = 2 * 60 * 60 * 1000;
 
 const PUBLICATION_WATCHDOG: CommandWatchdogPolicy = CommandWatchdogPolicy {
     operation: "publication evidence request",
@@ -1547,8 +1549,15 @@ impl ReleaseExecutionPort for NativeReleaseExecutor {
                     "-H",
                     "Accept: application/octet-stream",
                 ]);
-            let output =
-                run_bounded_command(&mut command, &self.cancelled, Duration::from_secs(30))?;
+            let output = run_bounded_external_command(
+                &mut command,
+                &self.cancelled,
+                CommandWatchdogPolicy {
+                    operation: "publication evidence request",
+                    inactivity_timeout: Duration::from_secs(30),
+                    hard_deadline: Some(Duration::from_secs(30)),
+                },
+            )?;
             if !output.status.success() || output.stdout.len() > 1024 {
                 return Err(RrcError::Invalid(
                     "checksum asset read failed or exceeded bound".into(),
@@ -2615,20 +2624,33 @@ pub fn advance_release(
             ledger.save(record)?;
         }
         ReleaseRecoveryState::Publishing => {
+            if record.mutation.publication_watch_millis >= PUBLICATION_WATCH_LIMIT_MILLIS {
+                return Err(RrcError::WatchdogDeadline {
+                    operation: "publication verification".into(),
+                    limit_seconds: PUBLICATION_WATCH_LIMIT_MILLIS / 1000,
+                });
+            }
             let _admission = &admit_release_mutation(record, ReleaseMutationKind::Publish)?;
             let tag = record
                 .mutation
                 .tag_name
                 .clone()
                 .ok_or_else(|| RrcError::Invalid("release tag is missing".into()))?;
-            if let Some(receipt) = executor.publication(
+            let started = Instant::now();
+            let observation = executor.publication(
                 repository,
                 &tag,
                 record
                     .release_commit
                     .as_deref()
                     .ok_or_else(|| RrcError::Invalid("publication candidate missing".into()))?,
-            )? {
+            );
+            charge_publication_watch(record, started.elapsed());
+            if matches!(observation, Err(RrcError::Cancelled)) {
+                return Err(RrcError::Cancelled);
+            }
+            ledger.save(record)?;
+            if let Some(receipt) = publication_read_observation(record, ledger, observation)? {
                 record.mutation.publication_run_id = Some(receipt.run_id);
                 record.mutation.publication_verified = true;
                 record.mutation.published_asset_names = receipt.assets;
@@ -2979,6 +3001,44 @@ fn watch_resource_deferred(
     }
 }
 
+fn charge_publication_watch(record: &mut ReleaseRecoveryRecord, elapsed: Duration) {
+    record.mutation.publication_watch_millis = record
+        .mutation
+        .publication_watch_millis
+        .saturating_add(u64::try_from(elapsed.as_millis()).unwrap_or(u64::MAX));
+}
+
+fn publication_read_observation(
+    record: &mut ReleaseRecoveryRecord,
+    ledger: &ReleaseLedger,
+    outcome: Result<Option<PublicationReceipt>, RrcError>,
+) -> Result<Option<PublicationReceipt>, RrcError> {
+    match outcome {
+        Err(error @ (RrcError::WatchdogStalled { .. } | RrcError::WatchdogDeadline { .. }))
+            if matches!(&error,
+                RrcError::WatchdogStalled { operation, .. } | RrcError::WatchdogDeadline { operation, .. }
+                if operation == "publication evidence request")
+                && record.state == ReleaseRecoveryState::Publishing
+                && record.mutation.tag_pushed
+                && record.mutation.in_flight_operation.is_none()
+                && record.mutation.publication_read_retries < 2 =>
+        {
+            // This stage only observes workflow/assets/tag receipts. Persist its
+            // bounded read recovery before another observation; never replay a write
+            // or consume/reset causal source/CI retry admissions.
+            record.mutation.publication_read_retries += 1;
+            record.note_progress_milestone(format!(
+                "Publication observation timed out — read-only recovery {}/2 scheduled; published state remains unverified",
+                record.mutation.publication_read_retries,
+            ));
+            record.note_liveness_active("publication observation recovery");
+            ledger.save(record)?;
+            Ok(None)
+        }
+        other => other,
+    }
+}
+
 fn wait_for_remote_poll(delay: Duration, cancelled: &AtomicBool) -> Result<(), RrcError> {
     let deadline = Instant::now() + delay;
     while Instant::now() < deadline {
@@ -3171,6 +3231,9 @@ fn run_release_worker(
             record.metrics.ci_wait_millis = record.metrics.ci_wait_millis.saturating_add(
                 u64::try_from(wait_started.elapsed().as_millis()).unwrap_or(u64::MAX),
             );
+            if record.state == ReleaseRecoveryState::Publishing {
+                charge_publication_watch(&mut record, wait_started.elapsed());
+            }
             if let Some(latest) = ledger.load()?
                 && latest.state == ReleaseRecoveryState::Cancelled
             {
@@ -5628,6 +5691,248 @@ pub(crate) mod tests {
             fs::read_to_string(temp.path().join("restart-receipt")).expect("restart receipt"),
             format!("epoch={epoch};run=7001;job=8001")
         );
+    }
+
+    #[test]
+    fn publication_read_timeout_continues_same_candidate_without_another_tag() {
+        struct TimeoutOnce(AtomicBool);
+        impl ReleaseExecutionPort for TimeoutOnce {
+            fn prepare_version_bump(
+                &self,
+                bump: &str,
+                admission: &ReleaseMutationAdmission,
+            ) -> Result<VersionBumpReceipt, RrcError> {
+                FakeRelease.prepare_version_bump(bump, admission)
+            }
+            fn run_local_gate(&self, gate: &LocalGateRecord) -> Result<String, RrcError> {
+                FakeRelease.run_local_gate(gate)
+            }
+            fn commit_candidate(
+                &self,
+                version: &str,
+                admission: &ReleaseMutationAdmission,
+            ) -> Result<String, RrcError> {
+                FakeRelease.commit_candidate(version, admission)
+            }
+            fn push_candidate(
+                &self,
+                admission: &ReleaseMutationAdmission,
+            ) -> Result<String, RrcError> {
+                FakeRelease.push_candidate(admission)
+            }
+            fn create_and_push_tag(
+                &self,
+                version: &str,
+                commit: &str,
+                admission: &ReleaseMutationAdmission,
+            ) -> Result<(String, String), RrcError> {
+                FakeRelease.create_and_push_tag(version, commit, admission)
+            }
+            fn publication(
+                &self,
+                repository: &str,
+                tag: &str,
+                commit: &str,
+            ) -> Result<Option<PublicationReceipt>, RrcError> {
+                if !self.0.swap(true, Ordering::AcqRel) {
+                    return Err(RrcError::WatchdogStalled {
+                        operation: "publication evidence request".into(),
+                        limit_seconds: 120,
+                    });
+                }
+                FakeRelease.publication(repository, tag, commit)
+            }
+        }
+        for provider in ["fixture-provider-a", "fixture-provider-b"] {
+            let temp = tempfile::tempdir().unwrap();
+            let ledger = ReleaseLedger::open(temp.path().to_path_buf(), provider).unwrap();
+            let mut record =
+                crate::release_recovery::start_release(provider, "patch", "main", &"1".repeat(40))
+                    .unwrap();
+            ledger.save(&record).unwrap();
+            let executor = TimeoutOnce(AtomicBool::new(false));
+            for _ in 0..16 {
+                advance_release(
+                    &mut record,
+                    ReleaseAdvanceContext {
+                        workspace: temp.path(),
+                        repository: "fixture/repo",
+                        ledger: &ledger,
+                        executor: &executor,
+                        github: &GreenGithub,
+                        health: &HealthyStatus,
+                        repair_factory: None,
+                        cancelled: Arc::new(AtomicBool::new(false)),
+                    },
+                )
+                .unwrap();
+                record = ledger.load().unwrap().unwrap();
+                if record.state == ReleaseRecoveryState::Published {
+                    break;
+                }
+            }
+            assert_eq!(record.state, ReleaseRecoveryState::Published);
+            assert_eq!(record.mutation.publication_read_retries, 1);
+            assert!(record.mutation.publication_verified);
+            assert_eq!(
+                record.release_commit.as_deref(),
+                Some("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+            );
+            assert_eq!(
+                record
+                    .transitions
+                    .iter()
+                    .filter(|t| t.to == ReleaseRecoveryState::Tagging)
+                    .count(),
+                1
+            );
+            assert!(record.failures.is_empty());
+            assert_eq!(record.retry_budget.full_gate_used, 0);
+            assert_eq!(record.retry_budget.infrastructure_used, 0);
+        }
+    }
+
+    #[test]
+    fn publication_watch_budget_survives_reload_and_read_recovery() {
+        let temp = tempfile::tempdir().unwrap();
+        let ledger = ReleaseLedger::open(temp.path().to_path_buf(), "fixture").unwrap();
+        let mut record =
+            crate::release_recovery::start_release("fixture", "patch", "main", &"1".repeat(40))
+                .unwrap();
+        ledger.save(&record).unwrap();
+        for _ in 0..16 {
+            if record.state == ReleaseRecoveryState::Publishing {
+                break;
+            }
+            advance_release(
+                &mut record,
+                ReleaseAdvanceContext {
+                    workspace: temp.path(),
+                    repository: "fixture/repo",
+                    ledger: &ledger,
+                    executor: &FakeRelease,
+                    github: &GreenGithub,
+                    health: &HealthyStatus,
+                    repair_factory: None,
+                    cancelled: Arc::new(AtomicBool::new(false)),
+                },
+            )
+            .unwrap();
+        }
+        record.mutation.publication_watch_millis = 60 * 60 * 1000;
+        charge_publication_watch(&mut record, Duration::from_secs(60 * 60));
+        let error = RrcError::WatchdogStalled {
+            operation: "publication evidence request".into(),
+            limit_seconds: 120,
+        };
+        publication_read_observation(&mut record, &ledger, Err(error)).unwrap();
+        record = ledger.load().unwrap().unwrap();
+        assert_eq!(record.mutation.publication_watch_millis, 2 * 60 * 60 * 1000);
+        let outcome = advance_release(
+            &mut record,
+            ReleaseAdvanceContext {
+                workspace: temp.path(),
+                repository: "fixture/repo",
+                ledger: &ledger,
+                executor: &FakeRelease,
+                github: &GreenGithub,
+                health: &HealthyStatus,
+                repair_factory: None,
+                cancelled: Arc::new(AtomicBool::new(false)),
+            },
+        );
+        assert!(
+            matches!(outcome, Err(RrcError::WatchdogDeadline { operation, limit_seconds: 7200 }) if operation == "publication verification")
+        );
+        assert!(!record.mutation.publication_verified);
+        assert!(record.failures.is_empty());
+        assert_eq!(record.retry_budget.full_gate_used, 0);
+    }
+
+    #[test]
+    fn publication_read_watchdog_recovery_is_persisted_and_bounded() {
+        for provider in ["fixture-provider-a", "fixture-provider-b"] {
+            let temp = tempfile::tempdir().unwrap();
+            let ledger = ReleaseLedger::open(temp.path().to_path_buf(), provider).unwrap();
+            let mut record =
+                crate::release_recovery::start_release(provider, "patch", "main", &"a".repeat(40))
+                    .unwrap();
+            record.state = ReleaseRecoveryState::Publishing;
+            record.mutation.tag_pushed = true;
+            record.mutation.tag_object = Some("immutable-tag".into());
+            let original = record.retry_budget.clone();
+            ledger.save(&record).unwrap();
+            for attempt in 1..=2 {
+                let error = RrcError::WatchdogStalled {
+                    operation: "publication evidence request".into(),
+                    limit_seconds: 120,
+                };
+                assert!(
+                    publication_read_observation(&mut record, &ledger, Err(error))
+                        .unwrap()
+                        .is_none()
+                );
+                record = ledger.load().unwrap().unwrap();
+                assert_eq!(record.mutation.publication_read_retries, attempt);
+                assert_eq!(record.retry_budget, original);
+                assert_eq!(record.state, ReleaseRecoveryState::Publishing);
+                assert!(record.failures.is_empty());
+                assert_eq!(record.mutation.tag_object.as_deref(), Some("immutable-tag"));
+            }
+            let error = RrcError::WatchdogDeadline {
+                operation: "publication evidence request".into(),
+                limit_seconds: 600,
+            };
+            assert!(publication_read_observation(&mut record, &ledger, Err(error)).is_err());
+            assert_eq!(record.mutation.publication_read_retries, 2);
+            let receipt = PublicationReceipt {
+                run_id: 77,
+                version: "0.24.5".into(),
+                assets: vec![],
+            };
+            assert_eq!(
+                publication_read_observation(&mut record, &ledger, Ok(Some(receipt.clone())))
+                    .unwrap(),
+                Some(receipt)
+            );
+        }
+    }
+
+    #[test]
+    fn publication_read_recovery_never_retries_cancellation_denials_or_invalid_evidence() {
+        let temp = tempfile::tempdir().unwrap();
+        let ledger = ReleaseLedger::open(temp.path().to_path_buf(), "fixture").unwrap();
+        let mut record =
+            crate::release_recovery::start_release("fixture", "patch", "main", &"a".repeat(40))
+                .unwrap();
+        record.state = ReleaseRecoveryState::Publishing;
+        for error in [
+            RrcError::Cancelled,
+            RrcError::AuthorizationBlocked("denied".into()),
+            RrcError::Invalid("bad digest".into()),
+            RrcError::WatchdogStalled {
+                operation: "release mutation command".into(),
+                limit_seconds: 300,
+            },
+        ] {
+            assert!(publication_read_observation(&mut record, &ledger, Err(error)).is_err());
+            assert_eq!(record.mutation.publication_read_retries, 0);
+        }
+        record.mutation.tag_pushed = true;
+        for journal in [None, Some("Closeout".into())] {
+            record.state = if journal.is_none() {
+                ReleaseRecoveryState::RemoteGatesGreen
+            } else {
+                ReleaseRecoveryState::Publishing
+            };
+            record.mutation.in_flight_operation = journal;
+            let error = RrcError::WatchdogStalled {
+                operation: "publication evidence request".into(),
+                limit_seconds: 120,
+            };
+            assert!(publication_read_observation(&mut record, &ledger, Err(error)).is_err());
+            assert_eq!(record.mutation.publication_read_retries, 0);
+        }
     }
 
     #[test]
@@ -9083,66 +9388,6 @@ fn actual_regression() {
     }
 }
 
-pub(crate) fn run_bounded_command(
-    command: &mut Command,
-    cancelled: &AtomicBool,
-    timeout: Duration,
-) -> Result<Output, RrcError> {
-    if cancelled.load(Ordering::Acquire) {
-        return Err(RrcError::Invalid(
-            "release recovery was cancelled by the user".into(),
-        ));
-    }
-    let mut stdout = tempfile::tempfile()?;
-    let mut stderr = tempfile::tempfile()?;
-    command
-        .stdin(Stdio::null())
-        .stdout(Stdio::from(stdout.try_clone()?))
-        .stderr(Stdio::from(stderr.try_clone()?));
-    #[cfg(windows)]
-    let mut child = command.group().kill_on_drop(true).spawn()?;
-    #[cfg(not(windows))]
-    let mut child = command.group_spawn()?;
-    let started = Instant::now();
-    let status = loop {
-        let cancelled_now = cancelled.load(Ordering::Acquire);
-        if cancelled_now
-            || started.elapsed() >= timeout
-            || stdout.metadata()?.len() > 64 * 1024 * 1024
-            || stderr.metadata()?.len() > 64 * 1024 * 1024
-        {
-            let _ = child.kill();
-            let _ = child.inner().wait();
-            return Err(RrcError::Invalid(if cancelled_now {
-                "release recovery was cancelled by the user".into()
-            } else {
-                "release subprocess exceeded its time or output bound".into()
-            }));
-        }
-        if let Some(status) = child.inner().try_wait()? {
-            break status;
-        }
-        thread::sleep(Duration::from_millis(100));
-    };
-    // A successful leader must not leave owned descendants running.
-    let _ = child.kill();
-    stdout.seek(SeekFrom::Start(0))?;
-    stderr.seek(SeekFrom::Start(0))?;
-    let mut stdout_bytes = Vec::new();
-    let mut stderr_bytes = Vec::new();
-    stdout
-        .take(64 * 1024 * 1024)
-        .read_to_end(&mut stdout_bytes)?;
-    stderr
-        .take(64 * 1024 * 1024)
-        .read_to_end(&mut stderr_bytes)?;
-    Ok(Output {
-        status,
-        stdout: stdout_bytes,
-        stderr: stderr_bytes,
-    })
-}
-
 fn verified_publication_assets(release: &serde_json::Value) -> Result<Vec<String>, RrcError> {
     let assets = release
         .get("assets")
@@ -10713,6 +10958,9 @@ fn drive_release_worker(
                 record.metrics.ci_wait_millis = record.metrics.ci_wait_millis.saturating_add(
                     u64::try_from(wait_started.elapsed().as_millis()).unwrap_or(u64::MAX),
                 );
+                if record.state == ReleaseRecoveryState::Publishing {
+                    charge_publication_watch(&mut record, wait_started.elapsed());
+                }
                 // A different host may have cancelled while this wait was active.
                 if let Some(latest) = ledger.load()?
                     && latest.state == ReleaseRecoveryState::Cancelled

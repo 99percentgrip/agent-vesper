@@ -115,6 +115,16 @@ Z.ai and Playwright MCP server descriptors.
   adapters retain bounded read-only use outside an active worker.
   Passive CI polls do not consume the active stagnation budget. Infrastructure
   recovery reserves budget/attempt floors before its scoped rerun.
+- Read-only publication watchdog stops admit at most two automatic observation
+  retries per persisted epoch, through the normal cancellable poll backoff. The
+  counter survives reload and matching requests; writes, uncertain journals,
+  cancellation, authorization failures and invalid evidence never use this route.
+  Tagged matching requests may continue observation only for the same repository,
+  objective, exact target, clean owned workspace and admitted source/candidate.
+  They cannot replace the immutable candidate or reset any retry admission.
+  Publication observation and actual polling waits accumulate a persisted two-hour
+  active watch bound. Host idle time is excluded; reload and read recovery cannot
+  reset it. Exhaustion is a typed liveness deadline, never source failure evidence.
 - Published assets require a settled exact-SHA tag workflow, an annotated tag
   targeting that SHA, nondraft/nonprerelease metadata and the complete expected
   inventory of nonempty uploaded archive/checksum assets. Downloaded checksum contents must match the

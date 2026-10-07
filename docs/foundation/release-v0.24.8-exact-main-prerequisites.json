@@ -1,0 +1,204 @@
+{
+  "observed_at": "2026-10-07T16:01:44.050270+00:00",
+  "candidate_commit": "9fada0cd06714ba1e754b332b5d44b39d3d9f373",
+  "version": "0.24.8",
+  "required_gates": [
+    {
+      "head_sha": "9fada0cd06714ba1e754b332b5d44b39d3d9f373",
+      "jobs": [
+        {
+          "attempt": 1,
+          "failed_step": null,
+          "job_id": 112861472886,
+          "job_name": "quality",
+          "platform": "ubuntu-24.04",
+          "run_id": 37641534734,
+          "state": "success",
+          "url": "https://github.com/99percentgrip/agent-vesper/actions/runs/37641534734/job/112861472886",
+          "workflow_id": 324058982,
+          "workflow_name": "pull-request-validation"
+        },
+        {
+          "attempt": 1,
+          "failed_step": null,
+          "job_id": 112861473461,
+          "job_name": "supply-chain",
+          "platform": "ubuntu-24.04",
+          "run_id": 37641534734,
+          "state": "success",
+          "url": "https://github.com/99percentgrip/agent-vesper/actions/runs/37641534734/job/112861473461",
+          "workflow_id": 324058982,
+          "workflow_name": "pull-request-validation"
+        },
+        {
+          "attempt": 1,
+          "failed_step": null,
+          "job_id": 112861473618,
+          "job_name": "windows-installer",
+          "platform": "windows-2025",
+          "run_id": 37641534734,
+          "state": "success",
+          "url": "https://github.com/99percentgrip/agent-vesper/actions/runs/37641534734/job/112861473618",
+          "workflow_id": 324058982,
+          "workflow_name": "pull-request-validation"
+        }
+      ],
+      "name": "pull-request-validation",
+      "run_attempt": 1,
+      "run_id": 37641534734,
+      "run_state": "success",
+      "url": "https://github.com/99percentgrip/agent-vesper/actions/runs/37641534734"
+    },
+    {
+      "head_sha": "9fada0cd06714ba1e754b332b5d44b39d3d9f373",
+      "jobs": [
+        {
+          "attempt": 1,
+          "failed_step": null,
+          "job_id": 112861473180,
+          "job_name": "linux-x86_64",
+          "platform": "ubuntu-24.04",
+          "run_id": 37641534510,
+          "state": "success",
+          "url": "https://github.com/99percentgrip/agent-vesper/actions/runs/37641534510/job/112861473180",
+          "workflow_id": 324058986,
+          "workflow_name": "five-target-foundation"
+        },
+        {
+          "attempt": 1,
+          "failed_step": null,
+          "job_id": 112861473357,
+          "job_name": "macos-intel",
+          "platform": "macos-15-intel",
+          "run_id": 37641534510,
+          "state": "success",
+          "url": "https://github.com/99percentgrip/agent-vesper/actions/runs/37641534510/job/112861473357",
+          "workflow_id": 324058986,
+          "workflow_name": "five-target-foundation"
+        },
+        {
+          "attempt": 1,
+          "failed_step": null,
+          "job_id": 112861473402,
+          "job_name": "linux-arm64",
+          "platform": "ubuntu-24.04-arm",
+          "run_id": 37641534510,
+          "state": "success",
+          "url": "https://github.com/99percentgrip/agent-vesper/actions/runs/37641534510/job/112861473402",
+          "workflow_id": 324058986,
+          "workflow_name": "five-target-foundation"
+        },
+        {
+          "attempt": 1,
+          "failed_step": null,
+          "job_id": 112861473426,
+          "job_name": "windows-x86_64",
+          "platform": "windows-2025",
+          "run_id": 37641534510,
+          "state": "success",
+          "url": "https://github.com/99percentgrip/agent-vesper/actions/runs/37641534510/job/112861473426",
+          "workflow_id": 324058986,
+          "workflow_name": "five-target-foundation"
+        },
+        {
+          "attempt": 1,
+          "failed_step": null,
+          "job_id": 112861473443,
+          "job_name": "macos-apple-silicon",
+          "platform": "macos-15",
+          "run_id": 37641534510,
+          "state": "success",
+          "url": "https://github.com/99percentgrip/agent-vesper/actions/runs/37641534510/job/112861473443",
+          "workflow_id": 324058986,
+          "workflow_name": "five-target-foundation"
+        }
+      ],
+      "name": "five-target-foundation",
+      "run_attempt": 1,
+      "run_id": 37641534510,
+      "run_state": "success",
+      "url": "https://github.com/99percentgrip/agent-vesper/actions/runs/37641534510"
+    },
+    {
+      "head_sha": "9fada0cd06714ba1e754b332b5d44b39d3d9f373",
+      "jobs": [
+        {
+          "attempt": 1,
+          "failed_step": null,
+          "job_id": 112861471833,
+          "job_name": "rust-1-88",
+          "platform": "ubuntu-24.04",
+          "run_id": 37641534461,
+          "state": "success",
+          "url": "https://github.com/99percentgrip/agent-vesper/actions/runs/37641534461/job/112861471833",
+          "workflow_id": 324058985,
+          "workflow_name": "msrv"
+        }
+      ],
+      "name": "msrv",
+      "run_attempt": 1,
+      "run_id": 37641534461,
+      "run_state": "success",
+      "url": "https://github.com/99percentgrip/agent-vesper/actions/runs/37641534461"
+    },
+    {
+      "head_sha": "9fada0cd06714ba1e754b332b5d44b39d3d9f373",
+      "jobs": [
+        {
+          "attempt": 1,
+          "failed_step": null,
+          "job_id": 112861478636,
+          "job_name": "Native namespace Hive",
+          "platform": "ubuntu-22.04",
+          "run_id": 37641534454,
+          "state": "success",
+          "url": "https://github.com/99percentgrip/agent-vesper/actions/runs/37641534454/job/112861478636",
+          "workflow_id": 351737017,
+          "workflow_name": "web-driver"
+        },
+        {
+          "attempt": 1,
+          "failed_step": null,
+          "job_id": 112861479526,
+          "job_name": "Contained browser linux-x86_64",
+          "platform": "ubuntu-24.04",
+          "run_id": 37641534454,
+          "state": "success",
+          "url": "https://github.com/99percentgrip/agent-vesper/actions/runs/37641534454/job/112861479526",
+          "workflow_id": 351737017,
+          "workflow_name": "web-driver"
+        },
+        {
+          "attempt": 1,
+          "failed_step": null,
+          "job_id": 112861479579,
+          "job_name": "Contained browser linux-aarch64",
+          "platform": "ubuntu-24.04-arm",
+          "run_id": 37641534454,
+          "state": "success",
+          "url": "https://github.com/99percentgrip/agent-vesper/actions/runs/37641534454/job/112861479579",
+          "workflow_id": 351737017,
+          "workflow_name": "web-driver"
+        }
+      ],
+      "name": "web-driver",
+      "run_attempt": 1,
+      "run_id": 37641534454,
+      "run_state": "success",
+      "url": "https://github.com/99percentgrip/agent-vesper/actions/runs/37641534454"
+    }
+  ],
+  "tag_name": "v0.24.8",
+  "tag_object": "a4e8975221019611a6c44e3246e9d9ef94af4980",
+  "retry_budget": {
+    "full_gate_limit": 1,
+    "full_gate_used": 0,
+    "infrastructure_limit": 1,
+    "infrastructure_used": 0,
+    "repair_attempt_limit_per_family": 2,
+    "targeted_diagnostic_limit": 2,
+    "targeted_diagnostic_used": 0
+  },
+  "native_owner": 2401546,
+  "scope": "All four exact-main workflows and twelve prerequisite jobs passed; native tag pushed; publication/closeout pending"
+}

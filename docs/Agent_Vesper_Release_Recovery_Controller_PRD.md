@@ -1094,7 +1094,20 @@ reset, stashed or mutated by this process.
 
 ## 37. Current Implementation Status
 
-[The further adversarial audit](foundation/2026-10-07-rrc-promotion-and-inventory-gap-audit.md) reproduced five additional defects after v0.24.7: proof-changing verification could promote different source, literal/new/renamed paths could block recovery, display-truncated status could admit an unowned staged file, an ignored new source input could pass proof yet be omitted from promotion, and whitespace validation checked the unstaged diff after staging. The shared controller repair and its new evidence are local and unreleased; the published v0.24.7 receipts remain historical evidence for their exact source. Current-source verification and unexecuted hosted boundaries are recorded in that report.
+[Release v0.24.8 closeout](foundation/release-v0.24.8-closeout.md) binds the
+integrated permission, promotion, resource admission, cancellation and Windows
+installer changes to `9fada0cd06714ba1e754b332b5d44b39d3d9f373`: all eight native
+local gates, twelve exact-SHA prerequisite jobs, producing publication and existing
+Registry PR delivery passed. The native owner initially stopped on a read-only
+publication request timeout and required an explicit recovery command.
+[Publication observation recovery](foundation/2026-10-07-rrc-publication-observation-recovery.md)
+tracks that new confirmed autonomy gap, matching tagged-request clarification
+regression and formerly unbounded cumulative publication watch. These later fixes are not contained in immutable v0.24.8; current-source
+verification and a separate corrective candidate remain required. Earlier completion
+claims certify their recorded scope, not absence of subsequently observed defects.
+
+
+[The further adversarial audit](foundation/2026-10-07-rrc-promotion-and-inventory-gap-audit.md) reproduced five additional defects after v0.24.7: proof-changing verification could promote different source, literal/new/renamed paths could block recovery, display-truncated status could admit an unowned staged file, an ignored new source input could pass proof yet be omitted from promotion, and whitespace validation checked the unstaged diff after staging. The shared controller repair shipped in v0.24.8; the published v0.24.7 receipts remain historical evidence for their exact source. Current-source verification and unexecuted hosted boundaries are recorded in that report.
 
 [The expanded autonomy audit](foundation/2026-10-06-rrc-autonomy-and-prd-audit.md) tracks the subsequently authorized full requirement audit, new recovery/completion regressions and next patch release. The current v0.24.7 candidate passed all required hosted/producing gates and native closeout; the linked trace retains requirement-specific scope.
 
