@@ -6,6 +6,9 @@ Own evidence and decisions that close the pre-workspace blockers identified by r
 
 ## Ownership
 
+- `windows-powershell-installer-repair.md` owns the PowerShell 5.1 root cause,
+  compatibility audit, offline tests and explicit live Windows acceptance gap.
+
 - `2026-10-06-rrc-autonomy-and-prd-audit.md` owns the expanded binding-PRD audit,
   semantic repair watchdog, passive CI wait separation, objective/receipt isolation,
   current requirement trace, exact-source verification and authorized next release.

@@ -1,5 +1,11 @@
 # Foundation Evidence Index
 
+## Windows PowerShell installer repair (native acceptance pending)
+
+- [Execution report](windows-powershell-installer-repair.md) records the 5.1 failure,
+  offline regression and the CI/public-main Windows 10 acceptance still required.
+- [S5 updater requirement](../settings-and-update-prd.md) retains Windows acceptance as open.
+
 ## RRC autonomy and PRD audit (2026-10-06)
 
 - [Audit report](2026-10-06-rrc-autonomy-and-prd-audit.md) records the expanded autonomous, provider-neutral repair, confirmed polling/stagnation/completion gaps, current verification and pending exact-commit release boundary.

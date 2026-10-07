@@ -30,6 +30,10 @@ User directive: 2026-09-12 screenshot and workflow audit.
 
 ## Execution
 
+[Windows installer compatibility report](foundation/windows-powershell-installer-repair.md)
+tracks the public installation/S5 installer repair; Windows CI and clean-machine
+acceptance remain open, not completion proof.
+
 [Execution report](foundation/settings-and-update-execution.md) owns exact commands,
 results, deviations and unexecuted platform acceptance. A requirement is not marked
 complete by the existence of code or this table.

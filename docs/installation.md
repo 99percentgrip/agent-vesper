@@ -10,7 +10,7 @@ For the prebuilt app you need:
 
 - A terminal and internet access to download the release.
 - On Linux/macOS: `curl`, `tar`, and either `sha256sum` or `shasum`.
-- On Windows: PowerShell with `Invoke-WebRequest`, `Expand-Archive`, and `Get-FileHash`.
+- On Windows x86_64: Windows PowerShell 5.1 (Desktop) or PowerShell 7+ with `Invoke-WebRequest`, `Expand-Archive`, and `Get-FileHash`. The installer does not require PowerShell 7.
 - Access to a supported provider: Z.ai, OpenAI, or a running LM Studio server.
 
 You do not need a Rust compiler for the prebuilt app. Your project still needs its own development tools. Verification that executes Cargo tests requires a Rust toolchain.
@@ -46,19 +46,34 @@ sudo dnf install curl ca-certificates tar coreutils
 
 ### Windows PowerShell
 
+In Windows PowerShell 5.1 (Desktop) or PowerShell 7+, run:
+
 ```powershell
 irm https://raw.githubusercontent.com/99percentgrip/agent-vesper/main/scripts/install.ps1 | iex
 ```
 
-To inspect it first:
+To inspect the installer before running it:
 
 ```powershell
 Invoke-WebRequest https://raw.githubusercontent.com/99percentgrip/agent-vesper/main/scripts/install.ps1 -OutFile vesper-install.ps1
 # Read vesper-install.ps1, then:
-./vesper-install.ps1
+.\vesper-install.ps1
 ```
 
-Use your organization's PowerShell execution policy if script execution is restricted.
+The piped one-liner does not normally require changing script execution policy.
+If policy blocks **the downloaded file**, follow your organization's policy.
+Where allowed, either enable signed-remote-script execution for your own account
+(`Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser`) or run
+just this downloaded file in a temporary process:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\vesper-install.ps1
+```
+
+`-ExecutionPolicy Bypass` above applies only to that process; the installer does
+not change machine or user execution policy. Review the script before running it.
+Neither option overrides a Group Policy restriction. Windows ARM64 has no native
+release archive and is not supported by this installer.
 
 ### Verify and launch
 
@@ -176,7 +191,7 @@ AGENT_VESPER_VERSION=0.23.0 sh vesper-install.sh
 ```
 
 ```powershell
-./vesper-install.ps1 -Version 0.23.0
+.\vesper-install.ps1 -Version 0.23.0
 ```
 
 The version above is an example, not an instruction to downgrade a newer installation.
@@ -201,6 +216,10 @@ Linux/macOS installer overrides: `AGENT_VESPER_INSTALL_DIR`, `AGENT_VESPER_BUNDL
 | Command not found | Reopen the terminal. Check the launcher directory above is on PATH. A desktop editor may need an absolute executable path. |
 | Wrong version starts | Run `command -v agent-vesper-tui` on Linux/macOS or `Get-Command agent-vesper-tui` in PowerShell. Check for an older installation earlier on PATH. |
 | Checksum verification fails | Stop and download again from the official release. Do not bypass the checksum. |
+| Windows reports an execution-policy error for `vesper-install.ps1` | See the [Windows options](#windows-powershell); the piped one-liner normally needs no policy change. Follow organizational policy; do not set `Unrestricted`. |
+| Windows reports unsupported or unknown architecture | Check `[Environment]::Is64BitOperatingSystem`, `$env:PROCESSOR_ARCHITECTURE` and `$env:PROCESSOR_ARCHITEW6432`. Only Windows x86_64 (AMD64) has a published archive; ARM64 is not a release target. |
+| Windows PowerShell 5.1 cannot fetch the installer script | Confirm HTTPS access to raw.githubusercontent.com. On older TLS defaults, run `[Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12` in that PowerShell session, then retry the one-liner. This does not change machine policy. |
+| Windows release download fails before checksum verification | Confirm HTTPS access to GitHub releases; check your proxy/firewall and retry. Do not run an unverified archive. |
 | Web driver unavailable | Start Docker/Podman, confirm `info` succeeds, then use Settings → Web tools → Set up / repair driver. |
 | Provider rejects a request | Check authentication, model entitlement, account limits, and the provider selected in Settings. |
 | LM Studio cannot connect | Confirm its server is running and the address in Vesper matches it. |

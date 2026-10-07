@@ -28,6 +28,10 @@ with each release. The read-only release prerequisite helper also lives here.
   `python3 -m venv` fallback still needs system `python3`+`python3-venv`, but
   is only reached if the bundled `uv` is absent.) A failed `uv` download is
   non-fatal.
+- `test_install_windows.ps1` is the offline Windows x86_64 regression: run under
+  powershell.exe (Desktop 5.1) and pwsh.exe (7+); tests both invocation forms,
+  SHA-256 mismatch/invalid failure, unsupported and simulated WOW64 metadata,
+  and installed launcher version checks. A real release/laptop test remains required.
 - `install.ps1` — Windows installer. Downloads the
   `agent-vesper-acp-windows-x86_64.zip` release, verifies SHA-256, installs a
   `.cmd` launchers under `%LOCALAPPDATA%\Programs\AgentVesper`, and adds that
