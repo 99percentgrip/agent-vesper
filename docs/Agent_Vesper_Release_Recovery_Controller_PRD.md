@@ -1094,9 +1094,11 @@ reset, stashed or mutated by this process.
 
 ## 37. Current Implementation Status
 
-[The expanded autonomy audit](foundation/2026-10-06-rrc-autonomy-and-prd-audit.md) tracks the subsequently authorized full requirement audit, new recovery/completion regressions and next patch release. Current hosted and producing evidence remain pending.
+[The further adversarial audit](foundation/2026-10-07-rrc-promotion-and-inventory-gap-audit.md) reproduced five additional defects after v0.24.7: proof-changing verification could promote different source, literal/new/renamed paths could block recovery, display-truncated status could admit an unowned staged file, an ignored new source input could pass proof yet be omitted from promotion, and whitespace validation checked the unstaged diff after staging. The shared controller repair and its new evidence are local and unreleased; the published v0.24.7 receipts remain historical evidence for their exact source. Current-source verification and unexecuted hosted boundaries are recorded in that report.
 
-**Full PRD parity remains unconfirmed. v0.24.6 was published at
+[The expanded autonomy audit](foundation/2026-10-06-rrc-autonomy-and-prd-audit.md) tracks the subsequently authorized full requirement audit, new recovery/completion regressions and next patch release. The current v0.24.7 candidate passed all required hosted/producing gates and native closeout; the linked trace retains requirement-specific scope.
+
+**The current 36-section/23-criterion requirement trace and acceptance evidence live in the expanded autonomy audit. Earlier v0.24.6 was published at
 `a56f0ba76525bf4e7e288eefe2dff731cb120914`, with its assets verified, but the
 controller initially stopped at Published before registry/report closeout and final user
 notification. Native closeout now completed with an idle owner and final receipt;
@@ -1154,3 +1156,22 @@ after verified baseline rollback and causal journal settlement. Promoted local
 patches are digest-pinned before preparation; tampering refuses before version
 writes. Default-feature and all-feature builds are checked independently. The
 autonomy audit records the additional native discovery and executed mutation proof.
+
+[Release v0.24.7 closeout evidence](foundation/release-v0.24.7-closeout.md) records this release; full PRD parity remains separately evidenced.
+
+Current v0.24.7 evidence: 127 exact acceptance cases, eight native local gates,
+11 exact-SHA prerequisite jobs and seven producing jobs passed. The native owner
+automatically completed publication, current-main verification, the existing
+Registry PR update, execution reporting and its final response; the ledger is
+Complete/Idle with no in-flight operation. Live-model repair effectiveness remains
+distinct from fixture coverage; no universal absence-of-bugs claim is made.
+
+The [2026-10-07 reverification](foundation/2026-10-06-rrc-autonomy-and-prd-audit.md#requested-reverification-2026-10-07) found no remaining confirmed PRD implementation gap. All 100 named requirement cases passed in fresh execution, alongside 375 harness tests and 127 exact acceptance cases. This covers the PRD’s required bounded behavior; its explicit non-goals remain unchanged.
+
+### 2026-10-07 authorization-stall follow-up
+
+[Incident diagnosis and scoped repair](foundation/2026-10-07-rrc-authorization-stall-diagnosis.md) records an installed v0.24.7 ACP driver that does not answer permission requests and keeps polling a failed epoch. Shared typed authorization stops now preserve the actual cause and checkpoint without creating source failures. Focused local evidence does not certify installed-client recovery, full PRD parity or a new release.
+
+### 2026-10-07 native permission and stop verification
+
+[Native permission and stop repair](foundation/2026-10-07-rrc-native-permission-and-stop-repair.md) extends the diagnosis with real ACP protocol proofs of approval, rejection, cancellation, late approval isolation and exactly one terminal response. It also closes unoffered approval-option acceptance, old-request cancellation-hook cleanup races and stale TUI approval dialogs after their operation ends. The source includes the promotion/inventory repair; exact current-source local and hosted release receipts remain separately recorded.

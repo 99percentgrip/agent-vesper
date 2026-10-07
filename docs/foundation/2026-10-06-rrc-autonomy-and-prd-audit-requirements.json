@@ -1,7 +1,7 @@
 {
-  "status": "local audit and current-source verification; hosted and producing proof pending",
+  "status": "confirmed repairs verified; native release and closeout completed; scoped requirement evidence retained",
   "base_commit": "a56f0ba76525bf4e7e288eefe2dff731cb120914",
-  "candidate_commit": null,
+  "candidate_commit": "0857f02b8dbdc2a867cdb93bf86a03559fb7555b",
   "binding_prd_sha256": "e85011c696d769837c6ed5a83e4290e77eadc4ae27a9ea42cffe0966d37518db",
   "source_sha256": {
     "crates/vesper-harness/src/release_closeout.rs": "ccc50f5517aa8b47c03bfe3afea127b469ed67176029326e6b20eadba2bf557b",
@@ -39,7 +39,7 @@
         "release_executor::tests::background_controller_waits_then_publishes_without_continue_prompts"
       ],
       "linux_unexecuted": [],
-      "hosted_current_status": "pending exact commit"
+      "hosted_current_status": "exact-commit canonical/MSRV/five-target/web-driver workflows passed; named-case scope remains explicit"
     },
     {
       "section": 2,
@@ -52,7 +52,7 @@
         "release_recovery::tests::published_docs_red_repair_then_other_platform_red_stops_speculation"
       ],
       "linux_unexecuted": [],
-      "hosted_current_status": "pending exact commit"
+      "hosted_current_status": "exact-commit canonical/MSRV/five-target/web-driver workflows passed; named-case scope remains explicit"
     },
     {
       "section": 3,
@@ -79,7 +79,7 @@
         "release_executor::tests::version_preparation_rollback_routes_to_repair_and_pins_promoted_patch"
       ],
       "linux_unexecuted": [],
-      "hosted_current_status": "pending exact commit"
+      "hosted_current_status": "exact-commit canonical/MSRV/five-target/web-driver workflows passed; named-case scope remains explicit"
     },
     {
       "section": 4,
@@ -94,7 +94,7 @@
         "release_recovery::tests::tag_and_publication_mutations_fail_closed_without_settled_prerequisites"
       ],
       "linux_unexecuted": [],
-      "hosted_current_status": "pending exact commit"
+      "hosted_current_status": "exact-commit canonical/MSRV/five-target/web-driver workflows passed; named-case scope remains explicit"
     },
     {
       "section": 5,
@@ -111,7 +111,7 @@
         "release_recovery::tests::identical_failure_on_new_attempt_without_change_hard_blocks_retry"
       ],
       "linux_unexecuted": [],
-      "hosted_current_status": "pending exact commit"
+      "hosted_current_status": "exact-commit canonical/MSRV/five-target/web-driver workflows passed; named-case scope remains explicit"
     },
     {
       "section": 6,
@@ -128,7 +128,7 @@
         "release_recovery::tests::published_release_has_a_distinct_main_epoch_and_archived_history"
       ],
       "linux_unexecuted": [],
-      "hosted_current_status": "pending exact commit"
+      "hosted_current_status": "exact-commit canonical/MSRV/five-target/web-driver workflows passed; named-case scope remains explicit"
     },
     {
       "section": 7,
@@ -149,7 +149,7 @@
         "release_executor::tests::version_preparation_rollback_routes_to_repair_and_pins_promoted_patch"
       ],
       "linux_unexecuted": [],
-      "hosted_current_status": "pending exact commit"
+      "hosted_current_status": "exact-commit canonical/MSRV/five-target/web-driver workflows passed; named-case scope remains explicit"
     },
     {
       "section": 8,
@@ -166,7 +166,7 @@
         "release_recovery::tests::green_release_then_red_closeout_keeps_publication_immutable"
       ],
       "linux_unexecuted": [],
-      "hosted_current_status": "pending exact commit"
+      "hosted_current_status": "exact-commit canonical/MSRV/five-target/web-driver workflows passed; named-case scope remains explicit"
     },
     {
       "section": 9,
@@ -183,7 +183,7 @@
         "release_executor::tests::native_worker_stops_owner_action_and_uncertain_causes_before_repair_permission"
       ],
       "linux_unexecuted": [],
-      "hosted_current_status": "pending exact commit"
+      "hosted_current_status": "exact-commit canonical/MSRV/five-target/web-driver workflows passed; named-case scope remains explicit"
     },
     {
       "section": 10,
@@ -204,7 +204,7 @@
         "release_executor::tests::version_preparation_rollback_routes_to_repair_and_pins_promoted_patch"
       ],
       "linux_unexecuted": [],
-      "hosted_current_status": "pending exact commit"
+      "hosted_current_status": "exact-commit canonical/MSRV/five-target/web-driver workflows passed; named-case scope remains explicit"
     },
     {
       "section": 11,
@@ -225,7 +225,7 @@
         "release_executor::tests::version_preparation_rollback_routes_to_repair_and_pins_promoted_patch"
       ],
       "linux_unexecuted": [],
-      "hosted_current_status": "pending exact commit"
+      "hosted_current_status": "exact-commit canonical/MSRV/five-target/web-driver workflows passed; named-case scope remains explicit"
     },
     {
       "section": 12,
@@ -254,7 +254,7 @@
         "release_recovery::tests::missing_runs_cannot_reuse_a_stale_running_matrix_to_avoid_timeout"
       ],
       "linux_unexecuted": [],
-      "hosted_current_status": "pending exact commit"
+      "hosted_current_status": "exact-commit canonical/MSRV/five-target/web-driver workflows passed; named-case scope remains explicit"
     },
     {
       "section": 13,
@@ -271,7 +271,7 @@
         "release_recovery::tests::changed_fingerprint_after_retry_opens_a_new_diagnosis"
       ],
       "linux_unexecuted": [],
-      "hosted_current_status": "pending exact commit"
+      "hosted_current_status": "exact-commit canonical/MSRV/five-target/web-driver workflows passed; named-case scope remains explicit"
     },
     {
       "section": 14,
@@ -292,7 +292,7 @@
         "release_executor::tests::repair_dispatch_budget_survives_restart_without_a_focused_proof"
       ],
       "linux_unexecuted": [],
-      "hosted_current_status": "pending exact commit"
+      "hosted_current_status": "exact-commit canonical/MSRV/five-target/web-driver workflows passed; named-case scope remains explicit"
     },
     {
       "section": 15,
@@ -311,7 +311,7 @@
         "release_executor::tests::isolated_agent_repair_verifies_and_promotes_one_patch_for_two_provider_fixtures"
       ],
       "linux_unexecuted": [],
-      "hosted_current_status": "pending exact commit"
+      "hosted_current_status": "exact-commit canonical/MSRV/five-target/web-driver workflows passed; named-case scope remains explicit"
     },
     {
       "section": 16,
@@ -330,7 +330,7 @@
         "release_executor::tests::version_preparation_rollback_routes_to_repair_and_pins_promoted_patch"
       ],
       "linux_unexecuted": [],
-      "hosted_current_status": "pending exact commit"
+      "hosted_current_status": "exact-commit canonical/MSRV/five-target/web-driver workflows passed; named-case scope remains explicit"
     },
     {
       "section": 17,
@@ -353,7 +353,7 @@
         "release_executor::tests::read_only_health_checks_do_not_request_source_repair_permissions"
       ],
       "linux_unexecuted": [],
-      "hosted_current_status": "pending exact commit"
+      "hosted_current_status": "exact-commit canonical/MSRV/five-target/web-driver workflows passed; named-case scope remains explicit"
     },
     {
       "section": 18,
@@ -368,7 +368,7 @@
         "release_recovery::tests::paused_epoch_reopens_with_exact_identity_and_resumes_through_remote_refresh"
       ],
       "linux_unexecuted": [],
-      "hosted_current_status": "pending exact commit"
+      "hosted_current_status": "exact-commit canonical/MSRV/five-target/web-driver workflows passed; named-case scope remains explicit"
     },
     {
       "section": 19,
@@ -393,7 +393,7 @@
         "release_executor::tests::repair_dispatch_budget_survives_restart_without_a_focused_proof"
       ],
       "linux_unexecuted": [],
-      "hosted_current_status": "pending exact commit"
+      "hosted_current_status": "exact-commit canonical/MSRV/five-target/web-driver workflows passed; named-case scope remains explicit"
     },
     {
       "section": 20,
@@ -420,7 +420,7 @@
         "release_executor::tests::repair_initial_provider_retry_is_bounded_and_never_replays_tools"
       ],
       "linux_unexecuted": [],
-      "hosted_current_status": "pending exact commit"
+      "hosted_current_status": "exact-commit canonical/MSRV/five-target/web-driver workflows passed; named-case scope remains explicit"
     },
     {
       "section": 21,
@@ -439,7 +439,7 @@
         "release_executor::tests::live_progress_uses_durable_milestones_without_losing_case_counts"
       ],
       "linux_unexecuted": [],
-      "hosted_current_status": "pending exact commit"
+      "hosted_current_status": "exact-commit canonical/MSRV/five-target/web-driver workflows passed; named-case scope remains explicit"
     },
     {
       "section": 22,
@@ -462,7 +462,7 @@
         "release_executor::tests::version_preparation_rollback_routes_to_repair_and_pins_promoted_patch"
       ],
       "linux_unexecuted": [],
-      "hosted_current_status": "pending exact commit"
+      "hosted_current_status": "exact-commit canonical/MSRV/five-target/web-driver workflows passed; named-case scope remains explicit"
     },
     {
       "section": 23,
@@ -487,7 +487,7 @@
         "release_executor::tests::live_progress_uses_durable_milestones_without_losing_case_counts"
       ],
       "linux_unexecuted": [],
-      "hosted_current_status": "pending exact commit"
+      "hosted_current_status": "exact-commit canonical/MSRV/five-target/web-driver workflows passed; named-case scope remains explicit"
     },
     {
       "section": 24,
@@ -510,7 +510,7 @@
         "release_recovery::tests::colored_ci_logs_cannot_hide_credentials_or_causal_errors"
       ],
       "linux_unexecuted": [],
-      "hosted_current_status": "pending exact commit"
+      "hosted_current_status": "exact-commit canonical/MSRV/five-target/web-driver workflows passed; named-case scope remains explicit"
     },
     {
       "section": 25,
@@ -527,7 +527,7 @@
         "release_recovery::tests::tentative_classification_cannot_authorize_source_repair"
       ],
       "linux_unexecuted": [],
-      "hosted_current_status": "pending exact commit"
+      "hosted_current_status": "exact-commit canonical/MSRV/five-target/web-driver workflows passed; named-case scope remains explicit"
     },
     {
       "section": 26,
@@ -546,7 +546,7 @@
         "release_executor::tests::repair_worker_cannot_create_unadmitted_release_tags"
       ],
       "linux_unexecuted": [],
-      "hosted_current_status": "pending exact commit"
+      "hosted_current_status": "exact-commit canonical/MSRV/five-target/web-driver workflows passed; named-case scope remains explicit"
     },
     {
       "section": 27,
@@ -561,7 +561,7 @@
         "release_recovery::tests::stale_writer_cannot_overwrite_cancelled_checkpoint"
       ],
       "linux_unexecuted": [],
-      "hosted_current_status": "pending exact commit"
+      "hosted_current_status": "exact-commit canonical/MSRV/five-target/web-driver workflows passed; named-case scope remains explicit"
     },
     {
       "section": 28,
@@ -582,7 +582,7 @@
         "release_executor::tests::live_progress_uses_durable_milestones_without_losing_case_counts"
       ],
       "linux_unexecuted": [],
-      "hosted_current_status": "pending exact commit"
+      "hosted_current_status": "exact-commit canonical/MSRV/five-target/web-driver workflows passed; named-case scope remains explicit"
     },
     {
       "section": 29,
@@ -759,7 +759,7 @@
         "release_executor::tests::version_plan_write_failure_rolls_back_every_written_file"
       ],
       "linux_unexecuted": [],
-      "hosted_current_status": "pending exact commit"
+      "hosted_current_status": "exact-commit canonical/MSRV/five-target/web-driver workflows passed; named-case scope remains explicit"
     },
     {
       "section": 30,
@@ -782,7 +782,7 @@
         "release_executor::tests::release_worker_cancel_restart_process_acceptance"
       ],
       "linux_unexecuted": [],
-      "hosted_current_status": "pending exact commit"
+      "hosted_current_status": "exact-commit canonical/MSRV/five-target/web-driver workflows passed; named-case scope remains explicit"
     },
     {
       "section": 31,
@@ -959,7 +959,7 @@
         "release_executor::tests::version_plan_write_failure_rolls_back_every_written_file"
       ],
       "linux_unexecuted": [],
-      "hosted_current_status": "pending exact commit"
+      "hosted_current_status": "exact-commit canonical/MSRV/five-target/web-driver workflows passed; named-case scope remains explicit"
     },
     {
       "section": 32,
@@ -980,7 +980,7 @@
         "release_executor::tests::published_release_keeps_worker_until_post_release_closeout"
       ],
       "linux_unexecuted": [],
-      "hosted_current_status": "pending exact commit"
+      "hosted_current_status": "exact-commit canonical/MSRV/five-target/web-driver workflows passed; named-case scope remains explicit"
     },
     {
       "section": 33,
@@ -997,7 +997,7 @@
         "release_recovery::tests::published_docs_red_repair_then_other_platform_red_stops_speculation"
       ],
       "linux_unexecuted": [],
-      "hosted_current_status": "pending exact commit"
+      "hosted_current_status": "exact-commit canonical/MSRV/five-target/web-driver workflows passed; named-case scope remains explicit"
     },
     {
       "section": 34,
@@ -1012,7 +1012,7 @@
         "release_executor::tests::community_input_is_never_requested_by_production_health_builder"
       ],
       "linux_unexecuted": [],
-      "hosted_current_status": "pending exact commit"
+      "hosted_current_status": "exact-commit canonical/MSRV/five-target/web-driver workflows passed; named-case scope remains explicit"
     },
     {
       "section": 35,
@@ -1033,7 +1033,7 @@
         "release_recovery::tests::tentative_classification_cannot_authorize_source_repair"
       ],
       "linux_unexecuted": [],
-      "hosted_current_status": "pending exact commit"
+      "hosted_current_status": "exact-commit canonical/MSRV/five-target/web-driver workflows passed; named-case scope remains explicit"
     },
     {
       "section": 36,
@@ -1052,7 +1052,7 @@
         "release_recovery::tests::official_degradation_needs_repository_exclusion_and_infrastructure_evidence"
       ],
       "linux_unexecuted": [],
-      "hosted_current_status": "pending exact commit"
+      "hosted_current_status": "exact-commit canonical/MSRV/five-target/web-driver workflows passed; named-case scope remains explicit"
     }
   ],
   "acceptance_criteria": [
@@ -1066,7 +1066,7 @@
       ],
       "linux_unexecuted": [],
       "historical_receipts_are_current_proof": false,
-      "hosted_current_status": "pending exact commit"
+      "hosted_current_status": "exact-commit canonical/MSRV/five-target/web-driver workflows passed; named-case scope remains explicit"
     },
     {
       "criterion": "AC-02",
@@ -1080,7 +1080,7 @@
       ],
       "linux_unexecuted": [],
       "historical_receipts_are_current_proof": false,
-      "hosted_current_status": "pending exact commit"
+      "hosted_current_status": "exact-commit canonical/MSRV/five-target/web-driver workflows passed; named-case scope remains explicit"
     },
     {
       "criterion": "AC-03",
@@ -1092,7 +1092,7 @@
       ],
       "linux_unexecuted": [],
       "historical_receipts_are_current_proof": false,
-      "hosted_current_status": "pending exact commit"
+      "hosted_current_status": "exact-commit canonical/MSRV/five-target/web-driver workflows passed; named-case scope remains explicit"
     },
     {
       "criterion": "AC-04",
@@ -1106,7 +1106,7 @@
       ],
       "linux_unexecuted": [],
       "historical_receipts_are_current_proof": false,
-      "hosted_current_status": "pending exact commit"
+      "hosted_current_status": "exact-commit canonical/MSRV/five-target/web-driver workflows passed; named-case scope remains explicit"
     },
     {
       "criterion": "AC-05",
@@ -1118,7 +1118,7 @@
       ],
       "linux_unexecuted": [],
       "historical_receipts_are_current_proof": false,
-      "hosted_current_status": "pending exact commit"
+      "hosted_current_status": "exact-commit canonical/MSRV/five-target/web-driver workflows passed; named-case scope remains explicit"
     },
     {
       "criterion": "AC-06",
@@ -1132,7 +1132,7 @@
       ],
       "linux_unexecuted": [],
       "historical_receipts_are_current_proof": false,
-      "hosted_current_status": "pending exact commit"
+      "hosted_current_status": "exact-commit canonical/MSRV/five-target/web-driver workflows passed; named-case scope remains explicit"
     },
     {
       "criterion": "AC-07",
@@ -1144,7 +1144,7 @@
       ],
       "linux_unexecuted": [],
       "historical_receipts_are_current_proof": false,
-      "hosted_current_status": "pending exact commit"
+      "hosted_current_status": "exact-commit canonical/MSRV/five-target/web-driver workflows passed; named-case scope remains explicit"
     },
     {
       "criterion": "AC-08",
@@ -1158,7 +1158,7 @@
       ],
       "linux_unexecuted": [],
       "historical_receipts_are_current_proof": false,
-      "hosted_current_status": "pending exact commit"
+      "hosted_current_status": "exact-commit canonical/MSRV/five-target/web-driver workflows passed; named-case scope remains explicit"
     },
     {
       "criterion": "AC-09",
@@ -1170,7 +1170,7 @@
       ],
       "linux_unexecuted": [],
       "historical_receipts_are_current_proof": false,
-      "hosted_current_status": "pending exact commit"
+      "hosted_current_status": "exact-commit canonical/MSRV/five-target/web-driver workflows passed; named-case scope remains explicit"
     },
     {
       "criterion": "AC-10",
@@ -1184,7 +1184,7 @@
       ],
       "linux_unexecuted": [],
       "historical_receipts_are_current_proof": false,
-      "hosted_current_status": "pending exact commit"
+      "hosted_current_status": "exact-commit canonical/MSRV/five-target/web-driver workflows passed; named-case scope remains explicit"
     },
     {
       "criterion": "AC-11",
@@ -1196,7 +1196,7 @@
       ],
       "linux_unexecuted": [],
       "historical_receipts_are_current_proof": false,
-      "hosted_current_status": "pending exact commit"
+      "hosted_current_status": "exact-commit canonical/MSRV/five-target/web-driver workflows passed; named-case scope remains explicit"
     },
     {
       "criterion": "AC-12",
@@ -1208,7 +1208,7 @@
       ],
       "linux_unexecuted": [],
       "historical_receipts_are_current_proof": false,
-      "hosted_current_status": "pending exact commit"
+      "hosted_current_status": "exact-commit canonical/MSRV/five-target/web-driver workflows passed; named-case scope remains explicit"
     },
     {
       "criterion": "AC-13",
@@ -1220,7 +1220,7 @@
       ],
       "linux_unexecuted": [],
       "historical_receipts_are_current_proof": false,
-      "hosted_current_status": "pending exact commit"
+      "hosted_current_status": "exact-commit canonical/MSRV/five-target/web-driver workflows passed; named-case scope remains explicit"
     },
     {
       "criterion": "AC-14",
@@ -1234,7 +1234,7 @@
       ],
       "linux_unexecuted": [],
       "historical_receipts_are_current_proof": false,
-      "hosted_current_status": "pending exact commit"
+      "hosted_current_status": "exact-commit canonical/MSRV/five-target/web-driver workflows passed; named-case scope remains explicit"
     },
     {
       "criterion": "AC-15",
@@ -1246,7 +1246,7 @@
       ],
       "linux_unexecuted": [],
       "historical_receipts_are_current_proof": false,
-      "hosted_current_status": "pending exact commit"
+      "hosted_current_status": "exact-commit canonical/MSRV/five-target/web-driver workflows passed; named-case scope remains explicit"
     },
     {
       "criterion": "AC-16",
@@ -1260,7 +1260,7 @@
       ],
       "linux_unexecuted": [],
       "historical_receipts_are_current_proof": false,
-      "hosted_current_status": "pending exact commit"
+      "hosted_current_status": "exact-commit canonical/MSRV/five-target/web-driver workflows passed; named-case scope remains explicit"
     },
     {
       "criterion": "AC-17",
@@ -1272,7 +1272,7 @@
       ],
       "linux_unexecuted": [],
       "historical_receipts_are_current_proof": false,
-      "hosted_current_status": "pending exact commit"
+      "hosted_current_status": "exact-commit canonical/MSRV/five-target/web-driver workflows passed; named-case scope remains explicit"
     },
     {
       "criterion": "AC-18",
@@ -1286,7 +1286,7 @@
       ],
       "linux_unexecuted": [],
       "historical_receipts_are_current_proof": false,
-      "hosted_current_status": "pending exact commit"
+      "hosted_current_status": "exact-commit canonical/MSRV/five-target/web-driver workflows passed; named-case scope remains explicit"
     },
     {
       "criterion": "AC-19",
@@ -1302,7 +1302,7 @@
       ],
       "linux_unexecuted": [],
       "historical_receipts_are_current_proof": false,
-      "hosted_current_status": "pending exact commit"
+      "hosted_current_status": "exact-commit canonical/MSRV/five-target/web-driver workflows passed; named-case scope remains explicit"
     },
     {
       "criterion": "AC-20",
@@ -1318,7 +1318,7 @@
       ],
       "linux_unexecuted": [],
       "historical_receipts_are_current_proof": false,
-      "hosted_current_status": "pending exact commit"
+      "hosted_current_status": "exact-commit canonical/MSRV/five-target/web-driver workflows passed; named-case scope remains explicit"
     },
     {
       "criterion": "AC-21",
@@ -1334,7 +1334,7 @@
       ],
       "linux_unexecuted": [],
       "historical_receipts_are_current_proof": false,
-      "hosted_current_status": "pending exact commit"
+      "hosted_current_status": "exact-commit canonical/MSRV/five-target/web-driver workflows passed; named-case scope remains explicit"
     },
     {
       "criterion": "AC-22",
@@ -1356,7 +1356,7 @@
       ],
       "linux_unexecuted": [],
       "historical_receipts_are_current_proof": false,
-      "hosted_current_status": "pending exact commit"
+      "hosted_current_status": "exact-commit canonical/MSRV/five-target/web-driver workflows passed; named-case scope remains explicit"
     },
     {
       "criterion": "AC-23",
@@ -1368,16 +1368,12 @@
       ],
       "linux_unexecuted": [],
       "historical_receipts_are_current_proof": false,
-      "hosted_current_status": "pending exact commit"
+      "hosted_current_status": "exact-commit canonical/MSRV/five-target/web-driver workflows passed; named-case scope remains explicit"
     }
   ],
   "current_harness_log_sha256": "7723269a64af08d5337297a083807fea811965a169d66bbe6a873ca53f1a8fc1",
   "historical_reference": "release-recovery-controller-parity-continuation-requirements.json",
-  "mandatory_pending": [
-    "current-source complete local gates",
-    "exact-main canonical/MSRV/five-target/web-driver gates",
-    "native producing/publication/registry/report final receipt"
-  ],
+  "mandatory_pending": [],
   "scope_limits": [
     "Two registered synthetic providers are composition proof, not live-model debugging effectiveness.",
     "No separate delegated reviewer ran.",
@@ -1397,7 +1393,7 @@
       "passed": 369,
       "ignored": 6,
       "failed": 0,
-      "scope": "Full suite before live-progress addition; added current-source projection regression passed separately. Final native full suite is required."
+      "scope": "Earlier counted suite retained as historical receipt; current native complete workspace verification and MSRV gates passed with their exact output digests in release closeout report."
     },
     "acceptance": {
       "passed": 127,
@@ -1521,5 +1517,876 @@
     "cause": "default-feature optional-provider import",
     "additional_gap": "preparation error bypassed causal capture and journal settlement",
     "evidence": "vesper-rrc-failed-preparation-98/"
+  },
+  "native_completed_candidate": {
+    "sha": "0857f02b8dbdc2a867cdb93bf86a03559fb7555b",
+    "version": "0.24.7",
+    "local_gates_passed": 8,
+    "all_required_jobs_passed": 11,
+    "prerequisite_runs": [
+      37531129680,
+      37531129667,
+      37531129660,
+      37531129659
+    ],
+    "producer_run": 37537909556,
+    "producer_jobs_passed": 7,
+    "published_assets": 16,
+    "state": "complete",
+    "liveness": "idle",
+    "in_flight_operation": null,
+    "repair_admissions": 0,
+    "full_gate_retries_used": 0,
+    "registry_pr": 539,
+    "registry_blob": "54ce9686307d71f2973b2353cedb589579461c52",
+    "explicit_final_response": true,
+    "local_installation_changed": false
+  },
+  "reverification": {
+    "verified_at": "2026-10-07T03:21:03.707960+00:00",
+    "released_commit": "0857f02b8dbdc2a867cdb93bf86a03559fb7555b",
+    "required_cases": 100,
+    "passed_required_cases": [
+      "release_closeout::tests::closeout_later_main_has_a_distinct_report_without_overwriting_publication",
+      "release_closeout::tests::closeout_registry_uncertain_write_never_replays",
+      "release_closeout::tests::closeout_report_restart_is_idempotent_and_preserves_user_edits",
+      "release_executor::tests::an_unsettled_mutation_is_never_replayed_on_restart",
+      "release_executor::tests::arbitrary_successful_shell_commands_are_not_focused_proof",
+      "release_executor::tests::background_controller_waits_then_publishes_without_continue_prompts",
+      "release_executor::tests::community_input_is_never_requested_by_production_health_builder",
+      "release_executor::tests::denied_host_permission_prevents_every_release_side_effect",
+      "release_executor::tests::focused_test_proof_requires_a_nonzero_executed_pass",
+      "release_executor::tests::isolated_agent_repair_verifies_and_promotes_one_patch_for_two_provider_fixtures",
+      "release_executor::tests::live_progress_uses_durable_milestones_without_losing_case_counts",
+      "release_executor::tests::local_failure_retains_the_causal_error_for_bounded_diagnosis",
+      "release_executor::tests::native_firewall_denial_cannot_be_bypassed_by_a_release_admission",
+      "release_executor::tests::native_repair_patch_keeps_version_seed_and_includes_new_regressions",
+      "release_executor::tests::native_version_bump_keeps_all_workspace_dependency_pins_resolvable",
+      "release_executor::tests::native_worker_stops_owner_action_and_uncertain_causes_before_repair_permission",
+      "release_executor::tests::persisted_cancellation_reaches_a_worker_in_another_host",
+      "release_executor::tests::production_orchestrator_reaches_publication_only_through_settled_gates",
+      "release_executor::tests::publication_checksum_content_must_match_both_server_digests",
+      "release_executor::tests::publication_requires_all_fourteen_nonempty_uploaded_assets",
+      "release_executor::tests::published_closeout_finishes_report_without_replaying_release_mutations",
+      "release_executor::tests::published_release_keeps_worker_until_post_release_closeout",
+      "release_executor::tests::read_only_health_checks_do_not_request_source_repair_permissions",
+      "release_executor::tests::registry_bump_updates_version_and_archive_urls",
+      "release_executor::tests::release_read_ports_share_worker_cancellation_before_dispatch",
+      "release_executor::tests::release_worker_cancel_restart_process_acceptance",
+      "release_executor::tests::repair_continues_unplanned_segments_for_two_provider_fixtures",
+      "release_executor::tests::repair_dispatch_budget_survives_restart_without_a_focused_proof",
+      "release_executor::tests::repair_evidence_deadline_and_native_verification_are_distinct",
+      "release_executor::tests::repair_evidence_watchdog_ignores_streaming_and_repeated_tool_results",
+      "release_executor::tests::repair_factory_executes_real_tools_for_two_provider_fixtures",
+      "release_executor::tests::repair_initial_provider_retry_is_bounded_and_never_replays_tools",
+      "release_executor::tests::repair_iteration_budget_survives_disabled_host_cap",
+      "release_executor::tests::repair_preserves_provider_owned_hosted_tool_selections",
+      "release_executor::tests::repair_registry_stops_repeated_observations_for_each_provider_context",
+      "release_executor::tests::repair_terminal_diagnostics_identify_the_safety_stop",
+      "release_executor::tests::repair_worker_cannot_create_unadmitted_release_tags",
+      "release_executor::tests::version_plan_updates_every_internal_dependency_section_and_not_external_pins",
+      "release_executor::tests::version_plan_write_failure_rolls_back_every_written_file",
+      "release_executor::tests::version_preparation_rollback_routes_to_repair_and_pins_promoted_patch",
+      "release_recovery::tests::a_long_running_platform_matrix_is_not_active_repair_stagnation",
+      "release_recovery::tests::a_new_workflow_run_can_start_at_attempt_one",
+      "release_recovery::tests::a_running_workflow_with_only_terminal_visible_jobs_is_incomplete",
+      "release_recovery::tests::cache_warning_is_not_the_cause_of_a_later_compiler_failure",
+      "release_recovery::tests::cancelled_checkpoint_can_be_explicitly_resumed_without_erasing_counters",
+      "release_recovery::tests::cancelled_epoch_resumes_the_same_run_and_job_identity",
+      "release_recovery::tests::causal_error_after_large_successful_log_prefix_is_preserved",
+      "release_recovery::tests::changed_fingerprint_after_retry_opens_a_new_diagnosis",
+      "release_recovery::tests::colored_ci_logs_cannot_hide_credentials_or_causal_errors",
+      "release_recovery::tests::community_reports_alone_never_confirm_outage",
+      "release_recovery::tests::complete_matrix_collects_first_causal_log_and_classifies_it",
+      "release_recovery::tests::completed_version_does_not_claim_a_different_objective_was_released",
+      "release_recovery::tests::context_and_process_numbers_do_not_change_causal_fingerprints",
+      "release_recovery::tests::controller_owner_is_exclusive_across_independent_ledger_handles",
+      "release_recovery::tests::dependency_errors_and_unrecognized_platform_logs_classify_truthfully",
+      "release_recovery::tests::deterministic_test_failure_cannot_be_relabelled_as_outage",
+      "release_recovery::tests::directives_are_typed_and_back_off_without_model_step_polling",
+      "release_recovery::tests::equivalent_volatile_logs_have_same_fingerprint",
+      "release_recovery::tests::github_account_execution_restriction_requires_owner_action",
+      "release_recovery::tests::github_adapter_uses_exact_attempt_and_main_push_provenance",
+      "release_recovery::tests::github_command_echo_is_not_the_runtime_causal_error",
+      "release_recovery::tests::github_failed_job_retry_requires_exact_admission_scope",
+      "release_recovery::tests::github_remote_parser_accepts_common_forms_and_rejects_endpoint_injection",
+      "release_recovery::tests::green_release_then_red_closeout_keeps_publication_immutable",
+      "release_recovery::tests::identical_failure_on_new_attempt_without_change_hard_blocks_retry",
+      "release_recovery::tests::inconclusive_source_evidence_cannot_confirm_an_outage",
+      "release_recovery::tests::last_green_comparison_is_exact_and_immutable",
+      "release_recovery::tests::last_green_missing_or_skipped_matching_job_preserves_unknown_context",
+      "release_recovery::tests::ledger_round_trip_preserves_job_ids",
+      "release_recovery::tests::missing_required_gate_never_counts_as_complete_matrix",
+      "release_recovery::tests::missing_runner_log_uses_only_owned_failure_annotations",
+      "release_recovery::tests::missing_runs_are_pending_evidence_instead_of_an_executor_error",
+      "release_recovery::tests::missing_runs_cannot_reuse_a_stale_running_matrix_to_avoid_timeout",
+      "release_recovery::tests::native_github_write_ports_cannot_bypass_admission",
+      "release_recovery::tests::official_degradation_needs_repository_exclusion_and_infrastructure_evidence",
+      "release_recovery::tests::official_degradation_pauses_only_from_late_diagnostic_branch",
+      "release_recovery::tests::old_attempt_cannot_satisfy_a_reserved_infrastructure_retry",
+      "release_recovery::tests::pagination_reads_all_jobs_and_refuses_duplicate_page_rows",
+      "release_recovery::tests::partial_matrix_blocks_retry",
+      "release_recovery::tests::passing_error_module_tests_cannot_hide_the_real_causal_failure",
+      "release_recovery::tests::paused_epoch_reopens_with_exact_identity_and_resumes_through_remote_refresh",
+      "release_recovery::tests::persisted_strings_are_redacted_at_the_storage_boundary",
+      "release_recovery::tests::published_cannot_transition_back_to_publishing",
+      "release_recovery::tests::published_docs_red_repair_then_other_platform_red_stops_speculation",
+      "release_recovery::tests::published_release_has_a_distinct_main_epoch_and_archived_history",
+      "release_recovery::tests::quoted_credentials_basic_auth_and_signed_urls_are_redacted",
+      "release_recovery::tests::rejected_repair_event_does_not_partially_mutate_the_record",
+      "release_recovery::tests::remote_operation_cancellation_is_not_local_user_cancellation",
+      "release_recovery::tests::required_skipped_job_never_opens_tag_admission",
+      "release_recovery::tests::secret_canaries_are_redacted",
+      "release_recovery::tests::stale_sha_cannot_advance_candidate",
+      "release_recovery::tests::stale_writer_cannot_overwrite_cancelled_checkpoint",
+      "release_recovery::tests::status_projection_exposes_product_fields_without_causal_log_content",
+      "release_recovery::tests::tag_and_publication_mutations_fail_closed_without_settled_prerequisites",
+      "release_recovery::tests::tentative_classification_cannot_authorize_source_repair",
+      "release_recovery::tests::terminal_epoch_cannot_admit_a_diagnostic_rerun",
+      "release_recovery::tests::two_failed_focused_repairs_exhaust_the_causal_family_budget",
+      "release_recovery::tests::unchanged_commit_is_not_a_verified_source_repair",
+      "release_recovery::tests::verified_repair_is_the_only_path_to_one_full_gate_retry",
+      "release_recovery::tests::watchdog_triggers_after_six_stagnant_actions"
+    ],
+    "missing_required_cases": [],
+    "sections": [
+      {
+        "section": 1,
+        "required_cases": [
+          "release_recovery::tests::directives_are_typed_and_back_off_without_model_step_polling",
+          "release_executor::tests::production_orchestrator_reaches_publication_only_through_settled_gates",
+          "release_executor::tests::background_controller_waits_then_publishes_without_continue_prompts"
+        ],
+        "observed_passed": true
+      },
+      {
+        "section": 2,
+        "required_cases": [
+          "release_recovery::tests::published_docs_red_repair_then_other_platform_red_stops_speculation"
+        ],
+        "observed_passed": true
+      },
+      {
+        "section": 3,
+        "required_cases": [
+          "release_recovery::tests::verified_repair_is_the_only_path_to_one_full_gate_retry",
+          "release_executor::tests::repair_factory_executes_real_tools_for_two_provider_fixtures",
+          "release_recovery::tests::ledger_round_trip_preserves_job_ids",
+          "release_recovery::tests::status_projection_exposes_product_fields_without_causal_log_content",
+          "release_executor::tests::repair_continues_unplanned_segments_for_two_provider_fixtures",
+          "release_executor::tests::repair_terminal_diagnostics_identify_the_safety_stop",
+          "release_executor::tests::repair_initial_provider_retry_is_bounded_and_never_replays_tools",
+          "release_executor::tests::version_preparation_rollback_routes_to_repair_and_pins_promoted_patch"
+        ],
+        "observed_passed": true
+      },
+      {
+        "section": 4,
+        "required_cases": [
+          "release_executor::tests::isolated_agent_repair_verifies_and_promotes_one_patch_for_two_provider_fixtures",
+          "release_recovery::tests::tag_and_publication_mutations_fail_closed_without_settled_prerequisites"
+        ],
+        "observed_passed": true
+      },
+      {
+        "section": 5,
+        "required_cases": [
+          "release_recovery::tests::partial_matrix_blocks_retry",
+          "release_recovery::tests::tentative_classification_cannot_authorize_source_repair",
+          "release_recovery::tests::identical_failure_on_new_attempt_without_change_hard_blocks_retry"
+        ],
+        "observed_passed": true
+      },
+      {
+        "section": 6,
+        "required_cases": [
+          "release_recovery::tests::github_adapter_uses_exact_attempt_and_main_push_provenance",
+          "release_recovery::tests::context_and_process_numbers_do_not_change_causal_fingerprints",
+          "release_recovery::tests::published_release_has_a_distinct_main_epoch_and_archived_history"
+        ],
+        "observed_passed": true
+      },
+      {
+        "section": 7,
+        "required_cases": [
+          "release_executor::tests::production_orchestrator_reaches_publication_only_through_settled_gates",
+          "release_executor::tests::repair_factory_executes_real_tools_for_two_provider_fixtures",
+          "release_executor::tests::repair_worker_cannot_create_unadmitted_release_tags",
+          "release_executor::tests::repair_preserves_provider_owned_hosted_tool_selections",
+          "release_executor::tests::version_preparation_rollback_routes_to_repair_and_pins_promoted_patch"
+        ],
+        "observed_passed": true
+      },
+      {
+        "section": 8,
+        "required_cases": [
+          "release_recovery::tests::rejected_repair_event_does_not_partially_mutate_the_record",
+          "release_recovery::tests::published_cannot_transition_back_to_publishing",
+          "release_recovery::tests::green_release_then_red_closeout_keeps_publication_immutable"
+        ],
+        "observed_passed": true
+      },
+      {
+        "section": 9,
+        "required_cases": [
+          "release_recovery::tests::directives_are_typed_and_back_off_without_model_step_polling",
+          "release_recovery::tests::status_projection_exposes_product_fields_without_causal_log_content",
+          "release_executor::tests::native_worker_stops_owner_action_and_uncertain_causes_before_repair_permission"
+        ],
+        "observed_passed": true
+      },
+      {
+        "section": 10,
+        "required_cases": [
+          "release_recovery::tests::complete_matrix_collects_first_causal_log_and_classifies_it",
+          "release_recovery::tests::dependency_errors_and_unrecognized_platform_logs_classify_truthfully",
+          "release_recovery::tests::last_green_comparison_is_exact_and_immutable",
+          "release_recovery::tests::last_green_missing_or_skipped_matching_job_preserves_unknown_context",
+          "release_executor::tests::version_preparation_rollback_routes_to_repair_and_pins_promoted_patch"
+        ],
+        "observed_passed": true
+      },
+      {
+        "section": 11,
+        "required_cases": [
+          "release_recovery::tests::partial_matrix_blocks_retry",
+          "release_recovery::tests::a_running_workflow_with_only_terminal_visible_jobs_is_incomplete",
+          "release_recovery::tests::missing_required_gate_never_counts_as_complete_matrix",
+          "release_recovery::tests::required_skipped_job_never_opens_tag_admission",
+          "release_executor::tests::version_preparation_rollback_routes_to_repair_and_pins_promoted_patch"
+        ],
+        "observed_passed": true
+      },
+      {
+        "section": 12,
+        "required_cases": [
+          "release_recovery::tests::github_adapter_uses_exact_attempt_and_main_push_provenance",
+          "release_recovery::tests::pagination_reads_all_jobs_and_refuses_duplicate_page_rows",
+          "release_recovery::tests::missing_runner_log_uses_only_owned_failure_annotations",
+          "release_recovery::tests::github_failed_job_retry_requires_exact_admission_scope",
+          "release_recovery::tests::native_github_write_ports_cannot_bypass_admission",
+          "release_executor::tests::release_read_ports_share_worker_cancellation_before_dispatch",
+          "release_recovery::tests::directives_are_typed_and_back_off_without_model_step_polling",
+          "release_recovery::tests::a_long_running_platform_matrix_is_not_active_repair_stagnation",
+          "release_recovery::tests::missing_runs_cannot_reuse_a_stale_running_matrix_to_avoid_timeout"
+        ],
+        "observed_passed": true
+      },
+      {
+        "section": 13,
+        "required_cases": [
+          "release_recovery::tests::equivalent_volatile_logs_have_same_fingerprint",
+          "release_recovery::tests::context_and_process_numbers_do_not_change_causal_fingerprints",
+          "release_recovery::tests::changed_fingerprint_after_retry_opens_a_new_diagnosis"
+        ],
+        "observed_passed": true
+      },
+      {
+        "section": 14,
+        "required_cases": [
+          "release_recovery::tests::verified_repair_is_the_only_path_to_one_full_gate_retry",
+          "release_recovery::tests::two_failed_focused_repairs_exhaust_the_causal_family_budget",
+          "release_recovery::tests::old_attempt_cannot_satisfy_a_reserved_infrastructure_retry",
+          "release_recovery::tests::terminal_epoch_cannot_admit_a_diagnostic_rerun",
+          "release_executor::tests::repair_dispatch_budget_survives_restart_without_a_focused_proof"
+        ],
+        "observed_passed": true
+      },
+      {
+        "section": 15,
+        "required_cases": [
+          "release_executor::tests::arbitrary_successful_shell_commands_are_not_focused_proof",
+          "release_executor::tests::focused_test_proof_requires_a_nonzero_executed_pass",
+          "release_recovery::tests::unchanged_commit_is_not_a_verified_source_repair",
+          "release_executor::tests::isolated_agent_repair_verifies_and_promotes_one_patch_for_two_provider_fixtures"
+        ],
+        "observed_passed": true
+      },
+      {
+        "section": 16,
+        "required_cases": [
+          "release_executor::tests::native_repair_patch_keeps_version_seed_and_includes_new_regressions",
+          "release_executor::tests::isolated_agent_repair_verifies_and_promotes_one_patch_for_two_provider_fixtures",
+          "release_executor::tests::an_unsettled_mutation_is_never_replayed_on_restart",
+          "release_executor::tests::version_preparation_rollback_routes_to_repair_and_pins_promoted_patch"
+        ],
+        "observed_passed": true
+      },
+      {
+        "section": 17,
+        "required_cases": [
+          "release_recovery::tests::deterministic_test_failure_cannot_be_relabelled_as_outage",
+          "release_recovery::tests::official_degradation_needs_repository_exclusion_and_infrastructure_evidence",
+          "release_recovery::tests::community_reports_alone_never_confirm_outage",
+          "release_recovery::tests::inconclusive_source_evidence_cannot_confirm_an_outage",
+          "release_executor::tests::community_input_is_never_requested_by_production_health_builder",
+          "release_executor::tests::read_only_health_checks_do_not_request_source_repair_permissions"
+        ],
+        "observed_passed": true
+      },
+      {
+        "section": 18,
+        "required_cases": [
+          "release_recovery::tests::official_degradation_pauses_only_from_late_diagnostic_branch",
+          "release_recovery::tests::paused_epoch_reopens_with_exact_identity_and_resumes_through_remote_refresh"
+        ],
+        "observed_passed": true
+      },
+      {
+        "section": 19,
+        "required_cases": [
+          "release_recovery::tests::watchdog_triggers_after_six_stagnant_actions",
+          "release_executor::tests::background_controller_waits_then_publishes_without_continue_prompts",
+          "release_executor::tests::repair_iteration_budget_survives_disabled_host_cap",
+          "release_executor::tests::repair_evidence_watchdog_ignores_streaming_and_repeated_tool_results",
+          "release_executor::tests::repair_evidence_deadline_and_native_verification_are_distinct",
+          "release_executor::tests::repair_registry_stops_repeated_observations_for_each_provider_context",
+          "release_executor::tests::repair_dispatch_budget_survives_restart_without_a_focused_proof"
+        ],
+        "observed_passed": true
+      },
+      {
+        "section": 20,
+        "required_cases": [
+          "release_recovery::tests::green_release_then_red_closeout_keeps_publication_immutable",
+          "release_recovery::tests::published_release_has_a_distinct_main_epoch_and_archived_history",
+          "release_recovery::tests::published_docs_red_repair_then_other_platform_red_stops_speculation",
+          "release_recovery::tests::completed_version_does_not_claim_a_different_objective_was_released",
+          "release_closeout::tests::closeout_later_main_has_a_distinct_report_without_overwriting_publication",
+          "release_executor::tests::repair_continues_unplanned_segments_for_two_provider_fixtures",
+          "release_executor::tests::repair_terminal_diagnostics_identify_the_safety_stop",
+          "release_executor::tests::repair_initial_provider_retry_is_bounded_and_never_replays_tools"
+        ],
+        "observed_passed": true
+      },
+      {
+        "section": 21,
+        "required_cases": [
+          "release_recovery::tests::status_projection_exposes_product_fields_without_causal_log_content",
+          "release_executor::tests::persisted_cancellation_reaches_a_worker_in_another_host",
+          "release_executor::tests::published_closeout_finishes_report_without_replaying_release_mutations",
+          "release_executor::tests::live_progress_uses_durable_milestones_without_losing_case_counts"
+        ],
+        "observed_passed": true
+      },
+      {
+        "section": 22,
+        "required_cases": [
+          "release_executor::tests::production_orchestrator_reaches_publication_only_through_settled_gates",
+          "release_executor::tests::persisted_cancellation_reaches_a_worker_in_another_host",
+          "release_executor::tests::repair_continues_unplanned_segments_for_two_provider_fixtures",
+          "release_executor::tests::repair_terminal_diagnostics_identify_the_safety_stop",
+          "release_executor::tests::repair_initial_provider_retry_is_bounded_and_never_replays_tools",
+          "release_executor::tests::version_preparation_rollback_routes_to_repair_and_pins_promoted_patch"
+        ],
+        "observed_passed": true
+      },
+      {
+        "section": 23,
+        "required_cases": [
+          "release_recovery::tests::ledger_round_trip_preserves_job_ids",
+          "release_recovery::tests::persisted_strings_are_redacted_at_the_storage_boundary",
+          "release_executor::tests::an_unsettled_mutation_is_never_replayed_on_restart",
+          "release_recovery::tests::cancelled_epoch_resumes_the_same_run_and_job_identity",
+          "release_closeout::tests::closeout_registry_uncertain_write_never_replays",
+          "release_closeout::tests::closeout_report_restart_is_idempotent_and_preserves_user_edits",
+          "release_executor::tests::live_progress_uses_durable_milestones_without_losing_case_counts"
+        ],
+        "observed_passed": true
+      },
+      {
+        "section": 24,
+        "required_cases": [
+          "release_recovery::tests::causal_error_after_large_successful_log_prefix_is_preserved",
+          "release_recovery::tests::cache_warning_is_not_the_cause_of_a_later_compiler_failure",
+          "release_recovery::tests::passing_error_module_tests_cannot_hide_the_real_causal_failure",
+          "release_recovery::tests::github_command_echo_is_not_the_runtime_causal_error",
+          "release_recovery::tests::github_account_execution_restriction_requires_owner_action",
+          "release_recovery::tests::colored_ci_logs_cannot_hide_credentials_or_causal_errors"
+        ],
+        "observed_passed": true
+      },
+      {
+        "section": 25,
+        "required_cases": [
+          "release_recovery::tests::last_green_comparison_is_exact_and_immutable",
+          "release_executor::tests::local_failure_retains_the_causal_error_for_bounded_diagnosis",
+          "release_recovery::tests::tentative_classification_cannot_authorize_source_repair"
+        ],
+        "observed_passed": true
+      },
+      {
+        "section": 26,
+        "required_cases": [
+          "release_executor::tests::denied_host_permission_prevents_every_release_side_effect",
+          "release_executor::tests::native_firewall_denial_cannot_be_bypassed_by_a_release_admission",
+          "release_recovery::tests::quoted_credentials_basic_auth_and_signed_urls_are_redacted",
+          "release_executor::tests::repair_worker_cannot_create_unadmitted_release_tags"
+        ],
+        "observed_passed": true
+      },
+      {
+        "section": 27,
+        "required_cases": [
+          "release_recovery::tests::controller_owner_is_exclusive_across_independent_ledger_handles",
+          "release_recovery::tests::stale_writer_cannot_overwrite_cancelled_checkpoint"
+        ],
+        "observed_passed": true
+      },
+      {
+        "section": 28,
+        "required_cases": [
+          "release_executor::tests::release_worker_cancel_restart_process_acceptance",
+          "release_executor::tests::persisted_cancellation_reaches_a_worker_in_another_host",
+          "release_recovery::tests::remote_operation_cancellation_is_not_local_user_cancellation",
+          "release_recovery::tests::cancelled_checkpoint_can_be_explicitly_resumed_without_erasing_counters",
+          "release_executor::tests::live_progress_uses_durable_milestones_without_losing_case_counts"
+        ],
+        "observed_passed": true
+      },
+      {
+        "section": 29,
+        "required_cases": [
+          "release_executor::tests::an_unsettled_mutation_is_never_replayed_on_restart",
+          "release_executor::tests::arbitrary_successful_shell_commands_are_not_focused_proof",
+          "release_executor::tests::background_controller_waits_then_publishes_without_continue_prompts",
+          "release_executor::tests::community_input_is_never_requested_by_production_health_builder",
+          "release_executor::tests::denied_host_permission_prevents_every_release_side_effect",
+          "release_executor::tests::focused_test_proof_requires_a_nonzero_executed_pass",
+          "release_executor::tests::isolated_agent_repair_verifies_and_promotes_one_patch_for_two_provider_fixtures",
+          "release_executor::tests::local_failure_retains_the_causal_error_for_bounded_diagnosis",
+          "release_executor::tests::native_firewall_denial_cannot_be_bypassed_by_a_release_admission",
+          "release_executor::tests::native_repair_patch_keeps_version_seed_and_includes_new_regressions",
+          "release_executor::tests::native_version_bump_keeps_all_workspace_dependency_pins_resolvable",
+          "release_executor::tests::native_worker_stops_owner_action_and_uncertain_causes_before_repair_permission",
+          "release_executor::tests::persisted_cancellation_reaches_a_worker_in_another_host",
+          "release_executor::tests::production_orchestrator_reaches_publication_only_through_settled_gates",
+          "release_executor::tests::publication_checksum_content_must_match_both_server_digests",
+          "release_executor::tests::publication_requires_all_fourteen_nonempty_uploaded_assets",
+          "release_executor::tests::read_only_health_checks_do_not_request_source_repair_permissions",
+          "release_executor::tests::registry_bump_updates_version_and_archive_urls",
+          "release_executor::tests::release_read_ports_share_worker_cancellation_before_dispatch",
+          "release_executor::tests::release_worker_cancel_restart_process_acceptance",
+          "release_executor::tests::repair_factory_executes_real_tools_for_two_provider_fixtures",
+          "release_executor::tests::repair_iteration_budget_survives_disabled_host_cap",
+          "release_executor::tests::repair_preserves_provider_owned_hosted_tool_selections",
+          "release_executor::tests::repair_worker_cannot_create_unadmitted_release_tags",
+          "release_recovery::tests::a_new_workflow_run_can_start_at_attempt_one",
+          "release_recovery::tests::a_running_workflow_with_only_terminal_visible_jobs_is_incomplete",
+          "release_recovery::tests::cache_warning_is_not_the_cause_of_a_later_compiler_failure",
+          "release_recovery::tests::cancelled_checkpoint_can_be_explicitly_resumed_without_erasing_counters",
+          "release_recovery::tests::cancelled_epoch_resumes_the_same_run_and_job_identity",
+          "release_recovery::tests::causal_error_after_large_successful_log_prefix_is_preserved",
+          "release_recovery::tests::changed_fingerprint_after_retry_opens_a_new_diagnosis",
+          "release_recovery::tests::colored_ci_logs_cannot_hide_credentials_or_causal_errors",
+          "release_recovery::tests::community_reports_alone_never_confirm_outage",
+          "release_recovery::tests::complete_matrix_collects_first_causal_log_and_classifies_it",
+          "release_recovery::tests::context_and_process_numbers_do_not_change_causal_fingerprints",
+          "release_recovery::tests::controller_owner_is_exclusive_across_independent_ledger_handles",
+          "release_recovery::tests::dependency_errors_and_unrecognized_platform_logs_classify_truthfully",
+          "release_recovery::tests::deterministic_test_failure_cannot_be_relabelled_as_outage",
+          "release_recovery::tests::directives_are_typed_and_back_off_without_model_step_polling",
+          "release_recovery::tests::equivalent_volatile_logs_have_same_fingerprint",
+          "release_recovery::tests::github_account_execution_restriction_requires_owner_action",
+          "release_recovery::tests::github_adapter_uses_exact_attempt_and_main_push_provenance",
+          "release_recovery::tests::github_command_echo_is_not_the_runtime_causal_error",
+          "release_recovery::tests::github_failed_job_retry_requires_exact_admission_scope",
+          "release_recovery::tests::github_remote_parser_accepts_common_forms_and_rejects_endpoint_injection",
+          "release_recovery::tests::green_release_then_red_closeout_keeps_publication_immutable",
+          "release_recovery::tests::identical_failure_on_new_attempt_without_change_hard_blocks_retry",
+          "release_recovery::tests::inconclusive_source_evidence_cannot_confirm_an_outage",
+          "release_recovery::tests::last_green_comparison_is_exact_and_immutable",
+          "release_recovery::tests::last_green_missing_or_skipped_matching_job_preserves_unknown_context",
+          "release_recovery::tests::ledger_round_trip_preserves_job_ids",
+          "release_recovery::tests::missing_required_gate_never_counts_as_complete_matrix",
+          "release_recovery::tests::missing_runner_log_uses_only_owned_failure_annotations",
+          "release_recovery::tests::missing_runs_are_pending_evidence_instead_of_an_executor_error",
+          "release_recovery::tests::native_github_write_ports_cannot_bypass_admission",
+          "release_recovery::tests::official_degradation_needs_repository_exclusion_and_infrastructure_evidence",
+          "release_recovery::tests::official_degradation_pauses_only_from_late_diagnostic_branch",
+          "release_recovery::tests::old_attempt_cannot_satisfy_a_reserved_infrastructure_retry",
+          "release_recovery::tests::pagination_reads_all_jobs_and_refuses_duplicate_page_rows",
+          "release_recovery::tests::partial_matrix_blocks_retry",
+          "release_recovery::tests::passing_error_module_tests_cannot_hide_the_real_causal_failure",
+          "release_recovery::tests::paused_epoch_reopens_with_exact_identity_and_resumes_through_remote_refresh",
+          "release_recovery::tests::persisted_strings_are_redacted_at_the_storage_boundary",
+          "release_recovery::tests::published_cannot_transition_back_to_publishing",
+          "release_recovery::tests::published_docs_red_repair_then_other_platform_red_stops_speculation",
+          "release_recovery::tests::published_release_has_a_distinct_main_epoch_and_archived_history",
+          "release_recovery::tests::quoted_credentials_basic_auth_and_signed_urls_are_redacted",
+          "release_recovery::tests::rejected_repair_event_does_not_partially_mutate_the_record",
+          "release_recovery::tests::remote_operation_cancellation_is_not_local_user_cancellation",
+          "release_recovery::tests::required_skipped_job_never_opens_tag_admission",
+          "release_recovery::tests::secret_canaries_are_redacted",
+          "release_recovery::tests::stale_sha_cannot_advance_candidate",
+          "release_recovery::tests::stale_writer_cannot_overwrite_cancelled_checkpoint",
+          "release_recovery::tests::status_projection_exposes_product_fields_without_causal_log_content",
+          "release_recovery::tests::tag_and_publication_mutations_fail_closed_without_settled_prerequisites",
+          "release_recovery::tests::tentative_classification_cannot_authorize_source_repair",
+          "release_recovery::tests::terminal_epoch_cannot_admit_a_diagnostic_rerun",
+          "release_recovery::tests::two_failed_focused_repairs_exhaust_the_causal_family_budget",
+          "release_recovery::tests::unchanged_commit_is_not_a_verified_source_repair",
+          "release_recovery::tests::verified_repair_is_the_only_path_to_one_full_gate_retry",
+          "release_recovery::tests::watchdog_triggers_after_six_stagnant_actions",
+          "release_executor::tests::version_plan_updates_every_internal_dependency_section_and_not_external_pins",
+          "release_executor::tests::version_plan_write_failure_rolls_back_every_written_file"
+        ],
+        "observed_passed": true
+      },
+      {
+        "section": 30,
+        "required_cases": [
+          "release_recovery::tests::rejected_repair_event_does_not_partially_mutate_the_record",
+          "release_recovery::tests::github_adapter_uses_exact_attempt_and_main_push_provenance",
+          "release_recovery::tests::complete_matrix_collects_first_causal_log_and_classifies_it",
+          "release_recovery::tests::verified_repair_is_the_only_path_to_one_full_gate_retry",
+          "release_recovery::tests::community_reports_alone_never_confirm_outage",
+          "release_executor::tests::release_worker_cancel_restart_process_acceptance"
+        ],
+        "observed_passed": true
+      },
+      {
+        "section": 31,
+        "required_cases": [
+          "release_executor::tests::an_unsettled_mutation_is_never_replayed_on_restart",
+          "release_executor::tests::arbitrary_successful_shell_commands_are_not_focused_proof",
+          "release_executor::tests::background_controller_waits_then_publishes_without_continue_prompts",
+          "release_executor::tests::community_input_is_never_requested_by_production_health_builder",
+          "release_executor::tests::denied_host_permission_prevents_every_release_side_effect",
+          "release_executor::tests::focused_test_proof_requires_a_nonzero_executed_pass",
+          "release_executor::tests::isolated_agent_repair_verifies_and_promotes_one_patch_for_two_provider_fixtures",
+          "release_executor::tests::local_failure_retains_the_causal_error_for_bounded_diagnosis",
+          "release_executor::tests::native_firewall_denial_cannot_be_bypassed_by_a_release_admission",
+          "release_executor::tests::native_repair_patch_keeps_version_seed_and_includes_new_regressions",
+          "release_executor::tests::native_version_bump_keeps_all_workspace_dependency_pins_resolvable",
+          "release_executor::tests::native_worker_stops_owner_action_and_uncertain_causes_before_repair_permission",
+          "release_executor::tests::persisted_cancellation_reaches_a_worker_in_another_host",
+          "release_executor::tests::production_orchestrator_reaches_publication_only_through_settled_gates",
+          "release_executor::tests::publication_checksum_content_must_match_both_server_digests",
+          "release_executor::tests::publication_requires_all_fourteen_nonempty_uploaded_assets",
+          "release_executor::tests::read_only_health_checks_do_not_request_source_repair_permissions",
+          "release_executor::tests::registry_bump_updates_version_and_archive_urls",
+          "release_executor::tests::release_read_ports_share_worker_cancellation_before_dispatch",
+          "release_executor::tests::release_worker_cancel_restart_process_acceptance",
+          "release_executor::tests::repair_factory_executes_real_tools_for_two_provider_fixtures",
+          "release_executor::tests::repair_iteration_budget_survives_disabled_host_cap",
+          "release_executor::tests::repair_preserves_provider_owned_hosted_tool_selections",
+          "release_executor::tests::repair_worker_cannot_create_unadmitted_release_tags",
+          "release_recovery::tests::a_new_workflow_run_can_start_at_attempt_one",
+          "release_recovery::tests::a_running_workflow_with_only_terminal_visible_jobs_is_incomplete",
+          "release_recovery::tests::cache_warning_is_not_the_cause_of_a_later_compiler_failure",
+          "release_recovery::tests::cancelled_checkpoint_can_be_explicitly_resumed_without_erasing_counters",
+          "release_recovery::tests::cancelled_epoch_resumes_the_same_run_and_job_identity",
+          "release_recovery::tests::causal_error_after_large_successful_log_prefix_is_preserved",
+          "release_recovery::tests::changed_fingerprint_after_retry_opens_a_new_diagnosis",
+          "release_recovery::tests::colored_ci_logs_cannot_hide_credentials_or_causal_errors",
+          "release_recovery::tests::community_reports_alone_never_confirm_outage",
+          "release_recovery::tests::complete_matrix_collects_first_causal_log_and_classifies_it",
+          "release_recovery::tests::context_and_process_numbers_do_not_change_causal_fingerprints",
+          "release_recovery::tests::controller_owner_is_exclusive_across_independent_ledger_handles",
+          "release_recovery::tests::dependency_errors_and_unrecognized_platform_logs_classify_truthfully",
+          "release_recovery::tests::deterministic_test_failure_cannot_be_relabelled_as_outage",
+          "release_recovery::tests::directives_are_typed_and_back_off_without_model_step_polling",
+          "release_recovery::tests::equivalent_volatile_logs_have_same_fingerprint",
+          "release_recovery::tests::github_account_execution_restriction_requires_owner_action",
+          "release_recovery::tests::github_adapter_uses_exact_attempt_and_main_push_provenance",
+          "release_recovery::tests::github_command_echo_is_not_the_runtime_causal_error",
+          "release_recovery::tests::github_failed_job_retry_requires_exact_admission_scope",
+          "release_recovery::tests::github_remote_parser_accepts_common_forms_and_rejects_endpoint_injection",
+          "release_recovery::tests::green_release_then_red_closeout_keeps_publication_immutable",
+          "release_recovery::tests::identical_failure_on_new_attempt_without_change_hard_blocks_retry",
+          "release_recovery::tests::inconclusive_source_evidence_cannot_confirm_an_outage",
+          "release_recovery::tests::last_green_comparison_is_exact_and_immutable",
+          "release_recovery::tests::last_green_missing_or_skipped_matching_job_preserves_unknown_context",
+          "release_recovery::tests::ledger_round_trip_preserves_job_ids",
+          "release_recovery::tests::missing_required_gate_never_counts_as_complete_matrix",
+          "release_recovery::tests::missing_runner_log_uses_only_owned_failure_annotations",
+          "release_recovery::tests::missing_runs_are_pending_evidence_instead_of_an_executor_error",
+          "release_recovery::tests::native_github_write_ports_cannot_bypass_admission",
+          "release_recovery::tests::official_degradation_needs_repository_exclusion_and_infrastructure_evidence",
+          "release_recovery::tests::official_degradation_pauses_only_from_late_diagnostic_branch",
+          "release_recovery::tests::old_attempt_cannot_satisfy_a_reserved_infrastructure_retry",
+          "release_recovery::tests::pagination_reads_all_jobs_and_refuses_duplicate_page_rows",
+          "release_recovery::tests::partial_matrix_blocks_retry",
+          "release_recovery::tests::passing_error_module_tests_cannot_hide_the_real_causal_failure",
+          "release_recovery::tests::paused_epoch_reopens_with_exact_identity_and_resumes_through_remote_refresh",
+          "release_recovery::tests::persisted_strings_are_redacted_at_the_storage_boundary",
+          "release_recovery::tests::published_cannot_transition_back_to_publishing",
+          "release_recovery::tests::published_docs_red_repair_then_other_platform_red_stops_speculation",
+          "release_recovery::tests::published_release_has_a_distinct_main_epoch_and_archived_history",
+          "release_recovery::tests::quoted_credentials_basic_auth_and_signed_urls_are_redacted",
+          "release_recovery::tests::rejected_repair_event_does_not_partially_mutate_the_record",
+          "release_recovery::tests::remote_operation_cancellation_is_not_local_user_cancellation",
+          "release_recovery::tests::required_skipped_job_never_opens_tag_admission",
+          "release_recovery::tests::secret_canaries_are_redacted",
+          "release_recovery::tests::stale_sha_cannot_advance_candidate",
+          "release_recovery::tests::stale_writer_cannot_overwrite_cancelled_checkpoint",
+          "release_recovery::tests::status_projection_exposes_product_fields_without_causal_log_content",
+          "release_recovery::tests::tag_and_publication_mutations_fail_closed_without_settled_prerequisites",
+          "release_recovery::tests::tentative_classification_cannot_authorize_source_repair",
+          "release_recovery::tests::terminal_epoch_cannot_admit_a_diagnostic_rerun",
+          "release_recovery::tests::two_failed_focused_repairs_exhaust_the_causal_family_budget",
+          "release_recovery::tests::unchanged_commit_is_not_a_verified_source_repair",
+          "release_recovery::tests::verified_repair_is_the_only_path_to_one_full_gate_retry",
+          "release_recovery::tests::watchdog_triggers_after_six_stagnant_actions",
+          "release_executor::tests::version_plan_updates_every_internal_dependency_section_and_not_external_pins",
+          "release_executor::tests::version_plan_write_failure_rolls_back_every_written_file"
+        ],
+        "observed_passed": true
+      },
+      {
+        "section": 32,
+        "required_cases": [
+          "release_executor::tests::production_orchestrator_reaches_publication_only_through_settled_gates",
+          "release_executor::tests::publication_requires_all_fourteen_nonempty_uploaded_assets",
+          "release_executor::tests::publication_checksum_content_must_match_both_server_digests",
+          "release_recovery::tests::tag_and_publication_mutations_fail_closed_without_settled_prerequisites",
+          "release_executor::tests::published_release_keeps_worker_until_post_release_closeout"
+        ],
+        "observed_passed": true
+      },
+      {
+        "section": 33,
+        "required_cases": [
+          "release_executor::tests::background_controller_waits_then_publishes_without_continue_prompts",
+          "release_recovery::tests::published_release_has_a_distinct_main_epoch_and_archived_history",
+          "release_recovery::tests::published_docs_red_repair_then_other_platform_red_stops_speculation"
+        ],
+        "observed_passed": true
+      },
+      {
+        "section": 34,
+        "required_cases": [
+          "release_recovery::tests::github_adapter_uses_exact_attempt_and_main_push_provenance",
+          "release_executor::tests::community_input_is_never_requested_by_production_health_builder"
+        ],
+        "observed_passed": true
+      },
+      {
+        "section": 35,
+        "required_cases": [
+          "release_recovery::tests::partial_matrix_blocks_retry",
+          "release_recovery::tests::identical_failure_on_new_attempt_without_change_hard_blocks_retry",
+          "release_recovery::tests::community_reports_alone_never_confirm_outage",
+          "release_recovery::tests::green_release_then_red_closeout_keeps_publication_immutable",
+          "release_recovery::tests::tentative_classification_cannot_authorize_source_repair"
+        ],
+        "observed_passed": true
+      },
+      {
+        "section": 36,
+        "required_cases": [
+          "release_executor::tests::production_orchestrator_reaches_publication_only_through_settled_gates",
+          "release_executor::tests::isolated_agent_repair_verifies_and_promotes_one_patch_for_two_provider_fixtures",
+          "release_recovery::tests::verified_repair_is_the_only_path_to_one_full_gate_retry",
+          "release_recovery::tests::official_degradation_needs_repository_exclusion_and_infrastructure_evidence"
+        ],
+        "observed_passed": true
+      }
+    ],
+    "acceptance_criteria": [
+      {
+        "criterion": "AC-01",
+        "required_cases": [
+          "release_recovery::tests::partial_matrix_blocks_retry"
+        ],
+        "observed_passed": true
+      },
+      {
+        "criterion": "AC-02",
+        "required_cases": [
+          "release_recovery::tests::complete_matrix_collects_first_causal_log_and_classifies_it",
+          "release_recovery::tests::passing_error_module_tests_cannot_hide_the_real_causal_failure"
+        ],
+        "observed_passed": true
+      },
+      {
+        "criterion": "AC-03",
+        "required_cases": [
+          "release_recovery::tests::identical_failure_on_new_attempt_without_change_hard_blocks_retry"
+        ],
+        "observed_passed": true
+      },
+      {
+        "criterion": "AC-04",
+        "required_cases": [
+          "release_recovery::tests::verified_repair_is_the_only_path_to_one_full_gate_retry",
+          "release_executor::tests::focused_test_proof_requires_a_nonzero_executed_pass"
+        ],
+        "observed_passed": true
+      },
+      {
+        "criterion": "AC-05",
+        "required_cases": [
+          "release_executor::tests::isolated_agent_repair_verifies_and_promotes_one_patch_for_two_provider_fixtures"
+        ],
+        "observed_passed": true
+      },
+      {
+        "criterion": "AC-06",
+        "required_cases": [
+          "release_recovery::tests::two_failed_focused_repairs_exhaust_the_causal_family_budget",
+          "release_recovery::tests::terminal_epoch_cannot_admit_a_diagnostic_rerun"
+        ],
+        "observed_passed": true
+      },
+      {
+        "criterion": "AC-07",
+        "required_cases": [
+          "release_recovery::tests::changed_fingerprint_after_retry_opens_a_new_diagnosis"
+        ],
+        "observed_passed": true
+      },
+      {
+        "criterion": "AC-08",
+        "required_cases": [
+          "release_recovery::tests::last_green_comparison_is_exact_and_immutable",
+          "release_recovery::tests::last_green_missing_or_skipped_matching_job_preserves_unknown_context"
+        ],
+        "observed_passed": true
+      },
+      {
+        "criterion": "AC-09",
+        "required_cases": [
+          "release_recovery::tests::deterministic_test_failure_cannot_be_relabelled_as_outage"
+        ],
+        "observed_passed": true
+      },
+      {
+        "criterion": "AC-10",
+        "required_cases": [
+          "release_recovery::tests::official_degradation_needs_repository_exclusion_and_infrastructure_evidence",
+          "release_recovery::tests::official_degradation_pauses_only_from_late_diagnostic_branch"
+        ],
+        "observed_passed": true
+      },
+      {
+        "criterion": "AC-11",
+        "required_cases": [
+          "release_recovery::tests::community_reports_alone_never_confirm_outage"
+        ],
+        "observed_passed": true
+      },
+      {
+        "criterion": "AC-12",
+        "required_cases": [
+          "release_recovery::tests::inconclusive_source_evidence_cannot_confirm_an_outage"
+        ],
+        "observed_passed": true
+      },
+      {
+        "criterion": "AC-13",
+        "required_cases": [
+          "release_recovery::tests::paused_epoch_reopens_with_exact_identity_and_resumes_through_remote_refresh"
+        ],
+        "observed_passed": true
+      },
+      {
+        "criterion": "AC-14",
+        "required_cases": [
+          "release_recovery::tests::green_release_then_red_closeout_keeps_publication_immutable",
+          "release_recovery::tests::published_release_has_a_distinct_main_epoch_and_archived_history"
+        ],
+        "observed_passed": true
+      },
+      {
+        "criterion": "AC-15",
+        "required_cases": [
+          "release_recovery::tests::status_projection_exposes_product_fields_without_causal_log_content"
+        ],
+        "observed_passed": true
+      },
+      {
+        "criterion": "AC-16",
+        "required_cases": [
+          "release_executor::tests::repair_factory_executes_real_tools_for_two_provider_fixtures",
+          "release_executor::tests::isolated_agent_repair_verifies_and_promotes_one_patch_for_two_provider_fixtures"
+        ],
+        "observed_passed": true
+      },
+      {
+        "criterion": "AC-17",
+        "required_cases": [
+          "release_executor::tests::persisted_cancellation_reaches_a_worker_in_another_host"
+        ],
+        "observed_passed": true
+      },
+      {
+        "criterion": "AC-18",
+        "required_cases": [
+          "release_recovery::tests::stale_sha_cannot_advance_candidate",
+          "release_recovery::tests::old_attempt_cannot_satisfy_a_reserved_infrastructure_retry"
+        ],
+        "observed_passed": true
+      },
+      {
+        "criterion": "AC-19",
+        "required_cases": [
+          "release_recovery::tests::secret_canaries_are_redacted",
+          "release_recovery::tests::persisted_strings_are_redacted_at_the_storage_boundary",
+          "release_recovery::tests::missing_runner_log_uses_only_owned_failure_annotations"
+        ],
+        "observed_passed": true
+      },
+      {
+        "criterion": "AC-20",
+        "required_cases": [
+          "release_executor::tests::release_worker_cancel_restart_process_acceptance",
+          "release_recovery::tests::cancelled_epoch_resumes_the_same_run_and_job_identity",
+          "release_executor::tests::live_progress_uses_durable_milestones_without_losing_case_counts"
+        ],
+        "observed_passed": true
+      },
+      {
+        "criterion": "AC-21",
+        "required_cases": [
+          "release_executor::tests::release_worker_cancel_restart_process_acceptance",
+          "release_executor::tests::persisted_cancellation_reaches_a_worker_in_another_host",
+          "release_recovery::tests::remote_operation_cancellation_is_not_local_user_cancellation"
+        ],
+        "observed_passed": true
+      },
+      {
+        "criterion": "AC-22",
+        "required_cases": [
+          "release_recovery::tests::watchdog_triggers_after_six_stagnant_actions",
+          "release_executor::tests::background_controller_waits_then_publishes_without_continue_prompts",
+          "release_executor::tests::live_progress_uses_durable_milestones_without_losing_case_counts",
+          "release_executor::tests::repair_continues_unplanned_segments_for_two_provider_fixtures",
+          "release_executor::tests::repair_terminal_diagnostics_identify_the_safety_stop",
+          "release_executor::tests::repair_initial_provider_retry_is_bounded_and_never_replays_tools"
+        ],
+        "observed_passed": true
+      },
+      {
+        "criterion": "AC-23",
+        "required_cases": [
+          "release_recovery::tests::published_docs_red_repair_then_other_platform_red_stops_speculation"
+        ],
+        "observed_passed": true
+      }
+    ],
+    "harness": {
+      "passed": 375,
+      "failed": 0,
+      "ignored": 6,
+      "required_cases_ignored": 0
+    },
+    "acceptance": {
+      "passed": 127,
+      "failed": 0,
+      "duration_ms": 119457
+    },
+    "default_workspace_check": "passed",
+    "architecture_packages": 31,
+    "source_hashes_match_release": true,
+    "confirmed_remaining_implementation_gaps": [],
+    "scope": "Requirement tests and reviewed source at the released commit. No new live provider repair, external outage or publication was initiated. Existing exact-commit hosted/producing receipts were reobserved green.",
+    "logs_sha256": {
+      "vesper-rrc-reverification-default.log": "2461b00c8697c4189b2de92ca6fb05b5d72273c78a0a47b1ce4e83ccca077b70",
+      "vesper-rrc-reverification-harness.log": "ac5f0951ddb4652b5f9f9e50955131c39b4c9ead4d660d10d2987735040dc59a",
+      "vesper-rrc-reverification-acceptance.log": "94a6070cc627d58738a3108b4d21d65c9c1a4c186698fb39542f76d8a887e96a",
+      "vesper-rrc-reverification-architecture.log": "8526099bb2563bd4f0b57e5ce04ef74e4a809219804cc4c48a76bb681a541fec"
+    }
   }
 }

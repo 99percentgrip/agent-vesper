@@ -376,6 +376,9 @@ business logic.
   `ViewModel::pending_permission` is set; the binary's event loop intercepts
   Tab/Left/Right (toggle focus) and Enter/Esc (submit/dismiss) while the
   modal is up and resolves through `PermissionRequest::approve` / `reject`.
+  Each frame retires requests whose waiting operation ended, clears the mobile
+  approval capability, and skips expired queued requests with a bounded drain.
+  A stale approval must never block input or consume a fresh operation's decision.
   VRO-8 (PRD §8.1): `ReasoningDiagnostics` is a label-typed struct (snake_case
   strategy + kebab-case mode + lowercase risk + numeric budget fields)
   exposed via `lib.rs`. Since VRO-11.5 it renders as the ONE-line inline

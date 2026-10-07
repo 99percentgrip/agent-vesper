@@ -540,7 +540,31 @@ async fn dispatch_requests(
 
 struct AcpClientPermissionRequester {
     connection: ConnectionTo<Client>,
-    pending: Arc<StdMutex<BTreeMap<SessionId, tokio::sync::oneshot::Sender<()>>>>,
+    pending: PendingPermissions,
+    next_request: AtomicU64,
+}
+
+type PendingPermissions =
+    Arc<StdMutex<BTreeMap<SessionId, (u64, tokio::sync::oneshot::Sender<()>)>>>;
+
+/// Only the request that installed a slot can remove it. Dropping a timed-out
+/// request must neither leak its approval nor erase a newer request's cancel hook.
+struct PermissionRequestLease {
+    pending: PendingPermissions,
+    session_id: SessionId,
+    request_id: u64,
+}
+
+impl Drop for PermissionRequestLease {
+    fn drop(&mut self) {
+        if let Ok(mut pending) = self.pending.lock()
+            && pending
+                .get(&self.session_id)
+                .is_some_and(|(id, _)| *id == self.request_id)
+        {
+            pending.remove(&self.session_id);
+        }
+    }
 }
 
 impl std::fmt::Debug for AcpClientPermissionRequester {
@@ -554,6 +578,7 @@ impl AcpClientPermissionRequester {
         Self {
             connection,
             pending: Arc::new(StdMutex::new(BTreeMap::new())),
+            next_request: AtomicU64::new(1),
         }
     }
 }
@@ -584,18 +609,25 @@ impl AcpPermissionRequester for AcpClientPermissionRequester {
             ],
         );
         let (cancel_sender, mut cancel_receiver) = tokio::sync::oneshot::channel();
+        let request_id = self.next_request.fetch_add(1, Ordering::Relaxed);
         if let Ok(mut pending) = self.pending.lock()
-            && let Some(previous) = pending.insert(session_id.clone(), cancel_sender)
+            && let Some((_, previous)) =
+                pending.insert(session_id.clone(), (request_id, cancel_sender))
         {
             let _ = previous.send(());
         }
-        let pending = Arc::clone(&self.pending);
+        let lease = PermissionRequestLease {
+            pending: Arc::clone(&self.pending),
+            session_id,
+            request_id,
+        };
         Box::pin(async move {
+            let _lease = lease;
             let response = connection.send_request(permission).block_task();
             let decision = tokio::select! {
                 result = response => match result {
                     Ok(RequestPermissionResponse { outcome: RequestPermissionOutcome::Selected(SelectedPermissionOutcome { option_id, .. }), .. })
-                        if option_id.to_string() == "allow-once" || option_id.to_string() == "allow-always" => AcpPermissionDecision::Allow,
+                        if option_id.to_string() == "allow-once" => AcpPermissionDecision::Allow,
                     Ok(RequestPermissionResponse { outcome: RequestPermissionOutcome::Cancelled, .. }) => AcpPermissionDecision::Cancelled,
                     Ok(RequestPermissionResponse { outcome: RequestPermissionOutcome::Selected(_), .. }) => AcpPermissionDecision::Deny,
                     Ok(_) => AcpPermissionDecision::Deny,
@@ -603,19 +635,60 @@ impl AcpPermissionRequester for AcpClientPermissionRequester {
                 },
                 _ = &mut cancel_receiver => AcpPermissionDecision::Cancelled,
             };
-            if let Ok(mut pending) = pending.lock() {
-                pending.remove(&session_id);
-            }
             decision
         })
     }
 
     fn cancel(&self, session_id: &SessionId) {
         if let Ok(mut pending) = self.pending.lock()
-            && let Some(sender) = pending.remove(session_id)
+            && let Some((_, sender)) = pending.remove(session_id)
         {
             let _ = sender.send(());
         }
+    }
+}
+
+#[cfg(test)]
+mod permission_lease_tests {
+    use super::*;
+
+    #[test]
+    fn old_approval_cleanup_preserves_new_request_cancellation() {
+        let pending = Arc::new(StdMutex::new(BTreeMap::new()));
+        let session_id = SessionId::new("permission-fixture").unwrap();
+        let old = PermissionRequestLease {
+            pending: pending.clone(),
+            session_id: session_id.clone(),
+            request_id: 1,
+        };
+        let (sender, receiver) = tokio::sync::oneshot::channel();
+        pending
+            .lock()
+            .unwrap()
+            .insert(session_id.clone(), (2, sender));
+        drop(old);
+        let (_, sender) = pending.lock().unwrap().remove(&session_id).unwrap();
+        sender.send(()).unwrap();
+        assert_eq!(receiver.blocking_recv(), Ok(()));
+    }
+
+    #[test]
+    fn dropped_approval_removes_only_its_pending_slot() {
+        let pending = Arc::new(StdMutex::new(BTreeMap::new()));
+        let session_id = SessionId::new("permission-fixture").unwrap();
+        let (sender, mut receiver) = tokio::sync::oneshot::channel();
+        pending
+            .lock()
+            .unwrap()
+            .insert(session_id.clone(), (1, sender));
+        let lease = PermissionRequestLease {
+            pending: pending.clone(),
+            session_id: session_id.clone(),
+            request_id: 1,
+        };
+        drop(lease);
+        assert!(pending.lock().unwrap().is_empty());
+        assert!(receiver.try_recv().is_err());
     }
 }
 

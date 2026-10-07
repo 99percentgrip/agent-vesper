@@ -28,10 +28,26 @@ Z.ai and Playwright MCP server descriptors.
 - `release_executor` owns continuous bounded polling, local verification,
   version/commit/exact-SHA push/tag/publication, official-status admission and
   bounded isolated AgentLoop repair. Host mode, permission port and command
-  firewall apply to native mutations and repairs. Nonrepeatable operations are
+  firewall apply to native mutations and repairs. Host authorization denials retain
+  their bounded redacted cause and stop as controller liveness failures, preserving
+  the release checkpoint, gate evidence and retry budget; they never create source
+  failure evidence or authorize autonomous permission escalation. Nonrepeatable operations are
   journaled before execution; uncertain restart never replays them.
   Promotion requires an observed mutation, explicit hypothesis, native focused
   re-verification after the final edit, a nonempty patch and full local gates.
+  Pin the repair's complete Git status, full patch and index tree before native
+  proof; changes during focused or full verification invalidate that proof and
+  retain a failed attempt without promoting source or spending a full-gate retry.
+  Admission and repair-path inventories use complete NUL-delimited Git output,
+  with every untracked file and both rename paths. Display receipt truncation and
+  secret redaction never alter machine evidence; incomplete/non-UTF-8 inventories
+  refuse. Already-staged rename sources/deletions need no second pathspec add.
+  Validate whitespace against the staged delta and its baseline tree; an empty
+  unstaged diff after staging is not proof of a clean patch.
+  Surviving files successfully written by repair tools must be represented in the
+  staged tree; ignored new inputs cannot supply proof for a patch that omits them.
+  Failed verification retains bounded redacted diagnostic text and includes it in
+  the next attempt's untrusted prior evidence, alongside its existing digest.
   Cargo test proof must execute tests and include an identifiable failing test,
   including explicit rustup toolchain selections. Rust panic parsing accepts numeric
   thread IDs as well as older messages, preserving exact failing-test binding.

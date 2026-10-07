@@ -1,0 +1,50 @@
+{
+  "status": "local_verified_scopes_final_integration_pending",
+  "recorded_at": "2026-10-07T12:03:37.633188+00:00",
+  "base_commit": "0857f02b8dbdc2a867cdb93bf86a03559fb7555b",
+  "source_sha256": {
+    "crates/vesper-harness/src/release_executor.rs": "6131e8f5554dcc1bf88680ef26ef3bcd6ccdd6152cd822010be3b17e9b128de1",
+    "crates/vesper-harness/src/release_recovery.rs": "187bd5493a16e11f79f14e009645d8af6c28f3aefcc611b554ab118e008e981a",
+    "crates/vesper-acp/src/adapter.rs": "b81da7ef4ef2fee46276d2482e11421801af5babaae96a8c8d2422c99a645205",
+    "apps/agent-vesper-acp/tests/release_resource_governor.rs": "0b5813a2e681cb51b3006ba58d22fe2887e7371b3afab8d02de3846d855e691d",
+    "crates/vesper-agent/src/permission.rs": "eedc84de67e2f74a476e4bd87d5c7c119988357210a080f18b44b2a91a2bd818",
+    "apps/agent-vesper-tui/src/main.rs": "e8150f265b5551dbd8610198b64f1d7f7a174cc9c8d9c4ceb870182c0064e0ca"
+  },
+  "full_verification_source_sha256": {
+    "crates/vesper-harness/src/release_executor.rs": "6131e8f5554dcc1bf88680ef26ef3bcd6ccdd6152cd822010be3b17e9b128de1",
+    "crates/vesper-harness/src/release_recovery.rs": "187bd5493a16e11f79f14e009645d8af6c28f3aefcc611b554ab118e008e981a",
+    "crates/vesper-acp/src/adapter.rs": "b81da7ef4ef2fee46276d2482e11421801af5babaae96a8c8d2422c99a645205",
+    "apps/agent-vesper-acp/tests/release_resource_governor.rs": "0b5813a2e681cb51b3006ba58d22fe2887e7371b3afab8d02de3846d855e691d"
+  },
+  "full_verification_excludes_later_tui_repair": true,
+  "required_cases": 100,
+  "observed_passed_required_cases": 100,
+  "missing_required_cases": [],
+  "final_integrated_release_gates": "pending",
+  "scope_limits": [
+    "hermetic approval/orchestration proofs; no live model repair effectiveness",
+    "no independent delegated review",
+    "no installation change",
+    "historical Windows PR gates cannot certify integrated release"
+  ],
+  "logs_sha256": {
+    "/tmp/vesper-rrc-permission-full-verify.log": "0e169924c346f8c4dc3e2820e5d5cbce53098ccd7877fc1d15bf404c3070d9d5",
+    "/tmp/vesper-rrc-permission-full-acceptance.log": "059f0558527e66ebfa300766a1e6f809e86d96cbb871bd0b55835de6dc167dbb",
+    "/tmp/vesper-rrc-permission-full-architecture.log": "e0de1454ed9b17bb9fa04b873236962954e0fd39018d3b15c21ca23d93d9e2fd",
+    "/tmp/vesper-rrc-permission-full-msrv.log": "5b80b218852a1868e1aef67363333b0c2f110c9e9dd11e67d369b1471c231942",
+    "/tmp/vesper-rrc-permission-full-default.log": "2c56b649cddf56fb1b1100810a09a8fdd3a81512bc3c2fd7b1afc07a447498ae",
+    "/tmp/vesper-rrc-permission-full-verify-stale-assertion.log": "cf6a6d4772fab89c855ee330f7a966318184e369e0ccb89c46fb11cd26ff9836",
+    "/tmp/vesper-rrc-acp-permission-process-eight.log": "e11a750123c1ad61ae574cbd047937d6a37d9a59893e1ed651feca77b4494ff3",
+    "/tmp/vesper-rrc-permission-adapter.log": "a32d49e3ebfa8cac855ff445a4f6d10f9c334f4884179e6f0b39ac440922a529",
+    "/tmp/vesper-rrc-authorization-final.log": "3947cf3e025b03a9ee6b53c8d4c075296bf70a621adb1983e0c2b45e7e502a6f",
+    "/tmp/vesper-rrc-authorization-existing.log": "2a72aebb1164294e86bf34667a2e1dc48b442201357be6cb672d6c549c9bd4d3",
+    "/tmp/vesper-rrc-acp-permission-process.log": "17514c4c3b7220d3329ce287a44758eec59dc927b7929d898b9c1d5e753bd2c7",
+    "/tmp/vesper-rrc-tui-expired-approval-red.log": "7b29e0a53203376ee14f844cc51889431478495959581c2e0ea6a8a51832352b",
+    "/tmp/vesper-rrc-tui-expired-approval-reproduced.log": "5ee75bd5c88e4bfcbcd09b4899341511badd93ab1c18cc631d1ca17d667df238",
+    "/tmp/vesper-rrc-tui-expired-approval-green.log": "776f206cf5f8ccc083819f7e09f408795768afefa1e1889c120370c1e40df960",
+    "/tmp/vesper-rrc-tui-expired-approval-final.log": "cacf913b1c4f0269672a775d67e4b42d4986ec4c777f9559d907713ab385b4c9",
+    "/tmp/vesper-rrc-request-liveness.log": "23289a9f1f2dd9da1b1e83604f2e2384cfac27538bf7feba214876db9189292b",
+    "/tmp/vesper-rrc-tui-permission-all.log": "2a526f0865be38dfdf5307190b228c8d8f6958ffebca414f1295eb429111df82",
+    "/tmp/vesper-rrc-tui-permission-clippy.log": "a8da9fd6ccc1234e43312c7faa4f52afb109a0582988ea62baaac46409e9a13e"
+  }
+}

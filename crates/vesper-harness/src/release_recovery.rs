@@ -2673,6 +2673,9 @@ pub enum RrcError {
     RetryBlocked(String),
     #[error("release mutation blocked: {0}")]
     MutationBlocked(String),
+    /// Host authorization stopped execution; never source-test evidence.
+    #[error("release authorization blocked: {0}")]
+    AuthorizationBlocked(String),
     /// Local host resource safety is neither a source failure nor external
     /// CI evidence. The epoch remains locally resumable after recovery.
     #[error("local resource governor deferred verification: {0}")]

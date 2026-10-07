@@ -33,6 +33,10 @@ transport, stderr-only tracing, and orderly shutdown.
   stream shared milestones plus the final durable receipt explicitly. Concurrent
   status and cancellation remain available. A recoverable or failed closeout
   returns unfinished status; publication/start acknowledgement is not completion.
+  `tests/release_resource_governor.rs` exercises real protocol approvals, rejection
+  and unoffered selections, pending-approval cancellation and late approval after
+  cancellation. Failed authorization returns one terminal response with the shared
+  cause and preserved checkpoint, without model dispatch or release mutation.
 
 - Provider-owned controls are intersected with the selected non-secret
   authentication method before runtime configuration. Stale API-key-only xAI

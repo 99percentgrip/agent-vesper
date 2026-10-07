@@ -6,9 +6,22 @@ Own evidence and decisions that close the pre-workspace blockers identified by r
 
 ## Ownership
 
+- `2026-10-07-rrc-native-permission-and-stop-repair.md` owns the native ACP
+  approval/stop regressions, request-bound cleanup, strict offered-option gate,
+  TUI stale-request retirement, scoped source/receipt companions and release
+  readiness boundaries.
+
+- `2026-10-07-rrc-authorization-stall-diagnosis.md` owns the installed v0.24.7
+  ACP-client permission/wait incident, typed authorization-stop repair and focused
+  local regressions; no running-session recovery or release is claimed.
+
+- `2026-10-07-rrc-promotion-and-inventory-gap-audit.md` owns the further
+  adversarial repair audit: immutable proof/promotion bytes, literal complete Git
+  inventories, rename/deletion staging, red regressions and unreleased local evidence.
+
 - `2026-10-06-rrc-autonomy-and-prd-audit.md` owns the expanded binding-PRD audit,
   semantic repair watchdog, passive CI wait separation, objective/receipt isolation,
-  current requirement trace, exact-source verification and authorized next release.
+  requirement trace, exact-source verification and v0.24.7 release/closeout.
 
 - `2026-10-06-rrc-automatic-closeout-repair.md` owns the publication-terminal,
   matching-request admission and final-delivery repair, hermetic registry/report

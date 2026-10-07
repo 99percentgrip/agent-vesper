@@ -245,7 +245,13 @@ When the user requests a durable behavior change, record it here or in the relev
   source/CI failures, recover safe interruptions and finish registry/report delivery
   through the shared provider-neutral path in both hosts. Repeated activity without
   evidence must stop truthfully within its persisted limits; users must not need
-  corrective prompts to advance ordinary stages. Audit confirmed gaps before the
+  corrective prompts to advance ordinary stages. Use the invoking native release
+  route for ordinary release work; do not substitute a disposable ACP driver with
+  independent default permissions. An explicit ACP client must service permission
+  requests while the native release prompt is active and treat its final unfinished
+  response as stopped work, rather than continue polling a failed epoch. Never
+  equate local fixes or a passing old release with the installed build containing
+  those fixes. Audit confirmed gaps before the
   next version bump and keep repair documentation in that release candidate.
   A new natural-language release request automatically
   reconciles a persisted epoch: resume the matching recoverable objective from its

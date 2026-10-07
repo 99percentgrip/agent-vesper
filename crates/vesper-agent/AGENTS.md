@@ -577,6 +577,9 @@ the multi-turn, tool-executing layer above it.
   runs; `ReadOnly` tools always pass, `Mutating`/`Shell`/`Process`/
   `NestedWorkflow` require `Code` mode, `Bypass`, or a host-approved `Ask`
   decision. `Ask` without a `PermissionPort` fails closed.
+- `PermissionRequest::is_pending` exposes only whether its approval waiter is
+  still alive. Hosts retire closed requests and their approval capabilities;
+  checking liveness never grants authority or cancels another request.
 - The advertised tool pool starts as `definitions_for_provider(mode,
   provider_id)` (which excludes deferred and provider-ineligible tools) and is
   **mutable** across turns. When an executor returns

@@ -987,6 +987,145 @@ impl NativeReleaseExecutor {
         Ok(bounded_output(&output.stdout))
     }
 
+    fn git_bytes(&self, args: &[&str]) -> Result<Vec<u8>, RrcError> {
+        let output = self.command("git", args)?;
+        if !output.status.success() {
+            return Err(RrcError::Invalid(format!(
+                "Git evidence command failed: {}",
+                command_failure_evidence(&output.stdout, &output.stderr)
+            )));
+        }
+        // The subprocess capture has this hard bound. At the bound, completeness
+        // is uncertain: a truncated inventory or patch must never grant admission.
+        if output.stdout.len() >= 4 * 1024 * 1024 {
+            return Err(RrcError::MutationBlocked(
+                "Git evidence exceeds the complete capture bound".into(),
+            ));
+        }
+        Ok(output.stdout)
+    }
+
+    fn git_status(&self) -> Result<GitWorkspaceStatus, RrcError> {
+        let bytes = self.git_bytes(&["status", "--porcelain=v1", "-z", "--untracked-files=all"])?;
+        let mut fields = literal_git_paths(&bytes)?.into_iter();
+        let mut paths = Vec::new();
+        while let Some(entry) = fields.next() {
+            let raw = entry.as_bytes();
+            if raw.len() < 4 || raw[2] != b' ' {
+                return Err(RrcError::MutationBlocked(
+                    "malformed Git status entry".into(),
+                ));
+            }
+            paths.push(entry[3..].to_owned());
+            // In -z porcelain, rename/copy destinations precede their source.
+            if raw[..2].iter().any(|byte| matches!(byte, b'R' | b'C')) {
+                paths.push(fields.next().ok_or_else(|| {
+                    RrcError::MutationBlocked("missing Git rename source".into())
+                })?);
+            }
+        }
+        Ok(GitWorkspaceStatus { bytes, paths })
+    }
+
+    fn stage_admitted_paths(&self, allowed: &[String]) -> Result<(), RrcError> {
+        let indexed = literal_git_paths(&self.git_bytes(&["ls-files", "-z"])?)?
+            .into_iter()
+            .collect::<BTreeSet<_>>();
+        let mut args = vec!["add", "--all", "--"];
+        args.extend(
+            allowed
+                .iter()
+                .filter(|path| {
+                    fs::symlink_metadata(self.workspace.join(path)).is_ok()
+                        || indexed.contains(*path)
+                })
+                .map(String::as_str),
+        );
+        // Already-staged deletions/rename sources are absent from both the
+        // worktree and index. They are admitted above but need no second add.
+        if args.len() > 3 {
+            self.checked("git", &args)?;
+        }
+        Ok(())
+    }
+
+    fn require_repair_mutations_indexed(
+        &self,
+        history: &[vesper_domain::ConversationMessage],
+    ) -> Result<(), RrcError> {
+        let indexed = literal_git_paths(&self.git_bytes(&["ls-files", "-z"])?)?
+            .into_iter()
+            .map(|path| self.workspace.join(path))
+            .collect::<BTreeSet<_>>();
+        let mut calls = HashMap::new();
+        for message in history {
+            for part in &message.content {
+                match part {
+                    ContentPart::ToolCall(call)
+                        if matches!(
+                            call.tool_id.as_str(),
+                            "write_file" | "edit_file" | "apply_patch" | "apply_patch_set"
+                        ) =>
+                    {
+                        calls.insert(call.id.as_str(), &call.arguments);
+                    }
+                    ContentPart::ToolResult(result)
+                        if result.status == ToolResultStatus::Succeeded =>
+                    {
+                        if let Some(arguments) = calls.get(result.call_id.as_str()) {
+                            let paths = arguments
+                                .get("path")
+                                .and_then(serde_json::Value::as_str)
+                                .into_iter()
+                                .chain(
+                                    arguments
+                                        .get("patches")
+                                        .and_then(serde_json::Value::as_array)
+                                        .into_iter()
+                                        .flatten()
+                                        .filter_map(|patch| {
+                                            patch.get("path").and_then(serde_json::Value::as_str)
+                                        }),
+                                );
+                            for path in paths {
+                                let written = self.workspace.join(path);
+                                // Removed files need not remain in the index. Every
+                                // surviving file written by the role must be in it.
+                                if fs::symlink_metadata(&written).is_ok()
+                                    && !indexed.contains(&fs::canonicalize(&written)?)
+                                {
+                                    return Err(RrcError::Invalid(format!(
+                                        "repair wrote a file not represented in the promoted Git tree: {path}; include it in the tracked patch before rerunning proof"
+                                    )));
+                                }
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+        Ok(())
+    }
+
+    fn repair_snapshot(&self) -> Result<RepairVerificationSnapshot, RrcError> {
+        Ok(RepairVerificationSnapshot {
+            status: self.git_status()?,
+            patch: self.git_bytes(&["diff", "--binary", "HEAD"])?,
+            index: self.git_bytes(&["write-tree"])?,
+        })
+    }
+
+    fn require_repair_snapshot(
+        &self,
+        expected: &RepairVerificationSnapshot,
+    ) -> Result<(), RrcError> {
+        if &self.repair_snapshot()? != expected {
+            return Err(RrcError::Invalid("verification changed the repair source or index; focused proof must be rerun for the final patch".into()));
+        }
+        Ok(())
+    }
+
     fn gh_json(&self, args: &[&str]) -> Result<serde_json::Value, RrcError> {
         let output = self.command_with_policy("gh", args, PUBLICATION_WATCHDOG)?;
         if !output.status.success() {
@@ -1126,21 +1265,19 @@ impl ReleaseExecutionPort for NativeReleaseExecutor {
             activity.gate_started_at = Some(Instant::now());
             activity.last_activity_at = Instant::now();
         }
-        let original_status = self.checked("git", &["status", "--porcelain"])?;
+        let original_status = self.git_status()?;
         let original_patch = self.command("git", &["diff", "--binary", "HEAD"])?;
         if !original_patch.status.success() {
             return Err(RrcError::MutationBlocked(
                 "preparation baseline diff is unavailable".into(),
             ));
         }
-        if !original_status.trim().is_empty() {
-            let owned = original_status.lines().all(|line| {
-                line.get(3..).is_some_and(|path| {
-                    admission
-                        .candidate_paths()
-                        .iter()
-                        .any(|allowed| allowed == path)
-                })
+        if !original_status.paths.is_empty() {
+            let owned = original_status.paths.iter().all(|path| {
+                admission
+                    .candidate_paths()
+                    .iter()
+                    .any(|allowed| allowed == path)
             });
             if !owned
                 || admission.preparation_baseline_digest()
@@ -1190,7 +1327,7 @@ impl ReleaseExecutionPort for NativeReleaseExecutor {
                 let restored = self.command("git", &["diff", "--binary", "HEAD"])?;
                 if !restored.status.success()
                     || restored.stdout != original_patch.stdout
-                    || self.checked("git", &["status", "--porcelain"])? != original_status
+                    || self.git_status()? != original_status
                 {
                     return Err(RrcError::MutationBlocked(
                         "failed version preparation did not restore its exact approved baseline"
@@ -1247,16 +1384,15 @@ impl ReleaseExecutionPort for NativeReleaseExecutor {
     ) -> Result<String, RrcError> {
         require_kind(admission, ReleaseMutationKind::CommitCandidate)?;
         let allowed = admission.candidate_paths();
-        let status = self.checked("git", &["status", "--porcelain"])?;
-        for line in status.lines() {
-            let path = line.get(3..).unwrap_or_default().trim();
+        let status = self.git_status()?;
+        for path in &status.paths {
             if !allowed.iter().any(|allowed| allowed == path) {
                 return Err(RrcError::Invalid(format!(
                     "candidate commit contains unadmitted path {path}"
                 )));
             }
         }
-        if status.trim().is_empty() {
+        if status.paths.is_empty() {
             let plan = build_version_mutation_plan(&self.workspace, version)?;
             if plan.before != version || plan.after != version || !plan.files.is_empty() {
                 return Err(RrcError::MutationBlocked(
@@ -1265,9 +1401,7 @@ impl ReleaseExecutionPort for NativeReleaseExecutor {
             }
             return exact_sha(self.checked("git", &["rev-parse", "HEAD"])?.trim());
         }
-        let mut args = vec!["add", "--"];
-        args.extend(allowed.iter().map(String::as_str));
-        self.checked("git", &args)?;
+        self.stage_admitted_paths(allowed)?;
         self.checked("git", &["commit", "-m", &format!("Release v{version}")])?;
         let commit = self.checked("git", &["rev-parse", "HEAD"])?;
         exact_sha(commit.trim())
@@ -1680,7 +1814,10 @@ const REPAIR_CANCEL_GRACE: Duration = Duration::from_secs(10);
 fn controller_stop_is_not_source_failure(error: &RrcError) -> bool {
     matches!(
         error,
-        RrcError::WatchdogStalled { .. } | RrcError::WatchdogDeadline { .. } | RrcError::Cancelled
+        RrcError::WatchdogStalled { .. }
+            | RrcError::WatchdogDeadline { .. }
+            | RrcError::Cancelled
+            | RrcError::AuthorizationBlocked(_)
     )
 }
 
@@ -3026,7 +3163,7 @@ fn run_release_worker(
             ReleaseRecoveryState::WaitingForMatrix | ReleaseRecoveryState::Publishing
         ) {
             // The first exact-SHA lookup happens immediately. Subsequent
-            // unchanged observations use bounded 5/10/15/30-second backoff,
+            // unchanged observations use bounded 20/40/80/120-second backoff,
             // while this controller-owned worker remains registered.
             let unchanged = record.consecutive_stagnant_actions.saturating_sub(1);
             let wait_started = Instant::now();
@@ -4258,6 +4395,37 @@ fn bounded_output(bytes: &[u8]) -> String {
     clean.chars().take(MAX_COMMAND_OUTPUT).collect()
 }
 
+#[derive(PartialEq, Eq)]
+struct GitWorkspaceStatus {
+    bytes: Vec<u8>,
+    paths: Vec<String>,
+}
+
+#[derive(PartialEq, Eq)]
+struct RepairVerificationSnapshot {
+    status: GitWorkspaceStatus,
+    patch: Vec<u8>,
+    index: Vec<u8>,
+}
+
+fn literal_git_paths(bytes: &[u8]) -> Result<Vec<String>, RrcError> {
+    if bytes.is_empty() {
+        return Ok(Vec::new());
+    }
+    let body = bytes.strip_suffix(&[0]).ok_or_else(|| {
+        RrcError::MutationBlocked("incomplete NUL-delimited Git inventory".into())
+    })?;
+    body.split(|byte| *byte == 0)
+        .map(|path| {
+            if path.is_empty() {
+                return Err(RrcError::MutationBlocked("empty Git inventory path".into()));
+            }
+            String::from_utf8(path.to_vec())
+                .map_err(|_| RrcError::MutationBlocked("Git inventory path is not UTF-8".into()))
+        })
+        .collect()
+}
+
 fn digest(bytes: &[u8]) -> String {
     use sha2::{Digest as _, Sha256};
     Sha256::digest(bytes)
@@ -4624,6 +4792,171 @@ pub(crate) mod tests {
         for (path, expected) in &before {
             assert_eq!(&fs::read(root.path().join(path)).unwrap(), expected);
         }
+    }
+
+    #[test]
+    fn candidate_commit_preserves_literal_repair_paths() {
+        assert_literal_candidate_paths(false);
+    }
+
+    #[test]
+    fn candidate_commit_preserves_staged_literal_repair_paths() {
+        assert_literal_candidate_paths(true);
+    }
+
+    fn assert_literal_candidate_paths(staged: bool) {
+        let root = tempfile::tempdir().unwrap();
+        let native =
+            NativeReleaseExecutor::new(root.path(), Arc::new(AtomicBool::new(false))).unwrap();
+        native.checked("git", &["init", "-b", "main"]).unwrap();
+        native
+            .checked("git", &["config", "user.name", "fixture"])
+            .unwrap();
+        native
+            .checked("git", &["config", "user.email", "fixture@example.invalid"])
+            .unwrap();
+        fs::write(root.path().join("Cargo.toml"), "fixture baseline").unwrap();
+        fs::write(root.path().join("Cargo.lock"), "fixture lock").unwrap();
+        fs::create_dir(root.path().join("registry")).unwrap();
+        fs::write(root.path().join("registry/agent.json"), "{}").unwrap();
+        native.checked("git", &["add", "--all"]).unwrap();
+        native
+            .checked("git", &["commit", "-m", "baseline"])
+            .unwrap();
+        let base = native.checked("git", &["rev-parse", "HEAD"]).unwrap();
+        fs::create_dir(root.path().join("docs")).unwrap();
+        let mut paths = vec!["docs/repair evidence.md", "docs/évidence.md"];
+        if cfg!(unix) {
+            paths.extend([
+                "docs/line\nbreak.md",
+                "docs/tab\tname.md",
+                "docs/quoted\"name.md",
+            ]);
+        }
+        for path in &paths {
+            fs::write(root.path().join(path), "verified repair evidence").unwrap();
+        }
+        let mut record =
+            crate::release_recovery::start_release("fixture", "patch", "main", base.trim())
+                .unwrap();
+        record.state = ReleaseRecoveryState::LocalVerification;
+        record.mutation.version_after = Some("0.24.5".into());
+        record.mutation.repair_files = paths.iter().map(|path| (*path).to_owned()).collect();
+        record.mutation.local_gates = vec![LocalGateRecord {
+            name: "focused".into(),
+            state: SettlementState::Succeeded,
+            command: "focused".into(),
+            evidence_ref: Some("fixture:focused".into()),
+        }];
+        let admission =
+            admit_release_mutation(&record, ReleaseMutationKind::CommitCandidate).unwrap();
+        fs::write(root.path().join("unowned file.md"), "unadmitted").unwrap();
+        assert!(native.commit_candidate("0.24.5", &admission).is_err());
+        assert_eq!(native.checked("git", &["rev-parse", "HEAD"]).unwrap(), base);
+        fs::remove_file(root.path().join("unowned file.md")).unwrap();
+        if staged {
+            native.checked("git", &["add", "--all"]).unwrap();
+        }
+        let committed = native.commit_candidate("0.24.5", &admission).unwrap();
+        assert_ne!(committed, base.trim());
+        assert!(
+            native
+                .checked("git", &["status", "--porcelain"])
+                .unwrap()
+                .is_empty()
+        );
+        for path in paths {
+            assert_eq!(
+                native
+                    .checked("git", &["show", &format!("HEAD:{path}")])
+                    .unwrap(),
+                "verified repair evidence"
+            );
+        }
+        let old_path = "docs/repair evidence.md";
+        let new_path = "docs/renamed evidence.md";
+        native.checked("git", &["mv", old_path, new_path]).unwrap();
+        for admitted in [vec![old_path], vec![new_path]] {
+            record.mutation.repair_files = admitted.into_iter().map(str::to_owned).collect();
+            let admission =
+                admit_release_mutation(&record, ReleaseMutationKind::CommitCandidate).unwrap();
+            assert!(
+                native.commit_candidate("0.24.5", &admission).is_err(),
+                "both rename paths must be admitted"
+            );
+        }
+        record.mutation.repair_files = vec![old_path.into(), new_path.into()];
+        let admission =
+            admit_release_mutation(&record, ReleaseMutationKind::CommitCandidate).unwrap();
+        native.commit_candidate("0.24.5", &admission).unwrap();
+        assert!(native.git_status().unwrap().paths.is_empty());
+    }
+
+    #[test]
+    fn candidate_commit_checks_paths_beyond_display_receipt_bound() {
+        let root = tempfile::tempdir().unwrap();
+        let native =
+            NativeReleaseExecutor::new(root.path(), Arc::new(AtomicBool::new(false))).unwrap();
+        native.checked("git", &["init", "-b", "main"]).unwrap();
+        native
+            .checked("git", &["config", "user.name", "fixture"])
+            .unwrap();
+        native
+            .checked("git", &["config", "user.email", "fixture@example.invalid"])
+            .unwrap();
+        fs::create_dir(root.path().join("registry")).unwrap();
+        for path in ["Cargo.toml", "Cargo.lock", "registry/agent.json"] {
+            fs::write(root.path().join(path), "baseline").unwrap();
+        }
+        native.checked("git", &["add", "--all"]).unwrap();
+        native
+            .checked("git", &["commit", "-m", "baseline"])
+            .unwrap();
+        let base = native.checked("git", &["rev-parse", "HEAD"]).unwrap();
+        let mut record =
+            crate::release_recovery::start_release("fixture", "patch", "main", base.trim())
+                .unwrap();
+        record.state = ReleaseRecoveryState::LocalVerification;
+        record.mutation.version_after = Some("0.24.5".into());
+        record.mutation.local_gates = vec![LocalGateRecord {
+            name: "focused".into(),
+            state: SettlementState::Succeeded,
+            command: "focused".into(),
+            evidence_ref: Some("fixture:focused".into()),
+        }];
+        // Each porcelain line occupies exactly sixteen bytes. The old display
+        // receipt ended on a complete line, silently omitting the unowned tail.
+        for index in 0..(MAX_COMMAND_OUTPUT / 16) {
+            let path = format!("a{index:07}.txt");
+            fs::write(root.path().join(&path), "admitted").unwrap();
+            record.mutation.repair_files.push(path);
+        }
+        fs::write(
+            root.path().join("zzz-unadmitted.txt"),
+            "unowned staged change",
+        )
+        .unwrap();
+        native.checked("git", &["add", "--all"]).unwrap();
+        let status = native.command("git", &["status", "--porcelain"]).unwrap();
+        assert!(status.stdout.len() > MAX_COMMAND_OUTPUT);
+        let admission =
+            admit_release_mutation(&record, ReleaseMutationKind::CommitCandidate).unwrap();
+        assert!(
+            native.commit_candidate("0.24.5", &admission).is_err(),
+            "display truncation hid an unadmitted staged path"
+        );
+        assert_eq!(native.checked("git", &["rev-parse", "HEAD"]).unwrap(), base);
+    }
+
+    #[test]
+    fn literal_git_inventory_refuses_incomplete_or_non_utf8_paths() {
+        for bytes in [b"missing terminator".as_slice(), b"a\0\0", b"\xff\0"] {
+            assert!(literal_git_paths(bytes).is_err());
+        }
+        assert_eq!(
+            literal_git_paths(b"a\nb\0c\td\0").unwrap(),
+            vec!["a\nb", "c\td"]
+        );
     }
 
     #[test]
@@ -6589,6 +6922,83 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn host_authorization_preserves_denial_reason_for_two_provider_fixtures() {
+        struct DenyPermission;
+        impl vesper_agent::PermissionPort for DenyPermission {
+            fn authorize<'a>(
+                &'a self,
+                _: &'a vesper_domain::ToolCall,
+                _: &'a vesper_domain::ToolDefinition,
+                _: &'a vesper_agent::ToolContext,
+            ) -> vesper_agent::ToolFuture<'a, vesper_agent::PermissionDecision> {
+                Box::pin(async {
+                    vesper_agent::PermissionDecision::Deny("ACP client rejected permission".into())
+                })
+            }
+        }
+        for label in ["fixture.authorization-a", "fixture.authorization-b"] {
+            let (factory, _, _runtime) = repair_test_factory(label, "unused");
+            let factory = factory
+                .with_permission_port(Arc::new(DenyPermission))
+                .with_release_policy(
+                    vesper_domain::SessionOperatingMode::Code,
+                    vesper_domain::SessionPermissionMode::Ask,
+                );
+            let record =
+                crate::release_recovery::start_release("repo", "patch", "main", "abcdef123456")
+                    .unwrap();
+            let error = authorize_controller_step(
+                Some(&factory),
+                &record,
+                "owner/repo",
+                &AtomicBool::new(false),
+            )
+            .unwrap_err();
+            assert!(matches!(&error, RrcError::AuthorizationBlocked(reason)
+                if reason == "ACP client rejected permission"));
+            assert!(controller_stop_is_not_source_failure(&error));
+        }
+    }
+
+    #[test]
+    fn authorization_stop_preserves_checkpoint_without_source_failure() {
+        for reason in [
+            "approval timed out",
+            "ACP client rejected permission",
+            "command firewall denied release stage",
+            "release mutation requires a host permission port",
+        ] {
+            let temporary = tempfile::tempdir().unwrap();
+            let ledger = ReleaseLedger::open(temporary.path(), "repo").unwrap();
+            let mut record =
+                crate::release_recovery::start_release("repo", "patch", "main", "abcdef123456")
+                    .unwrap();
+            record.state = ReleaseRecoveryState::LocalVerification;
+            record.mutation.local_gates = vec![LocalGateRecord {
+                name: "fixture".into(),
+                state: SettlementState::NotStarted,
+                command: "fixture".into(),
+                evidence_ref: None,
+            }];
+            ledger.save(&record).unwrap();
+            let error = RrcError::AuthorizationBlocked(reason.into());
+            assert!(controller_stop_is_not_source_failure(&error));
+            persist_worker_failure(temporary.path(), "repo", &error);
+            let persisted = ledger.load().unwrap().unwrap();
+            assert_eq!(persisted.state, record.state);
+            assert_eq!(persisted.mutation, record.mutation);
+            assert_eq!(persisted.retry_budget, record.retry_budget);
+            assert!(persisted.failures.is_empty());
+            assert!(persisted.repair_attempts.is_empty());
+            assert_eq!(
+                persisted.liveness.state,
+                crate::release_recovery::ReleaseLivenessState::Failed
+            );
+            assert!(persisted.liveness.detail.contains(reason));
+        }
+    }
+
+    #[test]
     fn cancellation_does_not_create_local_failure_evidence() {
         let temporary = tempfile::tempdir().unwrap();
         let ledger = ReleaseLedger::open(temporary.path(), "repo").unwrap();
@@ -7289,6 +7699,32 @@ pub(crate) mod tests {
 
     #[test]
     fn isolated_agent_repair_verifies_and_promotes_one_patch_for_two_provider_fixtures() {
+        assert_isolated_repair_promotion(None);
+    }
+
+    #[test]
+    fn repair_verification_changes_cannot_be_promoted_as_verified() {
+        for change in ["tracked", "index", "untracked"] {
+            assert_isolated_repair_promotion(Some(change));
+        }
+    }
+
+    #[test]
+    fn isolated_repair_preserves_new_literal_paths_for_two_provider_fixtures() {
+        assert_isolated_repair_promotion(Some("newfile"));
+    }
+
+    #[test]
+    fn isolated_repair_rejects_ignored_source_inputs_for_two_provider_fixtures() {
+        assert_isolated_repair_promotion(Some("ignored"));
+    }
+
+    #[test]
+    fn repair_proof_checks_staged_whitespace() {
+        assert_isolated_repair_promotion(Some("whitespace"));
+    }
+
+    fn assert_isolated_repair_promotion(verification_change: Option<&str>) {
         for label in ["fixture.release-a", "fixture.release-b"] {
             for preparing in [false, true] {
                 let temp = tempfile::tempdir().unwrap();
@@ -7306,9 +7742,21 @@ pub(crate) mod tests {
                 )
                 .unwrap();
                 fs::write(workspace.join(".gitattributes"), "* text eol=lf\n").unwrap();
-                fs::write(workspace.join(".gitignore"), "/target/\n").unwrap();
+                fs::write(
+                    workspace.join(".gitignore"),
+                    if verification_change == Some("ignored") {
+                        "/target/\n/src/generated.rs\n"
+                    } else {
+                        "/target/\n"
+                    },
+                )
+                .unwrap();
                 let broken = "pub fn answer() -> u32 { 0 }\n#[test] fn exact_regression() { assert_eq!(answer(), 42); }\n";
-                let repaired = broken.replace("{ 0 }", "{ 42 }");
+                let repaired = if verification_change == Some("ignored") {
+                    "mod generated; pub use generated::answer;\n#[test] fn exact_regression() { assert_eq!(answer(), 42); }\n".into()
+                } else {
+                    broken.replace("{ 0 }", "{ 42 }")
+                };
                 fs::write(workspace.join("src/lib.rs"), broken).unwrap();
                 let native =
                     NativeReleaseExecutor::new(&workspace, Arc::new(AtomicBool::new(false)))
@@ -7378,7 +7826,38 @@ pub(crate) mod tests {
                     });
                 let ledger = ReleaseLedger::open(temp.path().join("state"), "composition").unwrap();
                 ledger.save(&record).unwrap();
-                let (factory, session, _runtime) = repair_test_factory(label, &repaired);
+                let extra_file = matches!(
+                    verification_change,
+                    Some("newfile" | "ignored" | "whitespace")
+                );
+                let prefix = if extra_file {
+                    vec![Ok(vec![
+                        Ok(vesper_provider::ProviderStreamEvent::ToolCallCompleted(
+                            vesper_domain::ToolCall {
+                                id: vesper_domain::ToolCallId::new("extra-file").unwrap(),
+                                tool_id: vesper_domain::ToolId::new("write_file").unwrap(),
+                                arguments: if verification_change == Some("ignored") {
+                                    serde_json::json!({"path":"src/generated.rs", "content":"pub fn answer() -> u32 { 42 }\n"})
+                                } else {
+                                    serde_json::json!({"path":"repair evidence.md", "content": if verification_change == Some("whitespace") { "verified evidence \n" } else { "verified evidence" }})
+                                },
+                                extensions: Default::default(),
+                            },
+                        )),
+                        Ok(vesper_provider::ProviderStreamEvent::Completed {
+                            finish: vesper_domain::FinishOutcome::ToolCalls,
+                            metadata: Default::default(),
+                        }),
+                    ])]
+                } else {
+                    Vec::new()
+                };
+                let (factory, session, _runtime) = repair_test_factory_with_prefix(
+                    label,
+                    &repaired,
+                    &["cargo test exact_regression --offline -- --exact"],
+                    prefix,
+                );
                 let gates_observed = std::sync::atomic::AtomicUsize::new(0);
                 let verify_fixture_gates = |executor: &NativeReleaseExecutor| {
                     gates_observed.fetch_add(1, Ordering::SeqCst);
@@ -7387,6 +7866,21 @@ pub(crate) mod tests {
                         "verification must use the isolated worktree"
                     );
                     executor.checked("cargo", &["test", "--offline"])?;
+                    match verification_change {
+                        Some("tracked" | "index") => {
+                            fs::write(
+                                executor.workspace.join("src/lib.rs"),
+                                repaired.replace("{ 42 }", "{ 43 }"),
+                            )?;
+                            if verification_change == Some("index") {
+                                executor.checked("git", &["add", "src/lib.rs"])?;
+                            }
+                        }
+                        Some("untracked") => {
+                            fs::write(executor.workspace.join("unverified source.rs"), broken)?;
+                        }
+                        _ => {}
+                    }
                     Ok(())
                 };
                 run_bounded_repair_agent_with_verification(
@@ -7402,8 +7896,55 @@ pub(crate) mod tests {
                     },
                 )
                 .unwrap();
-                assert_eq!(gates_observed.load(Ordering::SeqCst), 1);
-                assert_eq!(session.requests().len(), 3);
+                assert_eq!(
+                    gates_observed.load(Ordering::SeqCst),
+                    if verification_change == Some("ignored") {
+                        0
+                    } else {
+                        1
+                    }
+                );
+                assert_eq!(session.requests().len(), if extra_file { 4 } else { 3 });
+                if let Some(change) = verification_change.filter(|change| *change != "newfile") {
+                    assert_eq!(
+                        fs::read_to_string(workspace.join("src/lib.rs")).unwrap(),
+                        broken,
+                        "verification changed {change}; no unverified patch may reach the controller"
+                    );
+                    assert_eq!(record.repair_attempts.len(), 1);
+                    let receipt = &record.repair_attempts[0];
+                    assert_eq!(
+                        receipt.focused_status,
+                        crate::release_recovery::FocusedProofStatus::Failed
+                    );
+                    assert!(receipt.disproven_or_insufficient);
+                    assert!(receipt.source_commit_after.is_none());
+                    assert!(
+                        receipt
+                            .evidence_refs
+                            .iter()
+                            .any(|evidence| evidence.contains(if change == "ignored" {
+                                "not represented in the promoted Git tree"
+                            } else if change == "whitespace" {
+                                "whitespace"
+                            } else {
+                                "verification changed"
+                            })),
+                        "safe failure context must survive for the next bounded attempt"
+                    );
+                    assert_eq!(record.retry_budget.full_gate_used, 0);
+                    assert_eq!(
+                        record
+                            .mutation
+                            .repair_admissions
+                            .values()
+                            .copied()
+                            .sum::<u8>(),
+                        1
+                    );
+                    assert_eq!(ledger.load().unwrap().unwrap(), record);
+                    continue;
+                }
                 assert_eq!(
                     record.state,
                     if preparing {
@@ -7446,7 +7987,14 @@ pub(crate) mod tests {
                         admission.preparation_baseline_digest(),
                         Some(digest(&patch.stdout).as_str())
                     );
-                    assert_eq!(record.mutation.repair_files, vec!["src/lib.rs"]);
+                    assert_eq!(
+                        record.mutation.repair_files,
+                        if extra_file {
+                            vec!["repair evidence.md", "src/lib.rs"]
+                        } else {
+                            vec!["src/lib.rs"]
+                        }
+                    );
                 } else {
                     assert!(
                         native
@@ -7455,11 +8003,17 @@ pub(crate) mod tests {
                             .is_empty()
                     );
                     assert_eq!(
-                        native
-                            .checked("git", &["diff", "--name-only", &base, "HEAD"])
-                            .unwrap()
-                            .trim(),
-                        "src/lib.rs"
+                        literal_git_paths(
+                            &native
+                                .git_bytes(&["diff", "--name-only", "-z", &base, "HEAD"])
+                                .unwrap()
+                        )
+                        .unwrap(),
+                        if extra_file {
+                            vec!["repair evidence.md", "src/lib.rs"]
+                        } else {
+                            vec!["src/lib.rs"]
+                        }
                     );
                 }
                 assert!(!record.mutation.candidate_pushed);
@@ -7790,7 +8344,8 @@ pub(crate) mod tests {
                         "owner/repo",
                         &AtomicBool::new(false)
                     ),
-                    Err(RrcError::MutationBlocked(_))
+                    Err(RrcError::AuthorizationBlocked(reason))
+                        if reason == "command firewall denied release stage"
                 ));
             } else {
                 assert!(release_stage_commands(&record, "owner/repo").is_empty());
@@ -8932,14 +9487,13 @@ fn run_bounded_repair_agent_with_verification(
     }
     let controller = NativeReleaseExecutor::new(workspace, Arc::clone(&cancelled))?
         .with_firewall(factory.config.firewall.clone());
-    let original_status = controller.checked("git", &["status", "--porcelain"])?;
+    let original_status = controller.git_status()?;
     let original_patch = controller.command("git", &["diff", "--binary", "HEAD"])?;
     if !original_patch.status.success() {
         return Err(RrcError::Invalid("repair baseline diff failed".into()));
     }
     if local {
-        for line in original_status.lines() {
-            let path = line.get(3..).unwrap_or_default().trim();
+        for path in &original_status.paths {
             if !record
                 .mutation
                 .version_files
@@ -8953,7 +9507,7 @@ fn run_bounded_repair_agent_with_verification(
                 ));
             }
         }
-    } else if !original_status.trim().is_empty() {
+    } else if !original_status.paths.is_empty() {
         return Err(RrcError::MutationBlocked(
             "remote repair needs a clean controller workspace".into(),
         ));
@@ -9014,11 +9568,12 @@ fn run_bounded_repair_agent_with_verification(
         .filter(|attempt| families.contains(&attempt.causal_family))
         .map(|attempt| {
             format!(
-                "family={} hypothesis={} focused_status={:?} proof={}",
+                "family={} hypothesis={} focused_status={:?} proof={} evidence={}",
                 attempt.causal_family,
                 attempt.hypothesis,
                 attempt.focused_status,
                 attempt.focused_proof,
+                attempt.evidence_refs.join("; "),
             )
         })
         .collect::<Vec<_>>()
@@ -9160,12 +9715,28 @@ fn run_bounded_repair_agent_with_verification(
         )
     })?;
     repair_executor.checked("git", &["add", "--all"])?;
+    let verified_baseline = repair_executor.repair_snapshot()?;
+    // Freeze the exact delta before proof. Later command/process side effects
+    // cannot change which bytes are selected for promotion.
+    let diff = repair_executor.git_bytes(&["diff", "--binary", baseline_tree.trim()])?;
+    if diff.is_empty() {
+        return Err(RrcError::Invalid(
+            "repair worktree produced no promotable diff".into(),
+        ));
+    }
     let focused_words = focused_command.split_whitespace().collect::<Vec<_>>();
     let verification = (|| {
+        repair_executor.require_repair_mutations_indexed(&history)?;
         for admitted in &failures {
             run_focused_verification(&repair_executor, &focused_words, admitted)?;
+            repair_executor.require_repair_snapshot(&verified_baseline)?;
         }
         (verification.verify)(&repair_executor)?;
+        repair_executor.require_repair_snapshot(&verified_baseline)?;
+        repair_executor.checked(
+            "git",
+            &["diff", "--cached", "--check", baseline_tree.trim()],
+        )?;
         Ok::<_, RrcError>(())
     })();
     if let Err(error) = verification {
@@ -9177,10 +9748,16 @@ fn run_bounded_repair_agent_with_verification(
             source_commit_after: None,
             focused_proof: focused_command,
             focused_status: crate::release_recovery::FocusedProofStatus::Failed,
-            evidence_refs: vec![format!(
-                "repair:failed:{}",
-                digest(error.to_string().as_bytes())
-            )],
+            evidence_refs: vec![
+                format!("repair:failed:{}", digest(error.to_string().as_bytes())),
+                format!(
+                    "repair:verification-detail:{}",
+                    redact_secrets(&error.to_string())
+                        .chars()
+                        .take(MAX_COMMAND_OUTPUT)
+                        .collect::<String>()
+                ),
+            ],
             disproven_or_insufficient: true,
         };
         if local {
@@ -9191,21 +9768,8 @@ fn run_bounded_repair_agent_with_verification(
         ledger.save(record)?;
         return Ok(());
     }
-    let checked = repair_executor.command("git", &["diff", "--check"])?;
-    if !checked.status.success() {
-        return Err(RrcError::Invalid(format!(
-            "repair diff check failed: {}",
-            bounded_output(&checked.stderr)
-        )));
-    }
-    let diff = repair_executor.command("git", &["diff", "--binary", baseline_tree.trim()])?;
-    if !diff.status.success() || diff.stdout.is_empty() {
-        return Err(RrcError::Invalid(
-            "repair worktree produced no promotable diff".into(),
-        ));
-    }
-    let root_status = controller.command("git", &["status", "--porcelain"])?;
-    if !root_status.status.success() || (!local && !root_status.stdout.is_empty()) {
+    let root_status = controller.git_status()?;
+    if (!local && !root_status.paths.is_empty()) || (local && root_status != original_status) {
         return Err(RrcError::Invalid(
             "repair promotion requires the controller workspace to remain clean".into(),
         ));
@@ -9229,22 +9793,21 @@ fn run_bounded_repair_agent_with_verification(
             ));
         }
         let mut paths = vec![
-            "add",
-            "--",
-            "Cargo.toml",
-            "Cargo.lock",
-            "registry/agent.json",
+            "Cargo.toml".into(),
+            "Cargo.lock".into(),
+            "registry/agent.json".into(),
         ];
-        paths.extend(record.mutation.version_files.iter().map(String::as_str));
-        paths.extend(record.mutation.repair_files.iter().map(String::as_str));
-        controller.checked("git", &paths)?;
+        paths.extend(record.mutation.version_files.iter().cloned());
+        paths.extend(record.mutation.repair_files.iter().cloned());
+        controller.stage_admitted_paths(&paths)?;
     }
-    apply_binary_patch(&controller, &diff.stdout)?;
+    apply_binary_patch(&controller, &diff)?;
     if local {
-        let paths = controller.checked("git", &["diff", "--cached", "--name-only"])?;
-        record.mutation.repair_files = paths.lines().map(str::to_owned).collect();
+        let paths =
+            controller.git_bytes(&["diff", "--cached", "--name-only", "--no-renames", "-z"])?;
+        record.mutation.repair_files = literal_git_paths(&paths)?;
         let mut evidence_refs = vec![
-            format!("repair:patch:{}", digest(&diff.stdout)),
+            format!("repair:patch:{}", digest(&diff)),
             "repair:local-gates".into(),
         ];
         if record.mutation.version_after.is_none() {
@@ -9295,7 +9858,7 @@ fn run_bounded_repair_agent_with_verification(
         ],
     )?;
     let commit = exact_sha(controller.checked("git", &["rev-parse", "HEAD"])?.trim())?;
-    let patch_digest = digest(&diff.stdout);
+    let patch_digest = digest(&diff);
     let repairs = failures
         .into_iter()
         .map(|failure| crate::release_recovery::RepairAttempt {
@@ -9817,7 +10380,7 @@ fn authorize_controller_step(
     cancelled: &AtomicBool,
 ) -> Result<(), RrcError> {
     let factory = factory.ok_or_else(|| {
-        RrcError::MutationBlocked("release mutation requires a host permission port".into())
+        RrcError::AuthorizationBlocked("release mutation requires a host permission port".into())
     })?;
     let tool_id = vesper_domain::ToolId::new("release_controller").expect("static tool id");
     let call = vesper_domain::ToolCall {
@@ -9863,7 +10426,7 @@ fn authorize_controller_step(
         for command in stage_commands {
             match firewall.scan(&command).decision {
                 vesper_policy::firewall::RuleDecision::Deny => {
-                    return Err(RrcError::MutationBlocked(
+                    return Err(RrcError::AuthorizationBlocked(
                         "command firewall denied release stage".into(),
                     ));
                 }
@@ -9880,7 +10443,7 @@ fn authorize_controller_step(
         vesper_agent::PermissionDecision::Allow if !firewall_approval => return Ok(()),
         vesper_agent::PermissionDecision::Allow => {}
         vesper_agent::PermissionDecision::Deny(reason) => {
-            return Err(RrcError::MutationBlocked(reason));
+            return Err(RrcError::AuthorizationBlocked(redact_secrets(&reason)));
         }
         vesper_agent::PermissionDecision::Ask(_) => {}
     }
@@ -9902,12 +10465,13 @@ fn authorize_controller_step(
             }
         }
     });
-    if decision.is_allowed() {
-        Ok(())
-    } else {
-        Err(RrcError::MutationBlocked(
-            "host permission denied release side effect".into(),
-        ))
+    match decision {
+        vesper_agent::PermissionDecision::Allow => Ok(()),
+        _ if cancelled.load(Ordering::Acquire) => Err(RrcError::Cancelled),
+        vesper_agent::PermissionDecision::Deny(reason)
+        | vesper_agent::PermissionDecision::Ask(reason) => {
+            Err(RrcError::AuthorizationBlocked(redact_secrets(&reason)))
+        }
     }
 }
 

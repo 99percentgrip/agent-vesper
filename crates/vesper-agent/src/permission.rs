@@ -97,6 +97,12 @@ impl std::fmt::Debug for PermissionRequest {
 }
 
 impl PermissionRequest {
+    /// Whether the operation is still waiting for this request's decision.
+    #[must_use]
+    pub fn is_pending(&self) -> bool {
+        !self.responder.is_closed()
+    }
+
     /// Approves this request exactly once.
     pub fn approve(self) {
         let _ = self.responder.send(PermissionDecision::Allow);
@@ -245,6 +251,20 @@ mod tests {
                 "({mode:?}, {perm:?}, {class:?}) should be allowed={allowed}, got {decision:?}"
             );
         }
+    }
+
+    #[test]
+    fn request_liveness_tracks_the_waiter_without_granting_approval() {
+        let (responder, receiver) = oneshot::channel();
+        let request = PermissionRequest {
+            tool: "release_controller".into(),
+            arguments: serde_json::json!({}),
+            reason: "one-time approval required".into(),
+            responder,
+        };
+        assert!(request.is_pending());
+        drop(receiver);
+        assert!(!request.is_pending());
     }
 
     #[test]

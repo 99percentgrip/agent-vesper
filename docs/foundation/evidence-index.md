@@ -1,8 +1,16 @@
 # Foundation Evidence Index
 
+- [RRC native permission and stop repair](2026-10-07-rrc-native-permission-and-stop-repair.md) — actual ACP protocol approval/rejection/cancellation, strict options and request-bound cleanup, combined repair verification.
+
+- [RRC authorization stall diagnosis and scoped repair](2026-10-07-rrc-authorization-stall-diagnosis.md) — installed-client permission denial, continued polling, local typed stop; unreleased.
+
+## Further RRC promotion and inventory gap audit (2026-10-07)
+
+- [Execution report](2026-10-07-rrc-promotion-and-inventory-gap-audit.md) records newly reproduced proof/promotion and Git inventory defects, shared controller fixes, regression evidence and the unreleased source boundary. Earlier v0.24.7 verification does not certify these changes.
+
 ## RRC autonomy and PRD audit (2026-10-06)
 
-- [Audit report](2026-10-06-rrc-autonomy-and-prd-audit.md) records the expanded autonomous, provider-neutral repair, confirmed polling/stagnation/completion gaps, current verification and pending exact-commit release boundary.
+- [Audit report](2026-10-06-rrc-autonomy-and-prd-audit.md) records the expanded autonomous, provider-neutral repair, confirmed polling/stagnation/completion gaps, v0.24.7 verification/publication/closeout and its scoped requirement trace. The newer local source and additional defects are covered by the further audit above.
 
 ## RRC version-preparation resource recovery (2026-10-06)
 
@@ -2158,3 +2166,7 @@ v0.21.6 release notes own the final run links, image IDs and local-install recei
 - [RRC automatic closeout repair](2026-10-06-rrc-automatic-closeout-repair.md) — publication checkpoint continuation, existing registry PR and final receipt delivery.
 
 - [Release v0.24.6 native closeout](release-v0.24.6-closeout.md) — current-main green, same registry PR updated and durable completion receipt.
+
+- [Release v0.24.7 closeout](release-v0.24.7-closeout.md) — native publication, main-health, registry and completion receipts.
+
+- [RRC released-source reverification](2026-10-06-rrc-autonomy-and-prd-audit.md#requested-reverification-2026-10-07) — all 100 named requirement cases observed passed, fresh 375-test harness and 127-case acceptance receipts, no newly confirmed implementation gap.

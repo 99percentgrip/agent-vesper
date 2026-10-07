@@ -117,7 +117,10 @@ update mapping, and bounded asynchronous dispatch into `vesper-runtime`.
   state-colliding forms interrupt. The adapter supplies a bounded
   `session/request_permission` bridge to injected engines; cancellation
   resolves any pending approval and the engine must fail closed on rejection
-  or a missing bridge. Without an injected engine, the runtime single-turn
+  or a missing bridge. Only the advertised `allow-once` option grants approval;
+  unoffered/unknown selections refuse. Approval slots are request-bound: old or
+  dropped futures cannot erase a newer cancellation hook, and timed-out/dropped
+  requests remove their own slot. Without an injected engine, the runtime single-turn
   path remains available for protocol conformance. Engine failures must be
   pre-sanitized, bounded, actionable classifications; the adapter preserves
   that safe reason in ACP error data instead of flattening every failure to a

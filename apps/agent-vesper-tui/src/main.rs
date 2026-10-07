@@ -8748,25 +8748,47 @@ fn active_superpower_choice(
 /// available as an alternative approver. The legacy text-command path
 /// (`/approve` / `/cancel`) was retired when the modal shipped.
 fn drain_permission_request(session: &mut TuiSession) {
+    if session
+        .pending_approval
+        .as_ref()
+        .is_some_and(|request| !request.is_pending())
+    {
+        session.pending_approval = None;
+        session.mobile_approval_id = None;
+        if let Some(server) = session.mobile_server.as_ref() {
+            server.clear_approval();
+        }
+        session.state.status = Some("Approval closed: the operation is no longer waiting.".into());
+    }
     if session.pending_approval.is_some() {
         return;
     }
-    match session.approval_rx.try_recv() {
-        Ok(request) => {
-            session.state.status = Some(format!(
-                "APPROVAL REQUIRED: `{}` — Tab to switch, Enter to confirm.",
-                request.tool
-            ));
-            session.state.permission_modal_focus = PermissionChoice::Allow;
-            session.pending_approval = Some(request);
-            if let Some(server) = session.mobile_server.as_ref() {
-                session.mobile_approval_id = Some(server.register_approval());
+    // Retired callers can leave queued requests; bound draining to preserve
+    // frame responsiveness even if many operations were cancelled together.
+    for _ in 0..32 {
+        match session.approval_rx.try_recv() {
+            Ok(request) => {
+                if !request.is_pending() {
+                    continue;
+                }
+                session.state.status = Some(format!(
+                    "APPROVAL REQUIRED: `{}` — Tab to switch, Enter to confirm.",
+                    request.tool
+                ));
+                session.state.permission_modal_focus = PermissionChoice::Allow;
+                session.pending_approval = Some(request);
+                if let Some(server) = session.mobile_server.as_ref() {
+                    session.mobile_approval_id = Some(server.register_approval());
+                }
+                return;
             }
-        }
-        Err(mpsc::error::TryRecvError::Empty) => {}
-        Err(mpsc::error::TryRecvError::Disconnected) => {
-            if session.agent_running {
-                session.state.status = Some("approval channel closed; requests fail closed".into());
+            Err(mpsc::error::TryRecvError::Empty) => return,
+            Err(mpsc::error::TryRecvError::Disconnected) => {
+                if session.agent_running {
+                    session.state.status =
+                        Some("approval channel closed; requests fail closed".into());
+                }
+                return;
             }
         }
     }
@@ -19540,6 +19562,76 @@ mod tests {
             Some(("new epoch".into(), 40, "Next release completed.".into())),
         );
         assert_eq!(session.state.transcript.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn expired_permission_requests_do_not_block_fresh_approval() {
+        use std::time::Duration;
+        use vesper_agent::{ApprovalBroker, PermissionDecision, PermissionPort, ToolRegistry};
+        for visible in [false, true] {
+            let mut session = fresh_tui_session_for_trajectory_tests();
+            let (broker, receiver) = ApprovalBroker::channel();
+            session.approval_rx = receiver;
+            let registry = ToolRegistry::parity_default();
+            let definition = registry.definition("run_command").unwrap();
+            let context = vesper_agent::executor::uncancellable_context(
+                Vec::new(),
+                vesper_domain::SessionOperatingMode::Code,
+                vesper_domain::SessionPermissionMode::Ask,
+            );
+            let call = |name: &str| vesper_domain::ToolCall {
+                id: vesper_domain::ToolCallId::new(name).unwrap(),
+                tool_id: vesper_domain::ToolId::new(name).unwrap(),
+                arguments: serde_json::json!({}),
+                extensions: vesper_domain::ExtensionMap::default(),
+            };
+            let expired_call = call("expired_operation");
+            let mut expired = broker.authorize(&expired_call, definition, &context);
+            assert!(
+                tokio::time::timeout(Duration::from_millis(1), &mut expired)
+                    .await
+                    .is_err()
+            );
+            if visible {
+                drain_permission_request(&mut session);
+                assert_eq!(
+                    session.pending_approval.as_ref().unwrap().tool,
+                    "expired_operation"
+                );
+                session.mobile_approval_id = Some("expired-mobile-token".into());
+            }
+            drop(expired);
+            if visible {
+                drain_permission_request(&mut session);
+                assert!(session.pending_approval.is_none());
+                assert!(session.mobile_approval_id.is_none());
+                assert!(
+                    session
+                        .state
+                        .status
+                        .as_deref()
+                        .unwrap()
+                        .contains("no longer waiting")
+                );
+            }
+            let current_call = call("current_operation");
+            let mut current = broker.authorize(&current_call, definition, &context);
+            assert!(
+                tokio::time::timeout(Duration::from_millis(1), &mut current)
+                    .await
+                    .is_err()
+            );
+            drain_permission_request(&mut session);
+            assert_eq!(
+                session.pending_approval.as_ref().unwrap().tool,
+                "current_operation"
+            );
+            assert!(session.mobile_approval_id.is_none());
+            session.pending_approval.take().unwrap().approve();
+            assert_eq!(current.await, PermissionDecision::Allow);
+            drain_permission_request(&mut session);
+            assert!(session.pending_approval.is_none());
+        }
     }
 
     /// Builds a minimal TuiSession for the trajectory-drain tests. We don't

@@ -1,0 +1,22 @@
+{
+  "base": "0857f02b8dbdc2a867cdb93bf86a03559fb7555b",
+  "source_sha256": {
+    "crates/vesper-harness/src/release_executor.rs": "690607f1e36ba57f924519fae8a30309c8528abd98940acaaffa6cbec77511ff",
+    "crates/vesper-harness/src/release_recovery.rs": "187bd5493a16e11f79f14e009645d8af6c28f3aefcc611b554ab118e008e981a"
+  },
+  "logs": {
+    "/tmp/vesper-rrc-authorization-final.log": "3947cf3e025b03a9ee6b53c8d4c075296bf70a621adb1983e0c2b45e7e502a6f",
+    "/tmp/vesper-rrc-authorization-existing.log": "2a72aebb1164294e86bf34667a2e1dc48b442201357be6cb672d6c549c9bd4d3",
+    "/tmp/vesper-rrc-authorization-clippy.log": "bfd6bbfecfc63441e22cac5f35fb058e9095ac766f5a660739d2c77bb6b82aea"
+  },
+  "installed_version": "0.24.7",
+  "observation_utc": "2026-10-07T09:37:04Z",
+  "live_recovery_performed": false,
+  "released": false,
+  "verification": {
+    "focused_authorization_passed": 2,
+    "existing_permission_passed": 1,
+    "clippy": "passed",
+    "workspace_acceptance_msrv_hosted": "not rerun"
+  }
+}

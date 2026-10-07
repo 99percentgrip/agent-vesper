@@ -2,9 +2,11 @@
 
 ## Objective and status
 
+Subsequent scope: [the 2026-10-07 adversarial audit](2026-10-07-rrc-promotion-and-inventory-gap-audit.md) found and repairs five additional defects. This report's release and reverification receipts bind v0.24.7/source `0857f02b`; they do not certify the newer local changes.
+
 Audit all binding sections 1–36 and AC-01–AC-23 of the owning RRC PRD, repair confirmed gaps in autonomous recovery and completion, preserve provider neutrality and both-host behavior, then release the verified repair as the next unused patch. Alex authorized this expanded work after the successful immutable v0.24.6 closeout. Worktree: `/tmp/vesper-rrc-closeout-fix`, branch `repair/rrc-automatic-closeout`, base `a56f0ba76525bf4e7e288eefe2dff731cb120914`.
 
-Current status: confirmed repairs and expanded local regression gates passed; native release gates are pending. Hosted gates, new publication and final delivery remain pending. This report does not claim that every possible bug has been eliminated or certify full current PRD parity before the required evidence exists.
+Current status: confirmed repairs verified and v0.24.7 released at `0857f02b8dbdc2a867cdb93bf86a03559fb7555b`. All eight native local gates, 11 exact-commit prerequisite jobs, seven producing jobs, publication verification, current-main health, existing Registry PR delivery and explicit final response completed. The 36-section/23-criterion trace retains named-case scope and limitations; this is not a guarantee that every possible bug or live-model failure has been eliminated. Earlier pending statements below describe their intermediate source checkpoints.
 
 ## Methods and confirmed gaps
 
@@ -55,7 +57,7 @@ The repairs remove confirmed premature completion, false receipt reuse, excessiv
 
 ## Archived local receipts
 
-[Local and public protocol receipts](2026-10-06-rrc-autonomy-and-prd-audit-receipts.tar.gz), SHA-256 814ac1d90f30e41312ee8d407bd56cf77bf983c2e78d42f5960629be859c8ae7.
+[Local and public protocol receipts](2026-10-06-rrc-autonomy-and-prd-audit-receipts.tar.gz), SHA-256 42d4b1e66266191a7f3ebb59e73be1e39d14ad180276119ea1a055030e55b5a8.
 
 The prior epoch was Complete/Idle without an in-flight operation or owner. Scoped Cargo cleaning of only its harness/ACP/TUI products preserved the dependency cache and increased observed free disk from 124 GiB to 155 GiB; native reserve thresholds remain unchanged.
 
@@ -110,3 +112,34 @@ Sequential final-source local proof:
 - Native ACP rebuilt successfully; `vesper-rrc-version-source-acp-build.log`.
 
 All current required hosted, native full-gate and producing/registry/final-receipt evidence remains pending. Target stays 0.24.7; no second bump, moved tag, local installation or separate documentation push is authorized. Nearest harness/xtask contracts were updated; parent ownership, documentation indices and adapter policy remain unchanged because these repairs add no boundary or adapter behavior.
+
+## Final native release and delivery
+
+[Release v0.24.7](https://github.com/99percentgrip/agent-vesper/releases/tag/v0.24.7) is published at `0857f02b8dbdc2a867cdb93bf86a03559fb7555b`. Native RRC completed all eight local gates and waited for the complete 11-job exact-commit prerequisite matrix before creating the immutable tag. Canonical 37531129680, MSRV 37531129667, foundation 37531129660 and web-driver 37531129659 passed. Windows prepared conformance, both Linux targets, Intel macOS and Apple Silicon all passed. Intel macOS took nearly 58 minutes; the extended bounded matrix watch allowed it to settle without premature diagnosis or retry. Producer 37537909556 passed all seven jobs and published 16 assets, including the tested web-driver images and checksums.
+
+The attached owner then progressed through Published, post-release main-health refresh, existing [Registry PR #539](https://github.com/agentclientprotocol/registry/pull/539) update/readback, local report creation and explicit `Release v0.24.7 completed` response without another user prompt. The persisted ledger is Complete/Idle, owner PID absent, journal empty, and final receipt present. This run spent zero repair admissions and zero full-gate retries. It proves native successful release/closeout autonomy; failure-path repair effectiveness remains scoped to the executed regression, mutation, public-control and two-provider composition evidence above.
+
+[The native closeout report](release-v0.24.7-closeout.md) contains exact output digests, job IDs, transitions, assets and receipt. Independent readback confirmed main and the peeled tag both resolve to the released SHA, the existing PR remains open on `agent-vesper/v0.20.51`, and registry blob `54ce9686307d71f2973b2353cedb589579461c52` contains 0.24.7. Upstream merge remains maintainer-owned. No local installer ran. The earlier red matrices, failed preparation and attempts remain archived rather than relabeled as success.
+
+Final receipts and links are local-only documentation updates after publication. No additional commit/push/version or release was performed. JSON, local links, evidence hashes and whitespace were reviewed; no program suite was rerun for these report updates. Parent indices remain unchanged except the native evidence-index/PRD closeout links.
+
+The link review found 11 pre-existing references to unrelated local/untracked reports absent from the isolated candidate, including `2026-10-02-agent-process-status-check.md` in Alex’s checkout. Those references and unrelated user work were left untouched. Every added/changed report link resolves after URL decoding. The first broad link checker stopped at an existing reference; the baseline-aware changed-link check passed.
+
+## Requested reverification: 2026-10-07
+
+**Verdict: no remaining confirmed implementation gap against the binding RRC PRD was found in this recheck.** All 36 binding sections and all 23 acceptance criteria have current named-case evidence. A programmatic comparison against fresh executed harness output proved that all 100 unique cases in the requirement trace actually passed; none was missing, ignored or filtered out. This finding concerns the implemented and tested PRD scope.
+
+The earlier conversational answer conflated uncertain future live-model effectiveness with an unresolved required feature. PRD section 4 expressly excludes guaranteeing arbitrary repair, eliminating human intervention for ambiguous destructive operations and ensuring CI never flakes. Sections 14, 19 and 36 require bounded escalation or an evidence-backed stop. AC-16 expressly requires multiple provider fixtures; section 30 permits mocked outage evidence. Those boundaries do not establish an unimplemented PRD feature. Tests do not create a universal guarantee that every future failure can be repaired.
+
+Methods: reread binding sections 1–36 and AC-01–AC-23; inspected shared worker progression, mutation/repair admission, before-output retry, both host observation/delivery paths, GitHub evidence/rerun ports, immutable evidence and metrics storage; compared every traced source digest against released HEAD; compared each named case with executed results; reobserved all exact-commit GitHub workflows and main/tag identity. TUI and ACP use the shared harness controller/snapshot/delivery ports. Production RRC contains no concrete provider-name branch; adapter-specific retry policy arrives through normalized domain metadata.
+
+Fresh sequential commands used the existing task cache, `CARGO_BUILD_JOBS=1` and `RUST_TEST_THREADS=1`:
+
+- `cargo check --locked --workspace --all-targets`: passed.
+- `cargo test --locked -p vesper-harness --lib --all-features`: **375 passed, 0 failed, 6 ignored**, 178.62 seconds. All 100 required named cases are among the executed passes; the six unrelated ignored cases are not counted as passing proof.
+- `cargo xtask acceptance`: **127 exact cases passed**, 119457 ms.
+- `cargo xtask architecture`: **31 packages validated**.
+
+[Machine-readable reverification](2026-10-07-rrc-reverification.json) records all 100 observed passes, each section/criterion, exact source identity and log digests. The receipt archive includes the four fresh logs and that JSON. The v0.24.7 prerequisite and producing workflows remain green; main and the peeled tag still point to `0857f02b8dbdc2a867cdb93bf86a03559fb7555b`. The native completed ledger and explicit final response remain the live release/closeout evidence. No additional live model repair or external outage was induced in this recheck.
+
+Work products: this audit section, its requirement/evidence JSON, receipt archive and existing evidence-index/owning-PRD links. Source, workflows, installation, version, tag, release and upstream PR were not changed. Parent/nearest DOX contracts and child indices remain unchanged because this adds verification evidence within the existing audit owner. These report-only updates remain local. All new links, JSON and whitespace were checked.

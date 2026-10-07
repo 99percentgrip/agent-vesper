@@ -52,12 +52,141 @@ fn controlled_cargo_metadata_emits_valid_json() {
 
 #[test]
 fn acp_process_release_status_uses_governor_for_every_cargo_path() {
-    governed_release_process("/release patch");
+    governed_release_process("/release patch", false);
 }
 
 #[test]
 fn acp_natural_release_inherits_session_permission_and_governor() {
-    governed_release_process("Release this completed work with a patch version bump.");
+    governed_release_process(
+        "Release this completed work with a patch version bump.",
+        false,
+    );
+}
+
+#[test]
+fn acp_release_approval_keeps_owner_and_completes_cancellation() {
+    governed_release_process("/release patch", true);
+}
+
+#[test]
+fn acp_release_rejection_and_unadvertised_approval_finish_without_mutation() {
+    use vesper_harness::release_recovery::*;
+    for choice in ["reject-once", "allow-always", "invented-option"] {
+        let fixture = tempfile::tempdir().unwrap();
+        let workspace = fixture.path().join("workspace");
+        let state_root = fixture.path().join("release-state");
+        create_release_fixture(&workspace);
+        let identity = repository_identity_for_workspace(&workspace).unwrap();
+        let before = fs::read(workspace.join("Cargo.toml")).unwrap();
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        listener.set_nonblocking(true).unwrap();
+        let mut process = ProcessHarness::spawn_resource_governor_test_driver(
+            listener.local_addr().unwrap(),
+            [(
+                "AGENT_VESPER_RELEASE_ROOT",
+                state_root.display().to_string(),
+            )],
+        );
+        let session = process.initialize_and_new_session_in(&workspace);
+        // Keep the native default Ask; no fabricated approval or model call.
+        process.prompt(3, &session, "/release patch", "release-rejection");
+        answer_release_permission(&mut process, &session, choice);
+        let response = process.response(3);
+        assert!(response.get("error").is_none(), "{response}");
+        assert_eq!(support::terminal_count(process.transcript(), 3), 1);
+        let text = update_text(process.transcript());
+        assert!(text.contains("ACP client rejected permission"), "{text}");
+        assert!(text.contains("Release unfinished"), "{text}");
+        let record = ReleaseLedger::open(&state_root, &identity)
+            .unwrap()
+            .load()
+            .unwrap()
+            .unwrap();
+        assert_eq!(record.state, ReleaseRecoveryState::LocalVerification);
+        assert_eq!(record.liveness.state, ReleaseLivenessState::Failed);
+        assert!(record.failures.is_empty());
+        assert!(record.repair_attempts.is_empty());
+        assert!(record.mutation.in_flight_operation.is_none());
+        assert!(record.mutation.version_after.is_none());
+        assert!(!record.mutation.candidate_pushed && !record.mutation.tag_pushed);
+        process.finish();
+        assert_eq!(fs::read(workspace.join("Cargo.toml")).unwrap(), before);
+        assert!(
+            listener.accept().is_err(),
+            "authorization must not dispatch a provider"
+        );
+    }
+}
+
+#[test]
+fn acp_release_pending_approval_cancel_ignores_late_allow() {
+    use vesper_harness::release_recovery::*;
+    let fixture = tempfile::tempdir().unwrap();
+    let workspace = fixture.path().join("workspace");
+    let state_root = fixture.path().join("release-state");
+    create_release_fixture(&workspace);
+    let identity = repository_identity_for_workspace(&workspace).unwrap();
+    let before = fs::read(workspace.join("Cargo.toml")).unwrap();
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    listener.set_nonblocking(true).unwrap();
+    let mut process = ProcessHarness::spawn_resource_governor_test_driver(
+        listener.local_addr().unwrap(),
+        [(
+            "AGENT_VESPER_RELEASE_ROOT",
+            state_root.display().to_string(),
+        )],
+    );
+    let session = process.initialize_and_new_session_in(&workspace);
+    process.prompt(3, &session, "/release patch", "release-pending-cancel");
+    let pending = loop {
+        let message = process.next();
+        if message["method"] == "session/request_permission" {
+            break message;
+        }
+    };
+    process.send(json!({"jsonrpc":"2.0","method":"session/cancel","params":{"sessionId":session}}));
+    let response = process.response(3);
+    assert_eq!(response["result"]["stopReason"], "cancelled", "{response}");
+    assert_eq!(support::terminal_count(process.transcript(), 3), 1);
+    process.send(json!({"jsonrpc":"2.0","id":pending["id"],"result":{
+        "outcome":{"outcome":"selected","optionId":"allow-once"}
+    }}));
+    process.prompt(4, &session, "/release status", "release-after-late-allow");
+    assert!(process.response(4).get("error").is_none());
+    let record = ReleaseLedger::open(&state_root, &identity)
+        .unwrap()
+        .load()
+        .unwrap()
+        .unwrap();
+    assert_eq!(record.state, ReleaseRecoveryState::Cancelled);
+    assert!(record.mutation.version_after.is_none());
+    assert!(!record.mutation.candidate_pushed && !record.mutation.tag_pushed);
+    process.finish();
+    assert_eq!(fs::read(workspace.join("Cargo.toml")).unwrap(), before);
+    assert!(listener.accept().is_err());
+}
+
+fn answer_release_permission(process: &mut ProcessHarness, session: &str, choice: &str) {
+    loop {
+        let message = process.next();
+        if message["method"] != "session/request_permission" {
+            continue;
+        }
+        assert_eq!(message["params"]["sessionId"], session);
+        assert!(
+            message["params"]["toolCall"]["title"]
+                .as_str()
+                .unwrap()
+                .contains("release_controller")
+        );
+        let options = message["params"]["options"].as_array().unwrap();
+        assert!(options.iter().any(|o| o["optionId"] == "allow-once"));
+        assert!(!options.iter().any(|o| o["optionId"] == "allow-always"));
+        process.send(json!({"jsonrpc":"2.0","id":message["id"],"result":{
+            "outcome":{"outcome":"selected","optionId":choice}
+        }}));
+        return;
+    }
 }
 
 #[test]
@@ -188,7 +317,7 @@ fn acp_conflicting_published_target_returns_clarification_without_observing_old_
     assert!(listener.accept().is_err());
 }
 
-fn governed_release_process(request: &str) {
+fn governed_release_process(request: &str, ask: bool) {
     let fixture = tempfile::tempdir().expect("temporary ACP RRC fixture");
     let workspace = fixture.path().join("workspace");
     let release_root = fixture.path().join("release-state");
@@ -222,12 +351,18 @@ fn governed_release_process(request: &str) {
     // persisted session control; release composition must inherit that choice.
     process.send(json!({
         "jsonrpc":"2.0", "id":20, "method":"session/set_config_option",
-        "params":{"sessionId":session,"configId":"permission_mode","value":"bypass"}
+        "params":{"sessionId":session,"configId":"permission_mode","value":if ask {"ask"} else {"bypass"}}
     }));
     let configured = process.response(20);
     assert!(configured.get("error").is_none(), "{configured}");
 
     process.prompt(3, &session, request, "resource-governor-start");
+    if ask {
+        // Version preparation and the next local gate are distinct owned steps.
+        // Keep servicing protocol requests until both one-time approvals settle.
+        answer_release_permission(&mut process, &session, "allow-once");
+        answer_release_permission(&mut process, &session, "allow-once");
+    }
     // Admission streams progress but the request remains active to own RRC.
     // Concurrent status/cancel must still work while the Cargo gate is blocked.
     wait_for_receipt(&receipts, "gate");
