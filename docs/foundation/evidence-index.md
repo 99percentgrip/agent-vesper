@@ -1,9 +1,13 @@
 # Foundation Evidence Index
 
-## Windows PowerShell installer repair (native acceptance pending)
+## Windows PowerShell installer repair (hosted Windows passed; Windows 10 acceptance open)
 
-- [Execution report](windows-powershell-installer-repair.md) records the 5.1 failure,
-  offline regression and the CI/public-main Windows 10 acceptance still required.
+- [Repair report](windows-powershell-installer-repair.md) records the 5.1 failure,
+  native Windows 2025 Desktop/PowerShell 7+ offline regression, the real published
+  v0.24.7 installer smoke and the CI/public-main Windows 10 acceptance still required.
+- [Patch-release execution](windows-installer-v0.24.8-release-execution.md) retains
+  exact branch runs, the red-then-green macOS Intel test, the current
+  completed-objective binding and pending exact-main release prerequisites/publication.
 - [S5 updater requirement](../settings-and-update-prd.md) retains Windows acceptance as open.
 
 ## RRC autonomy and PRD audit (2026-10-06)

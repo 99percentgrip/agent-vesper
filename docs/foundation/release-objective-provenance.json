@@ -1,14 +1,14 @@
 {
   "version": 1,
-  "objective_id": "rrc-autonomy-prd-audit-20261006",
-  "objective_label": "RRC autonomous recovery and completion repair",
-  "variant_label": "Shared provider-neutral controller, both-host ownership and persisted repair watchdog",
-  "variant_id": "rrc-autonomy-current-source-20261006",
+  "objective_id": "windows-powershell-51-installer-hosted-20261007",
+  "objective_label": "Windows PowerShell 5.1 x86_64 installer compatibility and native verification",
+  "variant_label": "Verified Desktop 5.1 and PowerShell 7 installer, real prior-release Windows package smoke",
+  "variant_id": "windows-ps51-installer-hosted-20261007",
   "canonical_release_source": true,
   "supersedes": [],
-  "completed_at": "2026-10-06T20:20:32.528227+00:00",
+  "completed_at": "2026-10-07T08:18:27.823020+00:00",
   "evidence_reports": [
-    "docs/foundation/2026-10-06-rrc-autonomy-and-prd-audit.md",
-    "docs/foundation/2026-10-06-rrc-automatic-closeout-repair.md"
+    "docs/foundation/windows-powershell-installer-repair.md",
+    "docs/foundation/windows-installer-v0.24.8-release-execution.md"
   ]
 }
