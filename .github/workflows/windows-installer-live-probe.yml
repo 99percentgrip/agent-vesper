@@ -25,8 +25,18 @@ jobs:
           $tui = Join-Path $env:AGENT_VESPER_INSTALL_DIR 'agent-vesper-tui.cmd'
           foreach ($launcher in @($acp, $tui)) {
             if (-not (Test-Path -LiteralPath $launcher -PathType Leaf)) { throw "missing launcher: $launcher" }
-            $version = & $launcher --version
-            if ($LASTEXITCODE -ne 0 -or $version -notmatch '0\.24\.7') { throw "installed version failure for ${launcher}: $version" }
+            # ACP prints meta flags to stderr; capture both streams. Check for
+            # nonempty text explicitly: null -notmatch is not a sound assertion.
+            $previousPreference = $ErrorActionPreference
+            try {
+              $ErrorActionPreference = 'Continue'
+              $versionOutput = & $launcher --version 2>&1
+              $versionExit = $LASTEXITCODE
+            } finally {
+              $ErrorActionPreference = $previousPreference
+            }
+            $version = $versionOutput -join "`n"
+            if ($versionExit -ne 0 -or [string]::IsNullOrWhiteSpace($version) -or $version -notmatch '0\.24\.7') { throw "installed version failure for ${launcher}: exit $versionExit, text '$version'" }
             # ACP deliberately prints meta help to stderr to protect protocol stdout.
             # WinPS 5.1 treats native stderr as an error record under Stop.
             $previousPreference = $ErrorActionPreference
