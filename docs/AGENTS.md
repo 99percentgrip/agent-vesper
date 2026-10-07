@@ -23,6 +23,8 @@ Own durable project documentation and evidence-backed engineering records.
 
 - `README.md` is the documentation landing page, separating user guides from
   contributor references, specifications, and historical evidence.
+- Windows installer compatibility evidence and outstanding public-main/clean-device
+  acceptance live in `foundation/windows-powershell-installer-repair.md`.
 - `installation.md` owns user prerequisites, dependency setup, installation,
   updates, paths, troubleshooting, and the actual uninstall/data-removal behavior.
 - `skills.md` owns user-facing skill routing activation, per-project controls,

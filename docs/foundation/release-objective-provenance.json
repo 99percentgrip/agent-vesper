@@ -1,14 +1,19 @@
 {
   "version": 1,
-  "objective_id": "rrc-autonomy-prd-audit-20261006",
-  "objective_label": "RRC autonomous recovery and completion repair",
-  "variant_label": "Shared provider-neutral controller, both-host ownership and persisted repair watchdog",
-  "variant_id": "rrc-autonomy-current-source-20261006",
+  "objective_id": "rrc-native-permission-and-windows-installer-20261007",
+  "objective_label": "Native provider-neutral RRC permission, promotion and Windows installer repairs",
+  "variant_label": "Integrated RRC and preserved Windows PowerShell 5.1 installer candidate",
+  "variant_id": "rrc-permission-windows-integrated-20261007",
   "canonical_release_source": true,
-  "supersedes": [],
-  "completed_at": "2026-10-06T20:20:32.528227+00:00",
+  "supersedes": [
+    "windows-powershell-51-installer-hosted-20261007",
+    "windows-ps51-installer-hosted-20261007",
+    "rrc-autonomy-prd-audit-20261006"
+  ],
+  "completed_at": "2026-10-07T12:04:42.723331+00:00",
   "evidence_reports": [
-    "docs/foundation/2026-10-06-rrc-autonomy-and-prd-audit.md",
-    "docs/foundation/2026-10-06-rrc-automatic-closeout-repair.md"
+    "docs/foundation/windows-powershell-installer-repair.md",
+    "docs/foundation/windows-installer-v0.24.8-release-execution.md",
+    "docs/foundation/2026-10-07-rrc-native-permission-and-stop-repair.md"
   ]
 }

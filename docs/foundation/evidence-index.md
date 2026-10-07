@@ -8,6 +8,16 @@
 
 - [Execution report](2026-10-07-rrc-promotion-and-inventory-gap-audit.md) records newly reproduced proof/promotion and Git inventory defects, shared controller fixes, regression evidence and the unreleased source boundary. Earlier v0.24.7 verification does not certify these changes.
 
+## Windows PowerShell installer repair (hosted Windows passed; Windows 10 acceptance open)
+
+- [Repair report](windows-powershell-installer-repair.md) records the 5.1 failure,
+  native Windows 2025 Desktop/PowerShell 7+ offline regression, the real published
+  v0.24.7 installer smoke and the CI/public-main Windows 10 acceptance still required.
+- [Patch-release execution](windows-installer-v0.24.8-release-execution.md) retains
+  exact branch runs, the red-then-green macOS Intel test, the current
+  completed-objective binding and pending exact-main release prerequisites/publication.
+- [S5 updater requirement](../settings-and-update-prd.md) retains Windows acceptance as open.
+
 ## RRC autonomy and PRD audit (2026-10-06)
 
 - [Audit report](2026-10-06-rrc-autonomy-and-prd-audit.md) records the expanded autonomous, provider-neutral repair, confirmed polling/stagnation/completion gaps, v0.24.7 verification/publication/closeout and its scoped requirement trace. The newer local source and additional defects are covered by the further audit above.

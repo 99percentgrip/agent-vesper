@@ -45,3 +45,7 @@ Final integrated-source full local gates, exact-commit hosted matrices and publi
 ## Source and receipt binding
 
 [Evidence JSON](2026-10-07-rrc-native-permission-and-stop-repair-evidence.json) binds source snapshots, requirement observations and raw log digests. [Receipt archive](2026-10-07-rrc-native-permission-and-stop-repair-receipts.tar.gz) preserves successes, fixture failures and the pre-repair red regression. Earlier full-source results do not certify later TUI or installer integration.
+
+## Windows source integration
+
+Preserve Windows installer branch commit `57d5456e53391e6012fdab6f7c86bc70507e592f` as a merge parent, including PowerShell 5.1/TLS/checksum/host-version checks, its permanent native Windows CI fixture, and unique owned voice-policy temporary roots. Both evidence indexes retain their reports. Integrated provenance explicitly supersedes the cancelled unmutated objective; native admission must reconcile it without manual ledger or retry-budget changes. Full integrated local gates and exact-main hosted receipts are still pending.

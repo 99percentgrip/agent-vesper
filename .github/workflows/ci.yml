@@ -88,6 +88,18 @@ jobs:
           df -h / "$GITHUB_WORKSPACE"
           du -sh target || true
 
+  windows-installer:
+    runs-on: windows-2025
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+      - name: Offline install regression (Windows PowerShell 5.1 Desktop)
+        shell: cmd
+        run: powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\test_install_windows.ps1
+      - name: Offline install regression (PowerShell 7+)
+        shell: cmd
+        run: pwsh.exe -NoProfile -File scripts\test_install_windows.ps1
+
   supply-chain:
     runs-on: ubuntu-24.04
     timeout-minutes: 30

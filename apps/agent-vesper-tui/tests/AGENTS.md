@@ -66,6 +66,8 @@ Verify terminal interaction through the production TUI binary with isolated stat
   test and set it explicitly via `reset_flm_stt_verification_for_test` or
   `record_flm_stt_verification`; they never infer a prerequisite from the
   developer machine. No devices, no downloads, no NPU runtimes.
+  Each policy fixture owns a unique `tempfile::TempDir`; retain its guard until
+  all reads finish. Timestamp/PID names cannot isolate parallel native CI cases.
 
 - `voice_r20_default_capture.rs` (2026-09-23 R20 closure) pins the
   default-build capture contract in EVERY feature set (no

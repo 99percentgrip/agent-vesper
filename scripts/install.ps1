@@ -11,9 +11,20 @@ $ErrorActionPreference = "Stop"
 $repository = "99percentgrip/agent-vesper"
 $releaseBase = if ($env:AGENT_VESPER_RELEASE_BASE_URL) { $env:AGENT_VESPER_RELEASE_BASE_URL.TrimEnd("/") } else { "https://github.com/$repository/releases" }
 
-$architecture = [System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString()
-if ($architecture -ne "X64") {
-    throw "agent-vesper installer: unsupported Windows architecture: $architecture"
+if ([Environment]::OSVersion.Platform -ne [PlatformID]::Win32NT) {
+    throw "agent-vesper installer: Windows is required"
+}
+if (-not [Environment]::Is64BitOperatingSystem) {
+    throw "agent-vesper installer: 64-bit Windows is required"
+}
+# A 32-bit PowerShell process reports x86 in PROCESSOR_ARCHITECTURE; Windows
+# supplies the native architecture in PROCESSOR_ARCHITEW6432 in that case.
+$nativeArchitecture = if ($env:PROCESSOR_ARCHITEW6432) { $env:PROCESSOR_ARCHITEW6432 } else { $env:PROCESSOR_ARCHITECTURE }
+if (-not $nativeArchitecture) {
+    throw "agent-vesper installer: unable to determine Windows architecture"
+}
+if ($nativeArchitecture -ne "AMD64") {
+    throw "agent-vesper installer: unsupported Windows architecture: $nativeArchitecture (only x86_64 release packages are published)"
 }
 
 $asset = "agent-vesper-acp-windows-x86_64.zip"
@@ -28,14 +39,20 @@ $temporary = Join-Path ([System.IO.Path]::GetTempPath()) ("agent-vesper-" + [gui
 New-Item -ItemType Directory -Path $temporary | Out-Null
 
 try {
+    # Windows PowerShell 5.1 defaults to legacy TLS on some Windows images and
+    # Invoke-WebRequest otherwise prompts for IE first-run configuration.
+    [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
     $archive = Join-Path $temporary $asset
     $checksum = "$archive.sha256"
     Write-Host "Downloading $asset..."
-    Invoke-WebRequest -Uri "$downloadRoot/$asset" -OutFile $archive
-    Invoke-WebRequest -Uri "$downloadRoot/$asset.sha256" -OutFile $checksum
+    Invoke-WebRequest -UseBasicParsing -Uri "$downloadRoot/$asset" -OutFile $archive
+    Invoke-WebRequest -UseBasicParsing -Uri "$downloadRoot/$asset.sha256" -OutFile $checksum
 
-    $expected = ((Get-Content -Raw $checksum).Trim() -split "\s+")[0].ToUpperInvariant()
-    $actual = (Get-FileHash -Algorithm SHA256 $archive).Hash.ToUpperInvariant()
+    $expected = ((Get-Content -LiteralPath $checksum -Raw).Trim() -split "\s+")[0]
+    if ($expected -notmatch '^[a-fA-F0-9]{64}$') {
+        throw "agent-vesper installer: invalid SHA-256 checksum file"
+    }
+    $actual = (Get-FileHash -Algorithm SHA256 -LiteralPath $archive).Hash.ToUpperInvariant()
     if ($actual -ne $expected) {
         throw "agent-vesper installer: SHA-256 verification failed"
     }
@@ -45,8 +62,10 @@ try {
     if (-not (Test-Path -LiteralPath $source -PathType Container)) {
         throw "agent-vesper installer: archive did not contain agent-vesper-acp bundle"
     }
-    if (-not (Test-Path -LiteralPath (Join-Path $source "agent-vesper-tui.exe") -PathType Leaf)) {
-        throw "agent-vesper installer: archive did not contain agent-vesper-tui.exe"
+    foreach ($executable in @("agent-vesper-acp.exe", "agent-vesper-tui.exe")) {
+        if (-not (Test-Path -LiteralPath (Join-Path $source $executable) -PathType Leaf)) {
+            throw "agent-vesper installer: archive did not contain $executable"
+        }
     }
 
     New-Item -ItemType Directory -Path $InstallDir -Force | Out-Null
@@ -117,8 +136,21 @@ try {
         $env:Path = "$InstallDir;$env:Path"
     }
 
-    $installedVersion = & $launcher --version 2>&1
-    $tuiVersion = & $tuiLauncher --version 2>&1
+    # Windows PowerShell 5.1 promotes native stderr to a PowerShell error
+    # under Stop; use the process exit codes for the actual success decision.
+    $versionErrorPreference = $ErrorActionPreference
+    try {
+        $ErrorActionPreference = "Continue"
+        $installedVersion = & $launcher --version 2>&1
+        $acpExitCode = $LASTEXITCODE
+        $tuiVersion = & $tuiLauncher --version 2>&1
+        $tuiExitCode = $LASTEXITCODE
+    } finally {
+        $ErrorActionPreference = $versionErrorPreference
+    }
+    if ($acpExitCode -ne 0) { throw "agent-vesper installer: installed ACP version check failed (exit $acpExitCode)" }
+    if ($tuiExitCode -ne 0) { throw "agent-vesper installer: installed TUI version check failed (exit $tuiExitCode)" }
+    if (-not $installedVersion -or -not $tuiVersion) { throw "agent-vesper installer: installed executable returned no version" }
     Write-Host "Installed Agent Vesper (${installedVersion}; ${tuiVersion}):"
     Write-Host "  $launcher"
     Write-Host "  $tuiLauncher"

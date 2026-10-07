@@ -64,13 +64,13 @@ curl -fsSL https://raw.githubusercontent.com/99percentgrip/agent-vesper/main/scr
 
 ### Windows
 
-Run in PowerShell:
+Run in Windows PowerShell 5.1 (Desktop) or PowerShell 7+:
 
 ```powershell
 irm https://raw.githubusercontent.com/99percentgrip/agent-vesper/main/scripts/install.ps1 | iex
 ```
 
-The installer downloads the latest release and verifies its SHA-256 checksum. Reopen your terminal if the commands are not yet on PATH.
+The installer downloads the latest x86_64 release and verifies its SHA-256 checksum. Reopen your terminal if the commands are not yet on PATH. For a manually downloaded script or an execution-policy error, see [Windows installation and troubleshooting](docs/installation.md#windows-powershell).
 
 [Inspect the installers](scripts/) · [Manual download](https://github.com/99percentgrip/agent-vesper/releases/latest) · [Installation and troubleshooting](docs/installation.md)
 

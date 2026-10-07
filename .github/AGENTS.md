@@ -26,6 +26,9 @@ migration gates and disposable platform assumptions on hosts unavailable locally
   existing exact-commit release prerequisite therefore includes these gates; local
   evidence alone cannot authorize a release.
 
+- Canonical CI has a separate offline Windows installer job invoking
+  `scripts/test_install_windows.ps1` under native `powershell.exe` and `pwsh.exe`.
+  Synthetic packages never substitute for a real clean Windows release install.
 - Keep the five release-target families explicit in the matrix: linux-x86_64,
   linux-arm64, macos-intel, macos-apple-silicon, windows-x86_64.
 - Validation workflows must not call live providers or require credentials.
