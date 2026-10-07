@@ -1,0 +1,33 @@
+# Temporary PR-only real-release probe; delete after recording result.
+name: windows-installer-live-probe
+on:
+  pull_request:
+    paths:
+      - 'scripts/install.ps1'
+      - '.github/workflows/windows-installer-live-probe.yml'
+permissions:
+  contents: read
+jobs:
+  real-release-on-desktop:
+    if: github.event.pull_request.number == 41
+    runs-on: windows-2025
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+      - name: Install published release in private runner temp and execute real binaries
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $env:AGENT_VESPER_INSTALL_DIR = Join-Path $env:RUNNER_TEMP 'VesperLiveProbe'
+          $env:AGENT_VESPER_MEMORY_ROOT = Join-Path $env:RUNNER_TEMP 'VesperLiveMemory'
+          & .\scripts\install.ps1 -Version 0.24.7
+          $acp = Join-Path $env:AGENT_VESPER_INSTALL_DIR 'agent-vesper-acp.cmd'
+          $tui = Join-Path $env:AGENT_VESPER_INSTALL_DIR 'agent-vesper-tui.cmd'
+          foreach ($launcher in @($acp, $tui)) {
+            if (-not (Test-Path -LiteralPath $launcher -PathType Leaf)) { throw "missing launcher: $launcher" }
+            $version = & $launcher --version
+            if ($LASTEXITCODE -ne 0 -or $version -notmatch '0\.24\.7') { throw "installed version failure for ${launcher}: $version" }
+            $helpText = & $launcher --help
+            if ($LASTEXITCODE -ne 0 -or -not $helpText) { throw "installed help failure for $launcher" }
+            Write-Host "PASS real release: $launcher --version => $version; --help returned content"
+          }
