@@ -30,6 +30,13 @@ User directive: 2026-09-12 screenshot and workflow audit.
 
 ## Execution
 
+[Windows missing runtime package repair](foundation/2026-10-08-windows-missing-runtime-package-repair.md)
+records the failed user installation after v0.24.8. Its unbundled VC runtime
+imports were not covered by synthetic installer fixtures or a developer-equipped
+host. Static CRT linkage, preflight before replacement and real exact-candidate
+package checks are implemented; fresh hosted checks and the user-device retest
+remain required. Earlier installer receipts certify only their recorded scope.
+
 [Windows installer compatibility report](foundation/windows-powershell-installer-repair.md)
 tracks the public installation/S5 installer repair; native Windows Server 2025
 PowerShell 5.1/7+ CI and real v0.24.7 installer smoke passed, but clean Windows 10

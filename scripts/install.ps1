@@ -68,6 +68,26 @@ try {
         }
     }
 
+    # Validate the downloaded executables before replacing a working installation
+    # or seeding user data. A hosted machine's VC runtime must not hide a broken
+    # release package on a clean Windows computer.
+    $preflightErrorPreference = $ErrorActionPreference
+    try {
+        $ErrorActionPreference = "Continue"
+        foreach ($executable in @("agent-vesper-acp.exe", "agent-vesper-tui.exe")) {
+            $preflightVersion = & (Join-Path $source $executable) --version 2>&1
+            $preflightExitCode = $LASTEXITCODE
+            if ($preflightExitCode -eq -1073741515) {
+                throw "agent-vesper installer: downloaded $executable cannot start (0xC0000135: required DLL missing). Existing installation was preserved. This release package requires repair."
+            }
+            if ($preflightExitCode -ne 0 -or -not $preflightVersion) {
+                throw "agent-vesper installer: downloaded $executable version preflight failed (exit $preflightExitCode). Existing installation was preserved."
+            }
+        }
+    } finally {
+        $ErrorActionPreference = $preflightErrorPreference
+    }
+
     New-Item -ItemType Directory -Path $InstallDir -Force | Out-Null
     $bundle = Join-Path $InstallDir "agent-vesper-acp.bundle"
     # Preserve user state sharing the bundle root; replace only owned payloads.

@@ -1094,6 +1094,11 @@ reset, stashed or mutated by this process.
 
 ## 37. Current Implementation Status
 
+[Windows missing runtime package repair](foundation/2026-10-08-windows-missing-runtime-package-repair.md)
+records the subsequent failed user-device install and unbundled runtime imports.
+The corrective v0.24.9 epoch was cancelled before push/tag to incorporate that
+repair. Prior green hosted checks did not certify a clean Windows laptop.
+
 [Release v0.24.8 closeout](foundation/release-v0.24.8-closeout.md) binds the
 integrated permission, promotion, resource admission, cancellation and Windows
 installer changes to `9fada0cd06714ba1e754b332b5d44b39d3d9f373`: all eight native

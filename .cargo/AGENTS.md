@@ -13,7 +13,9 @@ Own repository-local Cargo aliases and dependency-resolution behavior.
   contents switch the `x86_64-pc-windows-msvc` linker to the self-contained
   `rust-lld` (`lld-link` flavor) so the Windows CI matrix links 3–5× faster
   than MSVC `link.exe`. Target-scoped config never affects Linux/macOS
-  builds.
+  builds. Windows core executables also use `+crt-static`; published packages
+  must not depend on a separately installed Visual C++ runtime. Optional voice
+  libraries remain loaded only through their feature setup ports.
 
 ## Verification
 

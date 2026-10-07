@@ -1,5 +1,7 @@
 # Foundation Evidence Index
 
+- [Windows missing runtime package repair](2026-10-08-windows-missing-runtime-package-repair.md) — user-reported 0xC0000135; published package depends on unbundled VCRUNTIME140; static CRT and real-package gate added, hosted proof pending.
+
 - [RRC publication observation recovery](2026-10-07-rrc-publication-observation-recovery.md) — persisted bounded read recovery, cumulative watch deadline and unchanged tagged-epoch admission; current-source release pending.
 - [Release v0.24.8 closeout](release-v0.24.8-closeout.md) — eight local gates, all twelve prerequisite jobs, producing workflow/assets and existing Registry PR delivery; live read timeout retained.
 

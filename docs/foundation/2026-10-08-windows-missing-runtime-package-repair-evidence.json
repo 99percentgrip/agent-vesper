@@ -1,0 +1,41 @@
+{
+  "version": 1,
+  "observed_at": "2026-10-07T17:14:13.926742+00:00",
+  "parent": "c3d20cd832003780847109775f02810e22fc65d3",
+  "scope": "Published-package red audit plus local parser/policy checks; native Windows compiled-package and user-device evidence pending",
+  "screenshot_sha256": "11b3134cfacfbcb3648df9387d859543a530fdf9f135f0caa6edbf3c2d73238c",
+  "source_sha256": {
+    ".cargo/config.toml": "01c7e2d1de73aed7fa5ce1d99993369d5a26ecb4ee5de028759596a078533aaa",
+    ".github/workflows/ci.yml": "2e486255aa6bd20f0b97ffadc1daf8449325f5785bbbe66c9c3af40ce50d2bf4",
+    ".github/workflows/release.yml": "8128d86346400589b042daa007013fcb5b1dca2e167fea29036b38371f298e47",
+    "scripts/install.ps1": "d6e77a30a0d97af6aabc676f32680ff8f5711c3dcd5174013e4baa9bf5339c26",
+    "scripts/test_install_windows.ps1": "e506ef2538ff7ef726c027046ab8b918e88e482521947a3e23cc9dc2a15bd61c",
+    "scripts/windows_package_audit.py": "94278a5d249db59439b4401470a252014e74a784830e85e26d71a073a6135b36",
+    "scripts/test_windows_package_audit.py": "5aee00e9aadced6d43a0f909a60e90722b5ced117a806cf19ae466707efede6b",
+    "scripts/test_install_windows_release.ps1": "e45ddb169445738229723e40ea108d8d644b60d5997a614dafb8b041dfbbff55"
+  },
+  "receipt_sha256": {
+    "vesper-windows-runtime-package-red.log": "b90d4bcbfe4c13f90251a5315553205b8125f1e618e3dbbffd580ea21ad4f28a",
+    "vesper-windows-runtime-parser-tests.log": "e586fc0f3bb2a05f4c80f07d1b4c6171e830592f6c7aaf70d4af3b0aa3ebd072",
+    "vesper-windows-runtime-release-policy-tests.log": "1a902fd4c537c33c9c15041b84a9ad5661cfe31a3f4d21f81c9f7ae7a631eec6",
+    "vesper-windows-runtime-cancelled-prerelease.json": "94417b1b0139c1670ea8d47fbf7af9af4b5c4596a63ec5a5e263864b58aadc78",
+    "vesper-rrc-v0249-safe-host-artifact-relocation.json": "1852c85a075e318eeb83dfbb6a26b261a2c5b9f82f24d31ad04c644444869b18"
+  },
+  "archive_sha256": "d5d0ae0f03b72e8d4ea5463b9cd81d7b7ec2ffb4c854f1593c1168e399867d17",
+  "checks": {
+    "pe_parser_and_policy": {
+      "passed": 7,
+      "failed": 0
+    },
+    "release_prerequisite_policy": {
+      "passed": 10,
+      "failed": 0
+    },
+    "published_v0248_runtime_audit": "failed as expected; VCRUNTIME140.dll imported and not bundled",
+    "objdump_agreement": "all four executable import sets agree",
+    "native_windows_rebuild": "not run locally; hosted gate required",
+    "PowerShell_51_7_preflight_regression": "not run locally; no PowerShell installed",
+    "clean_user_device_retest": "pending",
+    "v0249_publication": "not performed; prior epoch cancelled before push/tag"
+  }
+}

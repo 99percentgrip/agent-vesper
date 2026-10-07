@@ -131,3 +131,13 @@ with the cumulative-watch fix. Its SHA-256 is `586470c932d7ebe77f7c0ffdb1cdb0c7a
 The [raw receipt archive](2026-10-07-rrc-publication-observation-recovery-receipts.tar.gz)
 preserves red, intermediate and final scopes, including the earlier Clippy failure.
 Native exact-version gates and hosted corrective publication remain pending.
+
+## Subsequent user-device failure
+
+Alex reported Windows installer failure with native exit -1073741515
+(0xC0000135). The v0.24.9 native epoch was cancelled before push/tag after its
+version-preparation gate passed, to incorporate the
+[Windows runtime packaging repair](2026-10-08-windows-missing-runtime-package-repair.md).
+The published v0.24.8 imports unbundled VCRUNTIME140.dll; earlier hosted success
+did not certify the user device. Publication-recovery fixes remain committed
+and locally verified, with the integrated corrective candidate still required.

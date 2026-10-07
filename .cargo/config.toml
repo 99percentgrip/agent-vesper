@@ -15,3 +15,6 @@ incompatible-rust-versions = "fallback"
 # MSVC triple, so no explicit `linker-flavor` is needed.
 [target.x86_64-pc-windows-msvc]
 linker = "rust-lld"
+# Core release executables must start on Windows without a separately installed
+# Visual C++ redistributable. Optional voice runtimes remain dynamically loaded.
+rustflags = ["-C", "target-feature=+crt-static"]

@@ -32,6 +32,12 @@ with each release. The read-only release prerequisite helper also lives here.
   powershell.exe (Desktop 5.1) and pwsh.exe (7+); tests both invocation forms,
   SHA-256 mismatch/invalid failure, unsupported and simulated WOW64 metadata,
   and installed launcher version checks. A real release/laptop test remains required.
+- `windows_package_audit.py` reads normal/delay x86_64 PE imports for all four
+  release executables and refuses external VC/CRT runtime dependencies;
+  `test_windows_package_audit.py` owns offline parser/refusal regressions.
+- `test_install_windows_release.ps1` exercises the exact-candidate shipping
+  executables through direct and piped installers in private state under both
+  PowerShell hosts; it does not use synthetic hosts or call providers.
 - `install.ps1` — Windows installer. Downloads the
   `agent-vesper-acp-windows-x86_64.zip` release, verifies SHA-256, installs a
   `.cmd` launchers under `%LOCALAPPDATA%\Programs\AgentVesper`, and adds that
@@ -73,6 +79,9 @@ with each release. The read-only release prerequisite helper also lives here.
 - Uninstallers never remove provider credentials. OS-keyring entries and the
   private-vault fallback are outside the installer-owned artifact set.
 - The installers call both binaries with `--version` to confirm success.
+  Windows first validates downloaded hosts before replacing payloads or seeding
+  user state. A 0xC0000135 loader failure names the missing-DLL class and preserves
+  the existing installation; it must never be reported as successful setup.
 - Complete packages include the native `sandbox_init` supervisor beside the host
   binaries (inert off Linux), replaced as an installer-owned payload.
 - Complete packages include `web-driver/` (archive, checksum, immutable ID).
@@ -102,6 +111,9 @@ with each release. The read-only release prerequisite helper also lives here.
 ## Verification
 
 - `python3 scripts/test_release_gate.py` verifies the publishing workflow gate.
+- `python3 scripts/test_windows_package_audit.py` verifies the PE import audit.
+- Pre-tag Windows CI runs the actual release-package audit and real installer
+  acceptance under PowerShell 5.1 and 7; publication repeats the staged audit.
 
 - `sh scripts/test_install_upgrade.sh` verifies payload replacement while
   preserving cognition contents/inode, voice state, and unrelated user files.

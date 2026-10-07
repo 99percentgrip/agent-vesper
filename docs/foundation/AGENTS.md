@@ -6,6 +6,10 @@ Own evidence and decisions that close the pre-workspace blockers identified by r
 
 ## Ownership
 
+- `2026-10-08-windows-missing-runtime-package-repair.md` owns the user-reported
+  0xC0000135 install failure, published-package dependency audit, static CRT
+  repair, fail-before-replacement preflight and exact-candidate hosted gates.
+
 - `2026-10-07-rrc-publication-observation-recovery.md` owns the real v0.24.8
   publication-read timeout, persisted bounded automatic observation recovery,
   cumulative active-watch deadline, same-tagged-request admission, red/green regressions and corrective release scope.

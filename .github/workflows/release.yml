@@ -157,6 +157,8 @@ jobs:
           Copy-Item "target/${{ matrix.target }}/release/vesper-web-fetch.exe" (Join-Path $staging "vesper-web-fetch.exe")
           Copy-Item "target/${{ matrix.target }}/release/sandbox_init.exe" (Join-Path $staging "sandbox_init.exe")
           Copy-Item -Recurse skills (Join-Path $staging "skills")
+          python scripts/windows_package_audit.py $staging
+          if ($LASTEXITCODE -ne 0) { throw "Windows release package imports an external VC runtime" }
           $archive = Join-Path $assets "${{ matrix.asset }}"
           Compress-Archive -Path $staging -DestinationPath $archive -Force
           $hash = (Get-FileHash -Algorithm SHA256 $archive).Hash.ToLowerInvariant()

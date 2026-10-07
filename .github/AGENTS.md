@@ -28,7 +28,12 @@ migration gates and disposable platform assumptions on hosts unavailable locally
 
 - Canonical CI has a separate offline Windows installer job invoking
   `scripts/test_install_windows.ps1` under native `powershell.exe` and `pwsh.exe`.
-  Synthetic packages never substitute for a real clean Windows release install.
+  The same pre-tag job also builds all four exact-candidate release executables
+  with shipping features, audits normal/delay PE imports to reject external VC/CRT
+  runtime dependencies, and installs the real candidate in private state under both
+  PowerShell hosts. Publishing repeats the import audit on the staged Windows
+  package. Synthetic packages and developer-equipped runners never substitute
+  for a real clean Windows release install.
 - Keep the five release-target families explicit in the matrix: linux-x86_64,
   linux-arm64, macos-intel, macos-apple-silicon, windows-x86_64.
 - Validation workflows must not call live providers or require credentials.

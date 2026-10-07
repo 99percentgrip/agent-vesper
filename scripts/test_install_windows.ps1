@@ -74,6 +74,28 @@ try {
     $acp = Join-Path $env:AGENT_VESPER_INSTALL_DIR 'agent-vesper-acp.cmd'
     $tui = Join-Path $env:AGENT_VESPER_INSTALL_DIR 'agent-vesper-tui.cmd'
     if ((& $acp --version) -ne 'fixture 0.0.0' -or (& $tui --version) -ne 'fixture 0.0.0') { throw 'launchers failed' }
+
+    # A missing-DLL loader exit must be diagnosed before replacing installed
+    # payloads or touching user memory. A fixture returns the actual NTSTATUS.
+    $installedExe = Join-Path $env:AGENT_VESPER_INSTALL_DIR 'agent-vesper-acp.bundle/agent-vesper-acp.exe'
+    $installedHash = (Get-FileHash -Algorithm SHA256 $installedExe).Hash
+    $brokenSource = Join-Path $root 'broken.cs'
+    $brokenExe = Join-Path $root 'broken.exe'
+    Set-Content -LiteralPath $brokenSource -Value 'public class Broken { public static int Main() { return unchecked((int)0xC0000135); } }'
+    & $compiler /nologo "/out:$brokenExe" $brokenSource
+    if ($LASTEXITCODE -ne 0) { throw 'broken fixture compilation failed' }
+    Copy-Item -LiteralPath $brokenExe -Destination (Join-Path $package 'agent-vesper-acp.exe') -Force
+    Compress-Archive -Path $package -DestinationPath $archive -Force
+    $brokenSha = (Get-FileHash -Algorithm SHA256 $archive).Hash
+    Set-Content -LiteralPath "$archive.sha256" -Value "$brokenSha  $asset"
+    Expect-Failure { & $installer } '0xC0000135: required DLL missing'
+    if ((Get-FileHash -Algorithm SHA256 $installedExe).Hash -ne $installedHash) { throw 'failed preflight replaced working executable' }
+    if (Test-Path $env:AGENT_VESPER_MEMORY_ROOT) { throw 'failed preflight wrote user memory' }
+    Copy-Item -LiteralPath $exe -Destination (Join-Path $package 'agent-vesper-acp.exe') -Force
+    Compress-Archive -Path $package -DestinationPath $archive -Force
+    $sha = (Get-FileHash -Algorithm SHA256 $archive).Hash
+    Set-Content -LiteralPath "$archive.sha256" -Value "$sha  $asset"
+
     Get-Content -LiteralPath $installer -Raw | Invoke-Expression | Out-Null
     if ((& $acp --version) -ne 'fixture 0.0.0' -or (& $tui --version) -ne 'fixture 0.0.0') { throw 'piped install failed' }
 
