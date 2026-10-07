@@ -31,8 +31,9 @@ User directive: 2026-09-12 screenshot and workflow audit.
 ## Execution
 
 [Windows installer compatibility report](foundation/windows-powershell-installer-repair.md)
-tracks the public installation/S5 installer repair; Windows CI and clean-machine
-acceptance remain open, not completion proof.
+tracks the public installation/S5 installer repair; native Windows Server 2025
+PowerShell 5.1/7+ CI and real v0.24.7 installer smoke passed, but clean Windows 10
+acceptance and the changed-source release gates remain open, not completion proof.
 
 [Execution report](foundation/settings-and-update-execution.md) owns exact commands,
 results, deviations and unexecuted platform acceptance. A requirement is not marked

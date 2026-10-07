@@ -643,31 +643,21 @@ fn unconfigured_scope_stays_fully_disabled_and_defaults_are_cpu() {
 
 /// Bounded temporary workspace for scope round trips.
 struct TempWorkspace {
-    root: std::path::PathBuf,
+    root: tempfile::TempDir,
 }
 
 impl TempWorkspace {
     fn with_scope(toml: &str) -> Self {
-        let root = std::env::temp_dir().join(format!(
-            "vesper-voice-exec-{}-{}",
-            std::process::id(),
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_nanos()
-        ));
-        std::fs::create_dir_all(root.join(".agent-vesper")).unwrap();
-        std::fs::write(root.join(".agent-vesper/config.toml"), toml).unwrap();
+        let root = tempfile::Builder::new()
+            .prefix("vesper-voice-exec-")
+            .tempdir()
+            .unwrap();
+        std::fs::create_dir_all(root.path().join(".agent-vesper")).unwrap();
+        std::fs::write(root.path().join(".agent-vesper/config.toml"), toml).unwrap();
         Self { root }
     }
 
     fn root(&self) -> &std::path::Path {
-        &self.root
-    }
-}
-
-impl Drop for TempWorkspace {
-    fn drop(&mut self) {
-        let _ = std::fs::remove_dir_all(&self.root);
+        self.root.path()
     }
 }
