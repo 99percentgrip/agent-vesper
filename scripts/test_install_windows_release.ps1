@@ -33,11 +33,22 @@ try {
     Get-Content -LiteralPath $installer -Raw | Invoke-Expression | Out-Null
     foreach ($hostName in @('agent-vesper-acp', 'agent-vesper-tui')) {
         $launcher = Join-Path $env:AGENT_VESPER_INSTALL_DIR "$hostName.cmd"
-        $version = & $launcher --version
-        if ($LASTEXITCODE -ne 0 -or -not $version) { throw "$hostName --version failed" }
-        & $launcher --help | Out-Null
-        if ($LASTEXITCODE -ne 0) { throw "$hostName --help failed" }
-        Write-Host "PASS real exact-candidate Windows release: $version"
+        # ACP reserves stdout for protocol traffic and prints CLI metadata on
+        # stderr. Desktop 5.1 wraps redirected stderr as NativeCommandError;
+        # startup success is determined by the real exit code plus output.
+        $checkPreference = $ErrorActionPreference
+        try {
+            $ErrorActionPreference = 'Continue'
+            $observedVersion = @(& $launcher --version 2>&1 | ForEach-Object { "$_" })
+            $versionExit = $LASTEXITCODE
+            & $launcher --help 2>&1 | Out-Null
+            $helpExit = $LASTEXITCODE
+        } finally {
+            $ErrorActionPreference = $checkPreference
+        }
+        if ($versionExit -ne 0 -or -not $observedVersion) { throw "$hostName --version failed (exit $versionExit)" }
+        if ($helpExit -ne 0) { throw "$hostName --help failed (exit $helpExit)" }
+        Write-Host "PASS real exact-candidate Windows release: $observedVersion"
     }
 } finally {
     [Environment]::SetEnvironmentVariable('Path', $oldUserPath, 'User')

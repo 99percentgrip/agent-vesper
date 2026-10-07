@@ -45,7 +45,9 @@ jobs:
       - name: Install pinned Rust toolchain
         run: rustup toolchain install 1.95.0 --profile minimal --component clippy,rustfmt
       - name: Verify release prerequisite policy
-        run: python3 scripts/test_release_gate.py
+        run: |
+          python3 scripts/test_release_gate.py
+          python3 .github/test_prepare_linux_apt.py
       - name: Verify workspace
         run: cargo xtask verify
       - name: Completion assurance mutation gate

@@ -98,3 +98,7 @@ publication and registry/report closeout are required before release completion.
 Alex's device retest remains separate and cannot be fabricated by a hosted runner.
 The v0.24.8 immutable assets are not replaced. No local installation is authorized.
 Neither this repair nor old green checks establish universal bug-free RRC parity.
+
+## Subsequent exact-candidate hosted result
+
+The first v0.24.9 candidate c076ebc7 completed all eight native gates. Hosted Windows shipping compilation and the CRT import audit passed; both offline PowerShell host regressions passed. Actual Desktop 5.1 installation succeeded, then the real-package check incorrectly required stdout although ACP metadata uses stderr. The real PowerShell 7 body was skipped. The complete prerequisite matrix settled nine passed / three failed, including two Linux dependency acquisition failures; no tag was created. The [causal diagnosis follow-up](2026-10-08-rrc-ci-causal-diagnosis-repair.md) preserves the native stop and integrates the check/setup corrections before any release. The laptop retest remains open.

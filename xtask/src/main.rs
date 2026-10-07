@@ -2343,6 +2343,21 @@ fn acceptance_verify() -> Result<(), String> {
         (
             "vesper-harness",
             &["--lib"],
+            "release_recovery::tests::settled_windows_metadata_cannot_hide_version_assertion",
+        ),
+        (
+            "vesper-harness",
+            &["--lib"],
+            "release_recovery::tests::settled_dependency_download_precedes_downstream_missing_binary_panic",
+        ),
+        (
+            "vesper-harness",
+            &["--lib"],
+            "release_recovery::tests::settled_package_index_timeout_retains_observed_setup_context",
+        ),
+        (
+            "vesper-harness",
+            &["--lib"],
             "release_recovery::tests::remote_operation_cancellation_is_not_local_user_cancellation",
         ),
         (

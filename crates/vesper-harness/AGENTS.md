@@ -136,7 +136,13 @@ Z.ai and Playwright MCP server descriptors.
   argument lines cannot hide the actual diagnostic. Unknown text stays Unknown
   despite an OS label; concrete missing-package/version messages are dependency
   failures. Remote operation cancellation remains failed/uncertain CI evidence,
-  not a local user-cancelled epoch. GitHub account payment/spending restrictions
+  not a local user-cancelled epoch.
+  Runtime CLI version/help assertions and explicit APT fetch failures must precede
+  runner metadata and downstream missing-binary panics. A killed APT setup may
+  retain bounded observed dependency/mirror/fetch context from the same step;
+  command echoes, earlier steps and generic timeouts never establish that cause.
+  Ordinary runner provisioning text is not an infrastructure failure.
+  GitHub account payment/spending restrictions
   require owner action: classify as credential/permission failures and escalate
   without model source repair, outage claims or automatic retry.
   Direct executor and continuous worker honor this directive before source repair,

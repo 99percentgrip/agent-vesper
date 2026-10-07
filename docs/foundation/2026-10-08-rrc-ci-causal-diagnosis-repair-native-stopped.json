@@ -1,0 +1,1036 @@
+{
+  "cancelled_from": null,
+  "consecutive_stagnant_actions": 0,
+  "created_at": "2026-10-07T17:16:10.168004458Z",
+  "current_main": null,
+  "epoch_id": "20261007T171610.167959574Z-7c47e92f2e04",
+  "external_block": null,
+  "failures": [
+    {
+      "attempt": 1,
+      "causal_excerpt": "2026-10-07T19:08:44.4301640Z \n2026-10-07T19:08:44.4301864Z thread 'bubblewrap_limits_workspace_write_scope' (54322) panicked at tests/linux_bwrap.rs:75:33:\n2026-10-07T19:08:44.4302516Z called `Result::unwrap()` on an `Err` value: Custom { kind: NotFound, error: \"required Bubblewrap unavailable: No such file or directory (os error 2)\" }\n2026-10-07T19:08:44.4303076Z note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace\n2026-10-07T19:08:44.4303303Z ",
+      "class": "test_regression",
+      "confidence": "strongly_supported",
+      "exists_on_last_green": null,
+      "fingerprint": "bea4a813e38aefeec64b8b171054a3438667f028ae0ddc66f86c0fcc8c15735d",
+      "job_id": 112956102164,
+      "job_name": "linux-x86_64",
+      "observed_at": "2026-10-07T19:44:26.182574769Z",
+      "other_platforms_passed": true,
+      "platform": "ubuntu-24.04",
+      "related_source_touched": null,
+      "run_id": 37669161802,
+      "source_commit": "c076ebc7bad1fb39c1675ec4ddcecf75d0e44c1f",
+      "step_name": "Run Linux sandbox conformance",
+      "workflow_id": 324058986,
+      "workflow_name": "five-target-foundation"
+    },
+    {
+      "attempt": 1,
+      "causal_excerpt": "﻿2026-10-07T18:44:43.7830144Z Current runner version: '2.337.0'\n2026-10-07T18:44:43.7965536Z ##[group]Runner Image Provisioner\n2026-10-07T18:44:43.7966523Z Hosted Compute Agent\n2026-10-07T18:44:43.7967115Z Version: 20260901.588",
+      "class": "runner_infrastructure_failure",
+      "confidence": "strongly_supported",
+      "exists_on_last_green": null,
+      "fingerprint": "a0ecab5484375b5af98373b8ccb793da4bb2ff6582d3b017527b9a909df2a578",
+      "job_id": 112956101737,
+      "job_name": "windows-installer",
+      "observed_at": "2026-10-07T19:44:31.107694355Z",
+      "other_platforms_passed": true,
+      "platform": "windows-2025",
+      "related_source_touched": null,
+      "run_id": 37669161700,
+      "source_commit": "c076ebc7bad1fb39c1675ec4ddcecf75d0e44c1f",
+      "step_name": "Real release install (Windows PowerShell 5.1 Desktop)",
+      "workflow_id": 324058982,
+      "workflow_name": "pull-request-validation"
+    },
+    {
+      "attempt": 1,
+      "causal_excerpt": "2026-10-07T18:51:00.2288743Z Get:5 https://archive.ubuntu.com/ubuntu noble-security InRelease [126 kB]\n2026-10-07T18:58:51.9910203Z ##[error]The action 'Native browser feedback continuation' has timed out after 8 minutes.\n2026-10-07T18:58:52.0024530Z Post job cleanup.\n2026-10-07T18:58:52.0711798Z [command]/usr/bin/git version\n2026-10-07T18:58:52.0745630Z git version 2.55.0",
+      "class": "timeout",
+      "confidence": "tentative",
+      "exists_on_last_green": null,
+      "fingerprint": "43546103674c1c3b955158ef73dd145998c68639a6045f40e27e8e181a1ed592",
+      "job_id": 112956101712,
+      "job_name": "Contained browser linux-x86_64",
+      "observed_at": "2026-10-07T19:44:37.147455106Z",
+      "other_platforms_passed": true,
+      "platform": "ubuntu-24.04",
+      "related_source_touched": null,
+      "run_id": 37669161667,
+      "source_commit": "c076ebc7bad1fb39c1675ec4ddcecf75d0e44c1f",
+      "step_name": "Native browser feedback continuation",
+      "workflow_id": 351737017,
+      "workflow_name": "web-driver"
+    }
+  ],
+  "last_green_release_commit": null,
+  "last_progress_at": "2026-10-07T19:44:18.214572928Z",
+  "liveness": {
+    "detail": "",
+    "observed_at": null,
+    "operation": "",
+    "owner_pid": null,
+    "state": "idle"
+  },
+  "metrics": {
+    "ci_wait_millis": 3200000,
+    "model_active_millis": 0,
+    "repeated_fingerprints_blocked": 0,
+    "retries_rejected": 0,
+    "speculative_reruns_prevented": 0
+  },
+  "mutation": {
+    "base_sha": "7c47e92f2e0420dc14fa3bc705dd3bbe9be1402c",
+    "candidate_committed": true,
+    "candidate_push_ref": "origin/main@c076ebc7bad1fb39c1675ec4ddcecf75d0e44c1f",
+    "candidate_pushed": true,
+    "canonical_release_source": true,
+    "closeout_receipt": null,
+    "closeout_registry": null,
+    "final_candidate_commit": "c076ebc7bad1fb39c1675ec4ddcecf75d0e44c1f",
+    "in_flight_operation": null,
+    "intended_commits": [],
+    "intended_diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "local_gates": [
+      {
+        "command": "cargo check --workspace --all-targets",
+        "evidence_ref": "local:version-preparation",
+        "name": "version-preparation",
+        "state": "succeeded"
+      },
+      {
+        "command": "cargo xtask verify",
+        "evidence_ref": "local:workspace-verify:05be11e0e97e5ece6e0b7adb8fb769814259f8d3735a65cdb8192d792fd81943",
+        "name": "workspace-verify",
+        "state": "succeeded"
+      },
+      {
+        "command": "cargo xtask acceptance",
+        "evidence_ref": "local:acceptance:40ddb41af8656877a33abad8499a6e89844409822f8d4ebc9f388be9f010b4f7",
+        "name": "acceptance",
+        "state": "succeeded"
+      },
+      {
+        "command": "cargo xtask architecture",
+        "evidence_ref": "local:architecture:c0e0aebe9b7a8443b26cdb032c4570c955b9dc2cbb395ecb23471f7b441fe176",
+        "name": "architecture",
+        "state": "succeeded"
+      },
+      {
+        "command": "cargo xtask msrv",
+        "evidence_ref": "local:msrv:c955b4fbfb5e310a6f847f95dd6d4dbea254f954049003e6a9c4c44bbcae3cd7",
+        "name": "msrv",
+        "state": "succeeded"
+      },
+      {
+        "command": "cargo deny --all-features check",
+        "evidence_ref": "local:supply-chain-policy:f1a0fca39d4280363937aabd77783990ea6480bd9ca257816de3b68fc8efa845",
+        "name": "supply-chain-policy",
+        "state": "succeeded"
+      },
+      {
+        "command": "cargo audit",
+        "evidence_ref": "local:advisories:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "name": "advisories",
+        "state": "succeeded"
+      },
+      {
+        "command": "cargo build --locked --release --package agent-vesper-acp --package agent-vesper-tui --package vesper-web-fetch --package vesper-sandbox --features agent-vesper-acp/docker,agent-vesper-tui/docker,agent-vesper-acp/swarm,agent-vesper-tui/swarm,agent-vesper-acp/bridge,agent-vesper-tui/bridge,agent-vesper-tui/voice-kokoro,agent-vesper-tui/voice-flm",
+        "evidence_ref": "local:release-build:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "name": "release-build",
+        "state": "succeeded"
+      }
+    ],
+    "objective_evidence_reports": [
+      "docs/foundation/2026-10-08-windows-missing-runtime-package-repair.md",
+      "docs/foundation/2026-10-07-rrc-publication-observation-recovery.md",
+      "docs/foundation/release-v0.24.8-closeout.md"
+    ],
+    "objective_id": "rrc-publication-and-windows-portable-package-20261008",
+    "objective_label": "Integrated RRC publication recovery and Windows runtime-independent package repair",
+    "publication_read_retries": 0,
+    "publication_run_id": null,
+    "publication_verified": false,
+    "publication_watch_millis": 0,
+    "published_asset_names": [],
+    "release_workspace": "/home/Alex/.local/state/agent-vesper/release-recovery/worktrees/abde39a508845675/20261007T171609365Z-7c47e92f2e04",
+    "repair_admissions": {},
+    "repair_files": [],
+    "source_commit": "7c47e92f2e0420dc14fa3bc705dd3bbe9be1402c",
+    "source_variant_id": "rrc-publication-windows-package-integrated-20261008",
+    "source_variant_label": "Bounded native publication recovery with static CRT and real Windows package acceptance",
+    "source_workspace": "/tmp/vesper-rrc-closeout-fix",
+    "supersedes": [
+      "rrc-publication-observation-recovery-20261007",
+      "rrc-publication-recovery-integrated-20261007",
+      "rrc-native-permission-and-windows-installer-20261007",
+      "rrc-permission-windows-integrated-20261007",
+      "windows-powershell-51-installer-hosted-20261007",
+      "windows-ps51-installer-hosted-20261007",
+      "rrc-autonomy-prd-audit-20261006"
+    ],
+    "tag_name": null,
+    "tag_object": null,
+    "tag_pushed": false,
+    "version_after": "0.24.9",
+    "version_before": "0.24.8",
+    "version_files": [
+      "Cargo.toml",
+      "apps/agent-vesper-acp/Cargo.toml",
+      "apps/agent-vesper-tui/Cargo.toml",
+      "crates/vesper-acp/Cargo.toml",
+      "crates/vesper-agent/Cargo.toml",
+      "crates/vesper-auth/Cargo.toml",
+      "crates/vesper-bridge/Cargo.toml",
+      "crates/vesper-checkpoints/Cargo.toml",
+      "crates/vesper-cognition/Cargo.toml",
+      "crates/vesper-config/Cargo.toml",
+      "crates/vesper-harness/Cargo.toml",
+      "crates/vesper-mcp/Cargo.toml",
+      "crates/vesper-memory/Cargo.toml",
+      "crates/vesper-policy/Cargo.toml",
+      "crates/vesper-provider/Cargo.toml",
+      "crates/vesper-provider-glm/Cargo.toml",
+      "crates/vesper-provider-openai/Cargo.toml",
+      "crates/vesper-provider-synthetic/Cargo.toml",
+      "crates/vesper-provider-xai/Cargo.toml",
+      "crates/vesper-runtime/Cargo.toml",
+      "crates/vesper-sandbox/Cargo.toml",
+      "crates/vesper-sessions/Cargo.toml",
+      "crates/vesper-swarm/Cargo.toml",
+      "crates/vesper-testkit/Cargo.toml",
+      "crates/vesper-voice/Cargo.toml",
+      "crates/vesper-voice-kokoro/Cargo.toml",
+      "crates/vesper-web-fetch/Cargo.toml",
+      "xtask/Cargo.toml",
+      "registry/agent.json",
+      "Cargo.lock"
+    ]
+  },
+  "objective": {
+    "branch_ref": "repair/rrc-automatic-closeout",
+    "bump": "0.24.9",
+    "post_release_main_epoch": false,
+    "request": "Release version 0.24.9.",
+    "required_gate_names": [
+      "pull-request-validation",
+      "msrv",
+      "five-target-foundation",
+      "web-driver"
+    ]
+  },
+  "progress": {
+    "completed_local_gates": 8,
+    "current_gate": null,
+    "headline": "More evidence is required before a retry or repair",
+    "milestones": [
+      {
+        "at": "2026-10-07T17:17:18.896473041Z",
+        "phase": "local_verification",
+        "sequence": 5,
+        "summary": "Running local gate 2/8: workspace-verify"
+      },
+      {
+        "at": "2026-10-07T17:58:45.462104215Z",
+        "phase": "local_verification",
+        "sequence": 6,
+        "summary": "Passed local gate 2/8: workspace-verify"
+      },
+      {
+        "at": "2026-10-07T17:58:45.523867004Z",
+        "phase": "local_verification",
+        "sequence": 7,
+        "summary": "Running local gate 3/8: acceptance"
+      },
+      {
+        "at": "2026-10-07T18:00:56.093898274Z",
+        "phase": "local_verification",
+        "sequence": 8,
+        "summary": "Passed local gate 3/8: acceptance"
+      },
+      {
+        "at": "2026-10-07T18:00:56.165489940Z",
+        "phase": "local_verification",
+        "sequence": 9,
+        "summary": "Running local gate 4/8: architecture"
+      },
+      {
+        "at": "2026-10-07T18:00:58.339529298Z",
+        "phase": "local_verification",
+        "sequence": 10,
+        "summary": "Passed local gate 4/8: architecture"
+      },
+      {
+        "at": "2026-10-07T18:00:58.414834567Z",
+        "phase": "local_verification",
+        "sequence": 11,
+        "summary": "Running local gate 5/8: msrv"
+      },
+      {
+        "at": "2026-10-07T18:31:18.680292610Z",
+        "phase": "local_verification",
+        "sequence": 12,
+        "summary": "Passed local gate 5/8: msrv"
+      },
+      {
+        "at": "2026-10-07T18:31:18.757421745Z",
+        "phase": "local_verification",
+        "sequence": 13,
+        "summary": "Running local gate 6/8: supply-chain-policy"
+      },
+      {
+        "at": "2026-10-07T18:31:20.562562564Z",
+        "phase": "local_verification",
+        "sequence": 14,
+        "summary": "Passed local gate 6/8: supply-chain-policy"
+      },
+      {
+        "at": "2026-10-07T18:31:20.642333088Z",
+        "phase": "local_verification",
+        "sequence": 15,
+        "summary": "Running local gate 7/8: advisories"
+      },
+      {
+        "at": "2026-10-07T18:31:23.313143667Z",
+        "phase": "local_verification",
+        "sequence": 16,
+        "summary": "Passed local gate 7/8: advisories"
+      },
+      {
+        "at": "2026-10-07T18:31:23.396980085Z",
+        "phase": "local_verification",
+        "sequence": 17,
+        "summary": "Running local gate 8/8: release-build"
+      },
+      {
+        "at": "2026-10-07T18:44:31.659205844Z",
+        "phase": "local_verification",
+        "sequence": 18,
+        "summary": "Passed local gate 8/8: release-build"
+      },
+      {
+        "at": "2026-10-07T18:44:32.958790547Z",
+        "phase": "remote_verification",
+        "sequence": 19,
+        "summary": "Remote verification — local release verification passed"
+      },
+      {
+        "at": "2026-10-07T18:44:36.152807186Z",
+        "phase": "remote_verification",
+        "sequence": 20,
+        "summary": "Remote verification — exact-commit remote gates dispatched"
+      },
+      {
+        "at": "2026-10-07T18:44:36.884863083Z",
+        "phase": "remote_verification",
+        "sequence": 21,
+        "summary": "Remote verification — required workflow runs have not appeared for the exact candidate SHA"
+      },
+      {
+        "at": "2026-10-07T18:45:03.775705096Z",
+        "phase": "remote_verification",
+        "sequence": 22,
+        "summary": "Remote matrix update: 0/12 jobs terminal"
+      },
+      {
+        "at": "2026-10-07T18:46:45.991440504Z",
+        "phase": "remote_verification",
+        "sequence": 23,
+        "summary": "Remote matrix update: 1/12 jobs terminal"
+      },
+      {
+        "at": "2026-10-07T18:52:02.615173030Z",
+        "phase": "remote_verification",
+        "sequence": 24,
+        "summary": "Remote matrix update: 2/12 jobs terminal"
+      },
+      {
+        "at": "2026-10-07T18:52:30.079524503Z",
+        "phase": "remote_verification",
+        "sequence": 25,
+        "summary": "Remote matrix update: 3/12 jobs terminal"
+      },
+      {
+        "at": "2026-10-07T18:57:46.564799313Z",
+        "phase": "remote_verification",
+        "sequence": 26,
+        "summary": "Remote matrix update: 4/12 jobs terminal"
+      },
+      {
+        "at": "2026-10-07T18:59:27.514420895Z",
+        "phase": "remote_verification",
+        "sequence": 27,
+        "summary": "Remote matrix update: 5/12 jobs terminal"
+      },
+      {
+        "at": "2026-10-07T19:06:48.813007435Z",
+        "phase": "remote_verification",
+        "sequence": 28,
+        "summary": "Remote matrix update: 6/12 jobs terminal"
+      },
+      {
+        "at": "2026-10-07T19:09:56.827862834Z",
+        "phase": "remote_verification",
+        "sequence": 29,
+        "summary": "Remote matrix update: 8/12 jobs terminal"
+      },
+      {
+        "at": "2026-10-07T19:11:38.427420846Z",
+        "phase": "remote_verification",
+        "sequence": 30,
+        "summary": "Remote matrix update: 9/12 jobs terminal"
+      },
+      {
+        "at": "2026-10-07T19:16:54.259015463Z",
+        "phase": "remote_verification",
+        "sequence": 31,
+        "summary": "Remote matrix update: 10/12 jobs terminal"
+      },
+      {
+        "at": "2026-10-07T19:28:29.856013049Z",
+        "phase": "remote_verification",
+        "sequence": 32,
+        "summary": "Remote matrix update: 11/12 jobs terminal"
+      },
+      {
+        "at": "2026-10-07T19:44:18.214465206Z",
+        "phase": "remote_verification",
+        "sequence": 33,
+        "summary": "Remote matrix update: 12/12 jobs terminal"
+      },
+      {
+        "at": "2026-10-07T19:44:18.214665562Z",
+        "phase": "failure_diagnosis",
+        "sequence": 34,
+        "summary": "Failure diagnosis — complete matrix contains failed jobs"
+      },
+      {
+        "at": "2026-10-07T19:44:37.147732637Z",
+        "phase": "failure_diagnosis",
+        "sequence": 35,
+        "summary": "Failure diagnosis — first causal evidence captured and fingerprinted"
+      },
+      {
+        "at": "2026-10-07T19:44:37.346006960Z",
+        "phase": "failure_diagnosis",
+        "sequence": 36,
+        "summary": "Failure diagnosis — tentative/unknown cause requires new evidence before repair"
+      }
+    ],
+    "next_sequence": 36,
+    "phase": "failure_diagnosis",
+    "tasks": [
+      {
+        "children": [
+          {
+            "children": [],
+            "name": "version-preparation",
+            "state": "passed",
+            "units": {
+              "completed": 1,
+              "total": 1
+            }
+          },
+          {
+            "children": [],
+            "name": "workspace-verify",
+            "state": "passed",
+            "units": {
+              "completed": 1,
+              "total": 1
+            }
+          },
+          {
+            "children": [
+              {
+                "children": [],
+                "name": "Exact acceptance cases",
+                "state": "passed",
+                "units": {
+                  "completed": 0,
+                  "total": null
+                }
+              }
+            ],
+            "name": "acceptance",
+            "state": "passed",
+            "units": {
+              "completed": 1,
+              "total": 1
+            }
+          },
+          {
+            "children": [],
+            "name": "architecture",
+            "state": "passed",
+            "units": {
+              "completed": 1,
+              "total": 1
+            }
+          },
+          {
+            "children": [],
+            "name": "msrv",
+            "state": "passed",
+            "units": {
+              "completed": 1,
+              "total": 1
+            }
+          },
+          {
+            "children": [],
+            "name": "supply-chain-policy",
+            "state": "passed",
+            "units": {
+              "completed": 1,
+              "total": 1
+            }
+          },
+          {
+            "children": [],
+            "name": "advisories",
+            "state": "passed",
+            "units": {
+              "completed": 1,
+              "total": 1
+            }
+          },
+          {
+            "children": [],
+            "name": "release-build",
+            "state": "passed",
+            "units": {
+              "completed": 1,
+              "total": 1
+            }
+          }
+        ],
+        "name": "Local verification",
+        "state": "passed",
+        "units": {
+          "completed": 8,
+          "total": 8
+        }
+      },
+      {
+        "children": [
+          {
+            "children": [
+              {
+                "children": [],
+                "name": "quality · ubuntu-24.04",
+                "state": "passed",
+                "units": {
+                  "completed": 1,
+                  "total": 1
+                }
+              },
+              {
+                "children": [],
+                "name": "supply-chain · ubuntu-24.04",
+                "state": "passed",
+                "units": {
+                  "completed": 1,
+                  "total": 1
+                }
+              },
+              {
+                "children": [],
+                "name": "windows-installer · windows-2025",
+                "state": "failed",
+                "units": {
+                  "completed": 1,
+                  "total": 1
+                }
+              }
+            ],
+            "name": "pull-request-validation",
+            "state": "failed",
+            "units": {
+              "completed": 3,
+              "total": 3
+            }
+          },
+          {
+            "children": [
+              {
+                "children": [],
+                "name": "rust-1-88 · ubuntu-24.04",
+                "state": "passed",
+                "units": {
+                  "completed": 1,
+                  "total": 1
+                }
+              }
+            ],
+            "name": "msrv",
+            "state": "passed",
+            "units": {
+              "completed": 1,
+              "total": 1
+            }
+          },
+          {
+            "children": [
+              {
+                "children": [],
+                "name": "windows-x86_64 · windows-2025",
+                "state": "passed",
+                "units": {
+                  "completed": 1,
+                  "total": 1
+                }
+              },
+              {
+                "children": [],
+                "name": "linux-x86_64 · ubuntu-24.04",
+                "state": "failed",
+                "units": {
+                  "completed": 1,
+                  "total": 1
+                }
+              },
+              {
+                "children": [],
+                "name": "macos-apple-silicon · macos-15",
+                "state": "passed",
+                "units": {
+                  "completed": 1,
+                  "total": 1
+                }
+              },
+              {
+                "children": [],
+                "name": "linux-arm64 · ubuntu-24.04-arm",
+                "state": "passed",
+                "units": {
+                  "completed": 1,
+                  "total": 1
+                }
+              },
+              {
+                "children": [],
+                "name": "macos-intel · macos-15-intel",
+                "state": "passed",
+                "units": {
+                  "completed": 1,
+                  "total": 1
+                }
+              }
+            ],
+            "name": "five-target-foundation",
+            "state": "failed",
+            "units": {
+              "completed": 5,
+              "total": 5
+            }
+          },
+          {
+            "children": [
+              {
+                "children": [],
+                "name": "Contained browser linux-aarch64 · ubuntu-24.04-arm",
+                "state": "passed",
+                "units": {
+                  "completed": 1,
+                  "total": 1
+                }
+              },
+              {
+                "children": [],
+                "name": "Native namespace Hive · ubuntu-22.04",
+                "state": "passed",
+                "units": {
+                  "completed": 1,
+                  "total": 1
+                }
+              },
+              {
+                "children": [],
+                "name": "Contained browser linux-x86_64 · ubuntu-24.04",
+                "state": "failed",
+                "units": {
+                  "completed": 1,
+                  "total": 1
+                }
+              }
+            ],
+            "name": "web-driver",
+            "state": "failed",
+            "units": {
+              "completed": 3,
+              "total": 3
+            }
+          }
+        ],
+        "name": "Required CI",
+        "state": "failed",
+        "units": {
+          "completed": 4,
+          "total": 4
+        }
+      },
+      {
+        "children": [],
+        "name": "Failure diagnosis",
+        "state": "running",
+        "units": {
+          "completed": 0,
+          "total": null
+        }
+      }
+    ],
+    "terminal_remote_jobs": 12,
+    "total_local_gates": 8,
+    "total_remote_jobs": 12
+  },
+  "release_commit": "c076ebc7bad1fb39c1675ec4ddcecf75d0e44c1f",
+  "release_version": "0.24.9",
+  "repair_attempts": [],
+  "repo_identity": "/home/Alex/Projects/agent-vesper/.git",
+  "required_gates": [
+    {
+      "head_sha": "c076ebc7bad1fb39c1675ec4ddcecf75d0e44c1f",
+      "jobs": [
+        {
+          "attempt": 1,
+          "failed_step": null,
+          "job_id": 112956102604,
+          "job_name": "rust-1-88",
+          "platform": "ubuntu-24.04",
+          "run_id": 37669161803,
+          "state": "success",
+          "url": "https://github.com/99percentgrip/agent-vesper/actions/runs/37669161803/job/112956102604",
+          "workflow_id": 324058985,
+          "workflow_name": "msrv"
+        }
+      ],
+      "name": "msrv",
+      "run_attempt": 1,
+      "run_id": 37669161803,
+      "run_state": "success",
+      "url": "https://github.com/99percentgrip/agent-vesper/actions/runs/37669161803"
+    },
+    {
+      "head_sha": "c076ebc7bad1fb39c1675ec4ddcecf75d0e44c1f",
+      "jobs": [
+        {
+          "attempt": 1,
+          "failed_step": null,
+          "job_id": 112956101748,
+          "job_name": "windows-x86_64",
+          "platform": "windows-2025",
+          "run_id": 37669161802,
+          "state": "success",
+          "url": "https://github.com/99percentgrip/agent-vesper/actions/runs/37669161802/job/112956101748",
+          "workflow_id": 324058986,
+          "workflow_name": "five-target-foundation"
+        },
+        {
+          "attempt": 1,
+          "failed_step": "Run Linux sandbox conformance",
+          "job_id": 112956102164,
+          "job_name": "linux-x86_64",
+          "platform": "ubuntu-24.04",
+          "run_id": 37669161802,
+          "state": "failure",
+          "url": "https://github.com/99percentgrip/agent-vesper/actions/runs/37669161802/job/112956102164",
+          "workflow_id": 324058986,
+          "workflow_name": "five-target-foundation"
+        },
+        {
+          "attempt": 1,
+          "failed_step": null,
+          "job_id": 112956102239,
+          "job_name": "macos-apple-silicon",
+          "platform": "macos-15",
+          "run_id": 37669161802,
+          "state": "success",
+          "url": "https://github.com/99percentgrip/agent-vesper/actions/runs/37669161802/job/112956102239",
+          "workflow_id": 324058986,
+          "workflow_name": "five-target-foundation"
+        },
+        {
+          "attempt": 1,
+          "failed_step": null,
+          "job_id": 112956102352,
+          "job_name": "linux-arm64",
+          "platform": "ubuntu-24.04-arm",
+          "run_id": 37669161802,
+          "state": "success",
+          "url": "https://github.com/99percentgrip/agent-vesper/actions/runs/37669161802/job/112956102352",
+          "workflow_id": 324058986,
+          "workflow_name": "five-target-foundation"
+        },
+        {
+          "attempt": 1,
+          "failed_step": null,
+          "job_id": 112956102761,
+          "job_name": "macos-intel",
+          "platform": "macos-15-intel",
+          "run_id": 37669161802,
+          "state": "success",
+          "url": "https://github.com/99percentgrip/agent-vesper/actions/runs/37669161802/job/112956102761",
+          "workflow_id": 324058986,
+          "workflow_name": "five-target-foundation"
+        }
+      ],
+      "name": "five-target-foundation",
+      "run_attempt": 1,
+      "run_id": 37669161802,
+      "run_state": "failure",
+      "url": "https://github.com/99percentgrip/agent-vesper/actions/runs/37669161802"
+    },
+    {
+      "head_sha": "c076ebc7bad1fb39c1675ec4ddcecf75d0e44c1f",
+      "jobs": [
+        {
+          "attempt": 1,
+          "failed_step": null,
+          "job_id": 112956101340,
+          "job_name": "quality",
+          "platform": "ubuntu-24.04",
+          "run_id": 37669161700,
+          "state": "success",
+          "url": "https://github.com/99percentgrip/agent-vesper/actions/runs/37669161700/job/112956101340",
+          "workflow_id": 324058982,
+          "workflow_name": "pull-request-validation"
+        },
+        {
+          "attempt": 1,
+          "failed_step": null,
+          "job_id": 112956101583,
+          "job_name": "supply-chain",
+          "platform": "ubuntu-24.04",
+          "run_id": 37669161700,
+          "state": "success",
+          "url": "https://github.com/99percentgrip/agent-vesper/actions/runs/37669161700/job/112956101583",
+          "workflow_id": 324058982,
+          "workflow_name": "pull-request-validation"
+        },
+        {
+          "attempt": 1,
+          "failed_step": "Real release install (Windows PowerShell 5.1 Desktop)",
+          "job_id": 112956101737,
+          "job_name": "windows-installer",
+          "platform": "windows-2025",
+          "run_id": 37669161700,
+          "state": "failure",
+          "url": "https://github.com/99percentgrip/agent-vesper/actions/runs/37669161700/job/112956101737",
+          "workflow_id": 324058982,
+          "workflow_name": "pull-request-validation"
+        }
+      ],
+      "name": "pull-request-validation",
+      "run_attempt": 1,
+      "run_id": 37669161700,
+      "run_state": "failure",
+      "url": "https://github.com/99percentgrip/agent-vesper/actions/runs/37669161700"
+    },
+    {
+      "head_sha": "c076ebc7bad1fb39c1675ec4ddcecf75d0e44c1f",
+      "jobs": [
+        {
+          "attempt": 1,
+          "failed_step": null,
+          "job_id": 112956101124,
+          "job_name": "Contained browser linux-aarch64",
+          "platform": "ubuntu-24.04-arm",
+          "run_id": 37669161667,
+          "state": "success",
+          "url": "https://github.com/99percentgrip/agent-vesper/actions/runs/37669161667/job/112956101124",
+          "workflow_id": 351737017,
+          "workflow_name": "web-driver"
+        },
+        {
+          "attempt": 1,
+          "failed_step": null,
+          "job_id": 112956101570,
+          "job_name": "Native namespace Hive",
+          "platform": "ubuntu-22.04",
+          "run_id": 37669161667,
+          "state": "success",
+          "url": "https://github.com/99percentgrip/agent-vesper/actions/runs/37669161667/job/112956101570",
+          "workflow_id": 351737017,
+          "workflow_name": "web-driver"
+        },
+        {
+          "attempt": 1,
+          "failed_step": "Native browser feedback continuation",
+          "job_id": 112956101712,
+          "job_name": "Contained browser linux-x86_64",
+          "platform": "ubuntu-24.04",
+          "run_id": 37669161667,
+          "state": "failure",
+          "url": "https://github.com/99percentgrip/agent-vesper/actions/runs/37669161667/job/112956101712",
+          "workflow_id": 351737017,
+          "workflow_name": "web-driver"
+        }
+      ],
+      "name": "web-driver",
+      "run_attempt": 1,
+      "run_id": 37669161667,
+      "run_state": "failure",
+      "url": "https://github.com/99percentgrip/agent-vesper/actions/runs/37669161667"
+    }
+  ],
+  "resource_deferred": null,
+  "retry_budget": {
+    "full_gate_limit": 1,
+    "full_gate_used": 0,
+    "infrastructure_limit": 1,
+    "infrastructure_used": 0,
+    "repair_attempt_limit_per_family": 2,
+    "targeted_diagnostic_limit": 2,
+    "targeted_diagnostic_used": 0
+  },
+  "retry_run_floors": [],
+  "schema_version": 1,
+  "state": "need_more_evidence",
+  "state_changes": [],
+  "transitions": [
+    {
+      "at": "2026-10-07T17:16:10.168012654Z",
+      "evidence_refs": [],
+      "from": "idle",
+      "full_gate_retries": 0,
+      "infrastructure_retries": 0,
+      "job_id": null,
+      "reason": "release intent accepted by RRC",
+      "repair_attempts": 0,
+      "run_id": null,
+      "sequence": 1,
+      "source_commit": "7c47e92f2e0420dc14fa3bc705dd3bbe9be1402c",
+      "to": "preparing",
+      "workflow_id": null
+    },
+    {
+      "at": "2026-10-07T17:16:10.168312657Z",
+      "evidence_refs": [],
+      "from": "preparing",
+      "full_gate_retries": 0,
+      "infrastructure_retries": 0,
+      "job_id": null,
+      "reason": "local release verification required before candidate creation",
+      "repair_attempts": 0,
+      "run_id": null,
+      "sequence": 2,
+      "source_commit": "7c47e92f2e0420dc14fa3bc705dd3bbe9be1402c",
+      "to": "local_verification",
+      "workflow_id": null
+    },
+    {
+      "at": "2026-10-07T18:44:32.957258671Z",
+      "evidence_refs": [
+        "local:version-preparation",
+        "local:workspace-verify:05be11e0e97e5ece6e0b7adb8fb769814259f8d3735a65cdb8192d792fd81943",
+        "local:acceptance:40ddb41af8656877a33abad8499a6e89844409822f8d4ebc9f388be9f010b4f7",
+        "local:architecture:c0e0aebe9b7a8443b26cdb032c4570c955b9dc2cbb395ecb23471f7b441fe176",
+        "local:msrv:c955b4fbfb5e310a6f847f95dd6d4dbea254f954049003e6a9c4c44bbcae3cd7",
+        "local:supply-chain-policy:f1a0fca39d4280363937aabd77783990ea6480bd9ca257816de3b68fc8efa845",
+        "local:advisories:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "local:release-build:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      ],
+      "from": "local_verification",
+      "full_gate_retries": 0,
+      "infrastructure_retries": 0,
+      "job_id": null,
+      "reason": "local release verification passed",
+      "repair_attempts": 0,
+      "run_id": null,
+      "sequence": 3,
+      "source_commit": "c076ebc7bad1fb39c1675ec4ddcecf75d0e44c1f",
+      "to": "candidate_ready",
+      "workflow_id": null
+    },
+    {
+      "at": "2026-10-07T18:44:36.152335921Z",
+      "evidence_refs": [
+        "origin/main@c076ebc7bad1fb39c1675ec4ddcecf75d0e44c1f"
+      ],
+      "from": "candidate_ready",
+      "full_gate_retries": 0,
+      "infrastructure_retries": 0,
+      "job_id": null,
+      "reason": "exact-commit remote gates dispatched",
+      "repair_attempts": 0,
+      "run_id": null,
+      "sequence": 4,
+      "source_commit": "c076ebc7bad1fb39c1675ec4ddcecf75d0e44c1f",
+      "to": "remote_gate_running",
+      "workflow_id": null
+    },
+    {
+      "at": "2026-10-07T18:44:36.884617562Z",
+      "evidence_refs": [
+        "github:exact-sha-matrix"
+      ],
+      "from": "remote_gate_running",
+      "full_gate_retries": 0,
+      "infrastructure_retries": 0,
+      "job_id": null,
+      "reason": "required workflow runs have not appeared for the exact candidate SHA",
+      "repair_attempts": 0,
+      "run_id": null,
+      "sequence": 5,
+      "source_commit": "c076ebc7bad1fb39c1675ec4ddcecf75d0e44c1f",
+      "to": "waiting_for_matrix",
+      "workflow_id": null
+    },
+    {
+      "at": "2026-10-07T19:44:18.214583919Z",
+      "evidence_refs": [
+        "github:exact-sha-matrix"
+      ],
+      "from": "waiting_for_matrix",
+      "full_gate_retries": 0,
+      "infrastructure_retries": 0,
+      "job_id": 112956102164,
+      "reason": "complete matrix contains failed jobs",
+      "repair_attempts": 0,
+      "run_id": 37669161802,
+      "sequence": 6,
+      "source_commit": "c076ebc7bad1fb39c1675ec4ddcecf75d0e44c1f",
+      "to": "collecting_failure_evidence",
+      "workflow_id": 324058986
+    },
+    {
+      "at": "2026-10-07T19:44:37.147494259Z",
+      "evidence_refs": [
+        "github:job:112956101712",
+        "github:job:112956101737",
+        "github:job:112956102164"
+      ],
+      "from": "collecting_failure_evidence",
+      "full_gate_retries": 0,
+      "infrastructure_retries": 0,
+      "job_id": 112956102164,
+      "reason": "first causal evidence captured and fingerprinted",
+      "repair_attempts": 0,
+      "run_id": 37669161802,
+      "sequence": 7,
+      "source_commit": "c076ebc7bad1fb39c1675ec4ddcecf75d0e44c1f",
+      "to": "classifying_failure",
+      "workflow_id": 324058986
+    },
+    {
+      "at": "2026-10-07T19:44:37.345907534Z",
+      "evidence_refs": [
+        "rrc:classification-uncertain"
+      ],
+      "from": "classifying_failure",
+      "full_gate_retries": 0,
+      "infrastructure_retries": 0,
+      "job_id": 112956102164,
+      "reason": "tentative/unknown cause requires new evidence before repair",
+      "repair_attempts": 0,
+      "run_id": 37669161802,
+      "sequence": 8,
+      "source_commit": "c076ebc7bad1fb39c1675ec4ddcecf75d0e44c1f",
+      "to": "need_more_evidence",
+      "workflow_id": 324058986
+    }
+  ],
+  "updated_at": "2026-10-07T19:44:37.346006960Z"
+}

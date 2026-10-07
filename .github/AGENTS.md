@@ -20,6 +20,11 @@ migration gates and disposable platform assumptions on hosts unavailable locally
   Canonical/MSRV retain storage diagnostics on failure. The focused lifecycle
   gate proves exact acceptance linking after the workspace and default-doc graphs
   on both Linux architectures; it never reduces existing verification coverage.
+- `prepare-linux-apt.py` is CI-only guarded runner preparation. Preserve mirror
+  files and cached mirror+file paths, route architecture-correct Ubuntu archives over HTTPS (ARM64 keeps ports) and set
+  IPv4/retry/acquisition bounds for both sandbox and browser dependency setup.
+  `test_prepare_linux_apt.py` uses private fixtures and verifies refusal outside
+  hosted Linux; no local system package configuration is changed by verification.
 
 - ADR 0028 acceptance regressions are mandatory in canonical, MSRV and five-target
   foundation workflows. Canonical CI also kills two bounded evaluator mutations. The
@@ -114,7 +119,8 @@ migration gates and disposable platform assumptions on hosts unavailable locally
   Linux sandbox step is stall-proofed in layers: it skips `apt` entirely when
   the runner image already ships `bwrap`; when it must install it REWRITES
   (never deletes) `/etc/apt/apt-mirrors.txt` to the canonical
-  `archive.ubuntu.com` mirror — the runner's pre-populated apt lists fetch
+  HTTPS `archive.ubuntu.com` / `security.ubuntu.com` mirrors and rewrites known
+  Ubuntu HTTP source URLs — the runner's pre-populated apt lists fetch
   through the `mirror+file:` scheme, so deleting the file breaks even cached
   `.deb` downloads — forces IPv4, hard-kills every apt call with coreutils
   `timeout` (apt's own `Acquire::Retries`/`Timeout` options did NOT bound a

@@ -1,5 +1,7 @@
 # Foundation Evidence Index
 
+- [RRC settled-CI causal diagnosis repair](2026-10-08-rrc-ci-causal-diagnosis-repair.md) — complete failed v0.24.9 matrix, three reproduced diagnosis defects, CLI stream correction and bounded HTTPS dependency setup; fresh native/hosted release proof pending.
+
 - [Windows missing runtime package repair](2026-10-08-windows-missing-runtime-package-repair.md) — user-reported 0xC0000135; published package depends on unbundled VCRUNTIME140; static CRT and real-package gate added, hosted proof pending.
 
 - [RRC publication observation recovery](2026-10-07-rrc-publication-observation-recovery.md) — persisted bounded read recovery, cumulative watch deadline and unchanged tagged-epoch admission; current-source release pending.

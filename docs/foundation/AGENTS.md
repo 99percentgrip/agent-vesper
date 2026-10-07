@@ -6,6 +6,8 @@ Own evidence and decisions that close the pre-workspace blockers identified by r
 
 ## Ownership
 
+- `2026-10-08-rrc-ci-causal-diagnosis-repair.md` owns the fully settled v0.24.9 evidence stop, causal selection/classification repairs, Windows CLI stream check, HTTPS runner setup and retained failed/native receipts.
+
 - `2026-10-08-windows-missing-runtime-package-repair.md` owns the user-reported
   0xC0000135 install failure, published-package dependency audit, static CRT
   repair, fail-before-replacement preflight and exact-candidate hosted gates.

@@ -1200,3 +1200,7 @@ The [2026-10-07 reverification](foundation/2026-10-06-rrc-autonomy-and-prd-audit
 
 
 [Native cancellation keybinding repair](foundation/2026-10-07-rrc-native-cancellation-keybinding-repair.md) closes the TUI gap where Ctrl+C ignored the registered native controller and approval dialogs swallowed cancellation. Configured Cancel uses the shared local controller cancellation route with ordinary foreground/voice priority, preserves pending cleanup and reports errors truthfully. Focused evidence and interrupted candidate receipts remain distinct from final exact-version release gates.
+
+### 2026-10-08 settled CI diagnosis follow-up
+
+[Settled-CI causal diagnosis repair](foundation/2026-10-08-rrc-ci-causal-diagnosis-repair.md) records the complete v0.24.9 red matrix and the native evidence stop. Shared diagnosis now retains runtime CLI assertions, first APT fetch failures and bounded same-step dependency timeout context; unproven causes remain uncertain. Windows CLI acceptance and CI acquisition inputs are repaired in the same candidate. Fresh hosted/publication evidence and laptop acceptance remain separately required.

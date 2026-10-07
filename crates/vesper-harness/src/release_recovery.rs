@@ -2814,8 +2814,23 @@ pub fn classify_failure(
     excerpt: &str,
     _platform: Option<&str>,
 ) -> (ReleaseFailureClass, EvidenceConfidence) {
-    let normalized = normalize_failure_text(excerpt);
-    let class = if normalized.contains("panicked at") || normalized.contains("assertion") {
+    // Context is evidence, not causal identity. A later downstream panic must
+    // not displace the selected package-download diagnostic.
+    let diagnostic = excerpt
+        .lines()
+        .find(|line| is_causal_diagnostic(line))
+        .unwrap_or(excerpt);
+    let normalized = normalize_failure_text(diagnostic);
+    let class = if dependency_index_timeout(excerpt)
+        || normalized.contains("e: failed to fetch")
+        || normalized.contains("e: unable to fetch")
+    {
+        ReleaseFailureClass::DependencyFailure
+    } else if normalized.contains("panicked at")
+        || normalized.contains("assertion")
+        || normalized.contains("--version failed")
+        || normalized.contains("--help failed")
+    {
         ReleaseFailureClass::TestRegression
     } else if normalized.contains("error[e")
         || normalized.contains("could not compile")
@@ -2843,7 +2858,8 @@ pub fn classify_failure(
     {
         ReleaseFailureClass::Cancelled
     } else if (normalized.contains("runner")
-        && (normalized.contains("lost") || normalized.contains("provision")))
+        && (normalized.contains("lost")
+            || (normalized.contains("provision") && normalized.contains("failed"))))
         || normalized.contains("job was not acquired by runner")
     {
         ReleaseFailureClass::RunnerInfrastructureFailure
@@ -2877,6 +2893,14 @@ pub fn classify_failure(
     (class, confidence)
 }
 
+fn dependency_index_timeout(excerpt: &str) -> bool {
+    let normalized = normalize_failure_text(excerpt);
+    normalized.contains("installing dependencies...")
+        && normalized.contains("file:/etc/apt/apt-mirrors.txt")
+        && normalized.contains("ign:")
+        && normalized.contains("has timed out")
+}
+
 #[must_use]
 pub fn first_causal_excerpt(log: &str) -> String {
     let clean = redact_secret_text(log);
@@ -2906,6 +2930,38 @@ pub fn first_causal_excerpt(log: &str) -> String {
         index
     };
     let end = (index + 4).min(lines.len());
+    // A killed dependency installer may never print an E: line. Retain only
+    // observed setup/fetch context from this same step, bounded independently
+    // of the full job log; earlier steps and command echoes cannot establish it.
+    if lines
+        .get(index)
+        .is_some_and(|line| line.to_ascii_lowercase().contains("has timed out"))
+    {
+        let window_start = lines[..index]
+            .iter()
+            .rposition(|line| line.contains("##[group]Run "))
+            .unwrap_or(index.saturating_sub(256))
+            .max(index.saturating_sub(256));
+        let runtime_start = lines[window_start..index]
+            .iter()
+            .position(|line| line.contains("##[endgroup]"))
+            .map_or(window_start, |offset| window_start + offset + 1);
+        let context = lines[runtime_start..index]
+            .iter()
+            .filter(|line| {
+                line.contains("Installing dependencies...")
+                    || line.contains("file:/etc/apt/apt-mirrors.txt")
+                    || line.contains("Ign:")
+            })
+            .take(4)
+            .copied()
+            .chain(lines[index..end].iter().copied())
+            .collect::<Vec<_>>()
+            .join("\n");
+        if dependency_index_timeout(&context) {
+            return redact_secrets(&context);
+        }
+    }
     redact_secrets(&lines[start..end].join("\n"))
 }
 
@@ -8540,6 +8596,76 @@ mod tests {
     }
 
     #[test]
+    fn settled_windows_metadata_cannot_hide_version_assertion() {
+        let log = "Current runner version: '2.337.0'\n##[group]Runner Image Provisioner\nHosted Compute Agent\n##[endgroup]\n##[group]Run powershell -File test_install_windows_release.ps1\nthrow '--version failed'\n##[endgroup]\nInstalled Agent Vesper (agent-vesper-acp 0.24.9; agent-vesper-tui 0.24.9)\nagent-vesper-acp 0.24.9\nagent-vesper-acp --version failed\nAt scripts/test_install_windows_release.ps1:37 char:54\nCategoryInfo : OperationStopped: (agent-vesper-acp --version failed:String) [], RuntimeException\nFullyQualifiedErrorId : agent-vesper-acp --version failed\n##[error]Process completed with exit code 1";
+        let excerpt = first_causal_excerpt(log);
+        assert!(
+            excerpt.contains("agent-vesper-acp --version failed"),
+            "{excerpt}"
+        );
+        assert!(!excerpt.contains("Runner Image Provisioner"), "{excerpt}");
+        assert!(!excerpt.contains("throw '--version failed'"), "{excerpt}");
+        assert_eq!(
+            classify_failure(&excerpt, Some("windows-2025")),
+            (
+                ReleaseFailureClass::TestRegression,
+                EvidenceConfidence::StronglySupported
+            )
+        );
+        assert_eq!(
+            classify_failure(
+                "Current runner version: 2.337.0\nRunner Image Provisioner\nHosted Compute Agent",
+                None
+            ),
+            (ReleaseFailureClass::Unknown, EvidenceConfidence::Unknown)
+        );
+    }
+
+    #[test]
+    fn settled_dependency_download_precedes_downstream_missing_binary_panic() {
+        let log = "##[group]Run apt-get install -y bubblewrap\n##[endgroup]\nErr:2 mirror+file:/etc/apt/apt-mirrors.txt noble-updates/main amd64 bubblewrap\nConnection failed [IP: 91.189.91.81 80]\nE: Failed to fetch mirror+file:/etc/apt/apt-mirrors.txt/pool/main/b/bubblewrap/bubblewrap.deb Connection failed\nE: Unable to fetch some archives\nNOTE: bwrap unavailable\nthread 'bubblewrap_limits_workspace_write_scope' panicked at tests/linux_bwrap.rs:75:33:\nrequired Bubblewrap unavailable";
+        let excerpt = first_causal_excerpt(log);
+        assert!(excerpt.contains("E: Failed to fetch"), "{excerpt}");
+        assert_eq!(
+            classify_failure(&excerpt, Some("ubuntu-24.04")),
+            (
+                ReleaseFailureClass::DependencyFailure,
+                EvidenceConfidence::StronglySupported
+            )
+        );
+    }
+
+    #[test]
+    fn settled_package_index_timeout_retains_observed_setup_context() {
+        let log = "##[group]Run playwright install --with-deps chromium\n##[endgroup]\nInstalling dependencies...\nSwitching to root user to install dependencies...\nGet:1 file:/etc/apt/apt-mirrors.txt Mirrorlist [144 B]\nIgn:2 http://azure.archive.ubuntu.com/ubuntu noble InRelease\nIgn:3 http://azure.archive.ubuntu.com/ubuntu noble-updates InRelease\nGet:4 https://archive.ubuntu.com/ubuntu noble-backports InRelease [126 kB]\n##[error]The action 'Native browser feedback continuation' has timed out after 8 minutes.\nPost job cleanup.";
+        let excerpt = first_causal_excerpt(log);
+        assert!(excerpt.contains("Installing dependencies..."), "{excerpt}");
+        assert!(excerpt.contains("Ign:2"), "{excerpt}");
+        assert!(excerpt.contains("has timed out"), "{excerpt}");
+        assert_eq!(
+            classify_failure(&excerpt, Some("ubuntu-24.04")),
+            (
+                ReleaseFailureClass::DependencyFailure,
+                EvidenceConfidence::StronglySupported
+            )
+        );
+        assert_eq!(
+            classify_failure("##[error]The action has timed out after 8 minutes.", None),
+            (ReleaseFailureClass::Timeout, EvidenceConfidence::Tentative)
+        );
+        for unproven in [
+            "##[group]Run echo Installing dependencies... file:/etc/apt/apt-mirrors.txt Ign:2\n##[endgroup]\n##[error]The action has timed out after 8 minutes.",
+            "Installing dependencies...\nGet:1 file:/etc/apt/apt-mirrors.txt\nIgn:2 mirror\n##[group]Run cargo test\n##[endgroup]\n##[error]The action has timed out after 8 minutes.",
+        ] {
+            assert_eq!(
+                classify_failure(&first_causal_excerpt(unproven), None),
+                (ReleaseFailureClass::Timeout, EvidenceConfidence::Tentative)
+            );
+        }
+        assert_eq!(first_causal_excerpt(""), "");
+    }
+
+    #[test]
     fn dependency_errors_and_unrecognized_platform_logs_classify_truthfully() {
         for platform in [
             None,
@@ -9183,7 +9309,7 @@ fn is_account_execution_restriction(normalized: &str) -> bool {
 
 fn is_causal_diagnostic(line: &str) -> bool {
     static CAUSAL: LazyLock<Regex> = LazyLock::new(|| {
-        Regex::new(r"(?i)(panicked at|assertion [`']?(?:left|right)|assertionerror:|error\[e\d+\]|error:(?:\s|$)|fatal:(?:\s|$)|permission denied|unauthorized|rate limit|runner .* (?:lost|failed)|the job was not acquired by runner|timed out|process exited while answering|no space left on device|disk full|package .* is not available|e: version .* was not found|the operation was cancel(?:l)?ed)")
+        Regex::new(r"(?i)(panicked at|assertion [`']?(?:left|right)|assertionerror:|--(?:version|help) failed|e: (?:failed to fetch|unable to fetch)|error\[e\d+\]|error:(?:\s|$)|fatal:(?:\s|$)|permission denied|unauthorized|rate limit|runner .* (?:lost|failed)|the job was not acquired by runner|timed out|process exited while answering|no space left on device|disk full|package .* is not available|e: version .* was not found|the operation was cancel(?:l)?ed)")
             .expect("static causal regex")
     });
     static TEST_STATUS: LazyLock<Regex> = LazyLock::new(|| {

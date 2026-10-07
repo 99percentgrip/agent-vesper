@@ -1,0 +1,53 @@
+{
+  "source_base": "c076ebc7bad1fb39c1675ec4ddcecf75d0e44c1f",
+  "source_sha256": {
+    "crates/vesper-harness/src/release_recovery.rs": "129ce8377070529c3b4547aa5e47c5e935316a867a0559780c4593a235381d69",
+    "xtask/src/main.rs": "5b05747fd4ab4d8aaa7fcdfe88aed6a1df9c6ea1097d3f9210338ae68455e62f",
+    ".github/prepare-linux-apt.py": "64c6c5c46c3fd8cf4e1319f1f4e274a387779aab6d97449ae5b8c5165c4b53cf",
+    ".github/test_prepare_linux_apt.py": "23fc6a745f4883858ac4425ce2b03372384d854bb45ec7aa06cb24ebc9714378",
+    ".github/workflows/ci.yml": "78001408718278ccd2ec7e8e6b7ffd665243d87fbe0da1ed0d23d04c75ee9c7f",
+    ".github/workflows/platform-foundation.yml": "b0c6f0bd1eeaf9750d2d858236ad285814c9e14ab15f10ecdf334a64bd8cb83b",
+    ".github/workflows/web-driver.yml": "111f8a924f159495c9ca8c5ab1c68f0a7ad2d4040dca8d174f5296fd6496556f",
+    "scripts/test_install_windows_release.ps1": "2ec121633d4ea3a08c1055eee5c6498e2f2070204afc8236f18b378a5fe845c5",
+    "scripts/test_windows_package_audit.py": "31eeedb965d640a682fd9f0378d6469506dd3f9c20703a2cf9a8b3dfade4909b"
+  },
+  "raw_receipt_sha256": {
+    "vesper-v0249-windows-installer-failed.log": "4873da8a267885c3b03f53130328789be379500516be402aaf73b07ace06c769",
+    "vesper-v0249-linux-foundation-failed.log": "a038064453665aae0554c7d06ac2ca79fdbe974944ceac50e56f3255277e2347",
+    "vesper-v0249-web-driver-failed.log": "f8744c2f3ac45de655e1e6ca677d527b06d90f8c8c1407ff1d1e7cca12433c56",
+    "vesper-rrc-causal-red.log": "1307e0070bfd420f09fee00345292763345408f9c1dcee63bca5d345a9b90270",
+    "vesper-rrc-causal-green.log": "85637bca4ad08b68eb202af3d3c49c866deeb73a51a714bda060db5a133b8817",
+    "vesper-rrc-causal-apt-tests.log": "9cdbec613313ffc96bb20a5275ff1c8f76091e6b964a22df1d6ea967dc1358c0",
+    "vesper-rrc-causal-package-tests.log": "670a39115e7523a8984e4842e16547cb2094b03fad392b037b4b9dc8b2656e62",
+    "vesper-rrc-causal-release-policy.log": "40e6a3053d86436d6aa245501343227a2e81436f4f14da71a21257468605aff6",
+    "vesper-rrc-causal-acceptance.log": "3fdc8ca8db3f8a6009e8afc63f2de47013f386b53ccffc3da884c3e7ec4e69cd",
+    "vesper-rrc-causal-clippy.log": "18c6736855ea3ee01d4cb24f792aa5e0764a3c503043f12a086e02fdb38e56d5",
+    "vesper-rrc-causal-native-host-build.log": "ae9fd1f994fc30f89e40f1e8636c7a9e817b03ab90725f20b63e4b812549c263"
+  },
+  "local_evidence": {
+    "red_cases": {
+      "passed": 0,
+      "failed": 3
+    },
+    "release_recovery_unit_cases": {
+      "passed": 100,
+      "failed": 0
+    },
+    "mandatory_exact_cases": {
+      "passed": 135,
+      "failed": 0
+    },
+    "apt_private_cases": 4,
+    "package_policy_cases": 7,
+    "release_policy_cases": 10,
+    "strict_harness_clippy": "passed",
+    "native_tui_build": "passed"
+  },
+  "unexecuted": [
+    "fresh exact-source hosted prerequisite matrices",
+    "real Windows PowerShell installs after stream correction",
+    "producing/publication/registry closeout",
+    "Alex Windows laptop retest",
+    "live-model source repair effectiveness"
+  ]
+}

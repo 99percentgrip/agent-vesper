@@ -38,6 +38,8 @@ with each release. The read-only release prerequisite helper also lives here.
 - `test_install_windows_release.ps1` exercises the exact-candidate shipping
   executables through direct and piped installers in private state under both
   PowerShell hosts; it does not use synthetic hosts or call providers.
+  Capture both CLI output streams and native exit codes: ACP metadata uses stderr;
+  PowerShell 5.1 NativeCommandError records alone never imply a failed process.
 - `install.ps1` — Windows installer. Downloads the
   `agent-vesper-acp-windows-x86_64.zip` release, verifies SHA-256, installs a
   `.cmd` launchers under `%LOCALAPPDATA%\Programs\AgentVesper`, and adds that

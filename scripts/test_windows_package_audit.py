@@ -47,6 +47,13 @@ class PackageAuditTests(unittest.TestCase):
         installer = (root / "scripts/install.ps1").read_text()
         self.assertLess(installer.index("0xC0000135: required DLL missing"),
                         installer.index("New-Item -ItemType Directory -Path $InstallDir"))
+        real_check = (root / "scripts/test_install_windows_release.ps1").read_text()
+        self.assertIn("& $launcher --version 2>&1", real_check)
+        self.assertIn("& $launcher --help 2>&1", real_check)
+        self.assertIn("$versionExit = $LASTEXITCODE", real_check)
+        self.assertIn("$helpExit = $LASTEXITCODE", real_check)
+        self.assertIn("$ErrorActionPreference = $checkPreference", real_check)
+        self.assertIn("$versionExit -ne 0 -or -not $observedVersion", real_check)
 
     def test_reads_normal_and_delay_imports(self):
         for delay in (False, True):

@@ -77,8 +77,9 @@ jobs:
         timeout-minutes: 8
         shell: bash
         run: |
+          sudo --preserve-env=GITHUB_ACTIONS,RUNNER_OS python3 .github/prepare-linux-apt.py
           npm install --prefix "$RUNNER_TEMP/vesper-browser-test" --no-audit --no-fund playwright@1.51.1
-          "$RUNNER_TEMP/vesper-browser-test/node_modules/.bin/playwright" install --with-deps chromium
+          timeout 240 "$RUNNER_TEMP/vesper-browser-test/node_modules/.bin/playwright" install --with-deps chromium
           export PLAYWRIGHT_MODULE="$RUNNER_TEMP/vesper-browser-test/node_modules/playwright"
           export CHROME_PATH="$(node -e 'console.log(require(process.env.PLAYWRIGHT_MODULE).chromium.executablePath())')"
           cargo test -p vesper-harness --features swarm --test swarm_adapter_tests real_browser_feedback -- --ignored --nocapture

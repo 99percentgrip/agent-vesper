@@ -102,6 +102,9 @@ architecture, MSRV, and source-oracle checks.
   linker wrappers, concrete dependency errors, unknown OS-labelled messages and
   remote cancellation without a local user-cancel claim, and account execution
   restrictions requiring owner action without source repair or outage retry.
+  Settled Windows CLI assertions, earlier APT download errors and same-step
+  dependency-index timeout context are mandatory cases; metadata, command echoes,
+  previous steps and unproven timeouts must not authorize repair.
   The named native-worker case executes both direct and continuous routes and pins
   owner-action/uncertainty settlement before permission, repair or mutation journals.
   The named health-routing case proves read-only diagnosis without source permission,
