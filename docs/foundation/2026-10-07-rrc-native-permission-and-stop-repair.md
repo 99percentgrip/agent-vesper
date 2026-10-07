@@ -49,3 +49,9 @@ Final integrated-source full local gates, exact-commit hosted matrices and publi
 ## Windows source integration
 
 Preserve Windows installer branch commit `57d5456e53391e6012fdab6f7c86bc70507e592f` as a merge parent, including PowerShell 5.1/TLS/checksum/host-version checks, its permanent native Windows CI fixture, and unique owned voice-policy temporary roots. Both evidence indexes retain their reports. Integrated provenance explicitly supersedes the cancelled unmutated objective; native admission must reconcile it without manual ledger or retry-budget changes. Full integrated local gates and exact-main hosted receipts are still pending.
+
+## Native release preparation
+
+Integrated source merge `9b265490` built the production default-feature TUI with `cargo build --locked -p agent-vesper-tui` successfully (37.88 seconds). The copied execution-only host `/tmp/vesper-rrc-native-host-9b265490` has SHA-256 `d544d15830da9489e37769841f6a42cda95b47503f037c2059801ad52bb3bd0e`; this is not Alex's installed binary. Fresh native release gates will verify the final versioned source.
+
+Read-only disk telemetry showed 109 GiB available, below the unchanged reserve plus 30-GiB gate allowance. With the repository's exclusive scheduler lock held and no Cargo/rustc/ACP process running, `cargo clean --target-dir <exact-cache> -p vesper-harness -p vesper-acp -p vesper-agent -p agent-vesper-tui -p agent-vesper-acp` reclaimed only compiled artifacts in the inactive RRC managed cache and this verification's shared target. The new native host was copied before cleaning. Cargo reported 52.3/66.1 GiB removed (physical headroom differs because of shared filesystem blocks); `/home` then reported 154 GiB free. Sources, ledgers, credentials and Alex's installation were preserved. Logs: `/tmp/vesper-rrc-inactive-cache-reclaim.log`, `/tmp/vesper-rrc-verification-cache-reclaim.log`. No resource threshold changed.
