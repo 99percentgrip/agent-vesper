@@ -207,6 +207,8 @@ pub struct BackgroundTaskState {
     pub failure_fingerprint: Option<String>,
     pub recent_output: Vec<String>,
     pub process_alive: bool,
+    /// Shared controller ownership, independent of whether a child is alive.
+    pub controller_active: bool,
     /// Shared RRC progress/milestone projection, persisted by the controller
     /// and used by ACP as well as this terminal renderer.
     pub progress: vesper_harness::release_recovery::ReleaseProgress,
@@ -603,7 +605,14 @@ pub fn render_to_frame(frame: &mut Frame<'_>, model: &ViewModel) {
     let phase = model.plan.phase();
     let phase_style = banner_style_for_phase(phase);
     let model_name = superpower_value_for(model, "model").unwrap_or_else(|| "provider".into());
-    let state = if model
+    let state = if !model.agent_running
+        && model
+            .background_task
+            .as_ref()
+            .is_some_and(|task| !task.controller_active)
+    {
+        "RECOVERABLE"
+    } else if model
         .background_task
         .as_ref()
         .is_some_and(|task| task.resource_deferred)
@@ -1789,7 +1798,14 @@ fn render_screen_reader(frame: &mut Frame<'_>, model: &ViewModel) {
             Constraint::Length(2),
         ])
         .split(area);
-    let state = if model
+    let state = if !model.agent_running
+        && model
+            .background_task
+            .as_ref()
+            .is_some_and(|task| !task.controller_active)
+    {
+        "RECOVERY REQUIRED"
+    } else if model
         .background_task
         .as_ref()
         .is_some_and(|task| task.resource_deferred)
@@ -3537,6 +3553,45 @@ mod tests {
     }
 
     #[test]
+    fn recoverable_release_is_not_rendered_as_running_or_ready() {
+        use ratatui::{Terminal, backend::TestBackend};
+        for accessible in [false, true] {
+            for resource_deferred in [false, true] {
+                let mut model = ViewModel {
+                    background_task: Some(BackgroundTaskState {
+                        label: "Release recoverable".into(),
+                        detail: "Controller owner exited; recovery required".into(),
+                        process_alive: false,
+                        resource_deferred,
+                        ..BackgroundTaskState::default()
+                    }),
+                    ..ViewModel::default()
+                };
+                model.preferences.screen_reader = accessible;
+                let mut terminal = Terminal::new(TestBackend::new(150, 32)).unwrap();
+                terminal
+                    .draw(|frame| render_to_frame(frame, &model))
+                    .unwrap();
+                let header: String = terminal.backend().buffer().content[..150]
+                    .iter()
+                    .map(|cell| cell.symbol())
+                    .collect();
+                assert!(
+                    header.contains(if accessible {
+                        "RECOVERY REQUIRED"
+                    } else {
+                        "RECOVERABLE"
+                    }),
+                    "{header}"
+                );
+                for misleading in ["RUNNING", "WORKING", "READY", "DEFERRED"] {
+                    assert!(!header.contains(misleading), "{header}");
+                }
+            }
+        }
+    }
+
+    #[test]
     fn registered_release_task_replaces_ready_and_no_active_tasks() {
         use ratatui::Terminal;
         use ratatui::backend::TestBackend;
@@ -3563,6 +3618,7 @@ mod tests {
                 retry_budget: "full 0/1 · infra 0/2 · diagnostic 0/2".into(),
                 recent_output: vec!["test routing_quality_eval ...".into()],
                 process_alive: true,
+                controller_active: true,
                 progress: vesper_harness::release_recovery::ReleaseProgress {
                     phase:
                         vesper_harness::release_recovery::ReleaseProgressPhase::LocalVerification,

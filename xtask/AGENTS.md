@@ -74,6 +74,9 @@ architecture, MSRV, and source-oracle checks.
   The probe owns its controlling terminal independently of the invoking host.
   Every platform also requires exact repair-error liveness settlement and TUI/ACP
   effective-session repair configuration cases, including pending catalog routing.
+  The exact terminal header case rejects RUNNING/READY/DEFERRED for an ownerless
+  epoch in ordinary and screen-reader modes; the live deferred-controller case
+  remains mandatory and must not be weakened to make that negative case pass.
 
 - `xtask` may depend on `vesper-testkit`; production crates may not depend on it.
 - Commands must not call providers or mutate source/user state.

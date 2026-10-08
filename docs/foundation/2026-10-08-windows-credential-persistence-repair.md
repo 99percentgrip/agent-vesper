@@ -244,3 +244,44 @@ receipts, red/green/intermediary logs and integrated verification are retained i
 with hashes and source basis in the existing evidence manifest. The original
 storage-repair archive remains unchanged. Native restart uses these separately
 frozen binaries; Alex's installation remains untouched.
+
+## Controller ownership status follow-up
+
+Actual restart of the corrected native host exposed another status defect: a
+persisted failed or ownerless epoch still rendered `RUNNING` in the TUI header
+because the view contained a background task. A named renderer regression
+reproduced that incorrect label. The unpublished epoch
+`20261008T161337.467762340Z-f7d51b591385` was cancelled through native `/release cancel`
+before candidate commit/push/tag. It settled Cancelled/Idle with its checkpoint
+and zero retry use retained; the attached owner then quit with exit zero.
+
+The shared snapshot now distinguishes controller ownership from child-process
+activity. A registered controller remains active while passively waiting without
+a gate child. A failed/ownerless snapshot is inactive. Both native frontends use
+that shared status: TUI renders `RECOVERABLE` or screen-reader `RECOVERY REQUIRED`,
+and the shared text status explicitly states active versus recovery required.
+The existing active/deferred renderer case remains intact. An intermediary fix
+incorrectly treated child absence as owner absence; that existing case failed,
+was retained as failed evidence, and prompted the explicit ownership field.
+The final complete renderer suite passed **33 cases** with both inactive-owner
+and live deferred-watcher behavior. The new exact case is mandatory on all native
+platforms. Final acceptance, strict Clippy, refreshed hosts and native release
+remain pending for this follow-up; the earlier 153-case proof retains its scope.
+
+Final source then passed **154 exact acceptance cases**, all **33 renderer cases**,
+all **four shared progress cases**, strict workspace Clippy and the refreshed
+shipping-feature TUI/ACP build. The separate final acceptance run made no source
+edits during execution. Earlier intermediate failures remain in
+[the ownership-status archive](2026-10-08-windows-credential-controller-status-receipts.tar.gz),
+with source/binary/archive hashes in the evidence manifest. Native hosted OS
+persistence and exact-commit publication are still required; no .11 tag exists.
+
+The same refreshed binaries then passed four real Linux signed-out first-launch
+cases and four TUI/ACP release-control cases, one per registered provider. Each
+first-launch case showed the landing screen and all four provider choices,
+returned from authentication with Back, and quit cleanly. Cross-host cases retained
+partial matrices, refused unproved retries without writes, separated Published
+from degraded main and propagated cancellation without changing epoch/run/tag/assets.
+No provider call was dispatched. [Current host fixture receipts](2026-10-08-windows-credential-current-host-fixture-receipts.tar.gz)
+retain these eight exact platform-scoped passes. Windows/macOS execution and
+successful native subscription persistence remain required in exact-source CI.

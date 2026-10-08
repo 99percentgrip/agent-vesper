@@ -259,6 +259,8 @@ pub struct ReleaseWorkerSnapshot {
     pub failure_fingerprint: Option<String>,
     pub recent_output: Vec<String>,
     pub process_alive: bool,
+    /// Controller ownership is live, including waits with no gate child.
+    pub controller_active: bool,
     /// Persisted, typed milestones from the release ledger. Both hosts use
     /// this same sequence for their chat/RUN projection.
     pub progress: ReleaseProgress,
@@ -3511,6 +3513,7 @@ pub fn active_release_worker(repo_identity: &str) -> Option<ReleaseWorkerSnapsho
         failure_fingerprint: activity.failure_fingerprint.clone(),
         recent_output: activity.recent_output.iter().cloned().collect(),
         process_alive: activity.current_child.is_some(),
+        controller_active: true,
         progress: activity.progress.clone(),
         resource_deferred: activity.resource_deferred,
         resource_telemetry: activity.resource_telemetry.clone(),
@@ -3601,6 +3604,7 @@ pub fn release_run_snapshot_for_workspace(workspace: &Path) -> Option<ReleaseWor
         failure_fingerprint: None,
         recent_output: Vec::new(),
         process_alive: !recoverable,
+        controller_active: !recoverable,
         progress: record.progress,
         resource_deferred: record.state == ReleaseRecoveryState::ResourceDeferred,
         resource_telemetry: record.resource_deferred.map(|deferred| deferred.telemetry),
@@ -3679,6 +3683,14 @@ pub fn relinquish_release_ownership() {
 #[must_use]
 pub fn render_active_worker_status(worker: &ReleaseWorkerSnapshot) -> String {
     let mut lines = vec![format!("RUN                  {}", worker.detail)];
+    lines.push(format!(
+        "Controller           {}",
+        if worker.controller_active {
+            "active"
+        } else {
+            "recovery required"
+        },
+    ));
     lines.push(format!(
         "Progress             {} · {}/{} local · {}/{} remote jobs",
         worker.progress.phase.label(),

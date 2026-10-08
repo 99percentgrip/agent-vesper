@@ -202,7 +202,7 @@ fn text_host_run_status_uses_the_same_persisted_progress_snapshot() {
     }];
     record.note_progress_milestone("Running local gate 1/1: workspace-verify");
 
-    let status = render_active_worker_status(&ReleaseWorkerSnapshot {
+    let mut worker = ReleaseWorkerSnapshot {
         repo_identity: record.repo_identity.clone(),
         epoch_id: record.epoch_id.clone(),
         stage: "Release recovery".into(),
@@ -222,10 +222,19 @@ fn text_host_run_status_uses_the_same_persisted_progress_snapshot() {
         failure_fingerprint: None,
         recent_output: Vec::new(),
         process_alive: true,
+        controller_active: true,
         progress: record.progress.clone(),
         resource_deferred: false,
         resource_telemetry: None,
-    });
+    };
+    let status = render_active_worker_status(&worker);
+    assert!(status.contains("Controller           active"), "{status}");
+    worker.controller_active = false;
+    let recovered = render_active_worker_status(&worker);
+    assert!(
+        recovered.contains("Controller           recovery required"),
+        "{recovered}"
+    );
     assert!(
         status.contains("Progress             Local verification"),
         "{status}"

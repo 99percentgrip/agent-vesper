@@ -69,9 +69,10 @@ transport, stderr-only tracing, and orderly shutdown.
   client permission support fails closed. `/ci` includes the same persisted
   controller status as TUI; ACP never keeps a host-private release lifecycle.
   Explicit and natural-language release routes both inherit the active session
-  operating/permission modes and the same client permission port. Both factories
-  use the effective request/session execution configuration, including model and
-  provider controls; neither may copy stale engine boot defaults.
+  operating/permission modes and the same client permission port. ACP exposes the
+  shared controller-active/recovery-required status independently of gate-child
+  activity. Both repair factories use effective request/session configuration,
+  including model and provider controls; neither may copy stale engine boot defaults.
   Ordinary free-text release imperatives use that same shared conservative
   admission before provider dispatch. Admission launches the existing background
   RRC from a clean isolated release worktree. A persisted matching local-failure

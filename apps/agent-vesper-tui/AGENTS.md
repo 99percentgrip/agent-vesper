@@ -158,6 +158,9 @@ business logic.
   repair, the TUI supplies its ordinary approval port; controller state never
   bypasses permission. `/ci` appends the same persisted RRC status shown by ACP.
   The terminal owns presentation only.
+  Release headers use shared controller ownership: ownerless/failed epochs show
+  `RECOVERABLE` (screen-reader: `RECOVERY REQUIRED`), never `RUNNING`/`READY`.
+  A live resource watcher remains `DEFERRED` even without a child process.
   Explicit and natural-language release repair factories use the same session
   execution projection as coding turns: selected model, reasoning, context,
   iteration cap, compaction and hosted tools. Admission/status remain available

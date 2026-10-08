@@ -1414,6 +1414,7 @@ fn release_background_task(
             failure_fingerprint: task.failure_fingerprint,
             recent_output: task.recent_output,
             process_alive: task.process_alive,
+            controller_active: task.controller_active,
             progress: task.progress,
             resource_deferred: task.resource_deferred,
             resource_telemetry: task.resource_telemetry,

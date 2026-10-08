@@ -2788,6 +2788,11 @@ fn acceptance_verify() -> Result<(), String> {
             &["--lib"] as &[&str],
             "tests::release_repair_configuration_uses_session_model_and_provider_controls",
         ),
+        (
+            "agent-vesper-tui",
+            &["--lib"] as &[&str],
+            "ui::tests::recoverable_release_is_not_rendered_as_running_or_ready",
+        ),
     ]);
     let started = std::time::Instant::now();
     for (index, (package, target, name)) in cases.iter().enumerate() {
