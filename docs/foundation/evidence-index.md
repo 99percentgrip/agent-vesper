@@ -2204,6 +2204,8 @@ v0.21.6 release notes own the final run links, image IDs and local-install recei
   reproduced post-device-login native blob overflow, bounded provider-neutral
   storage repair, exact native receipt collection, controlling-terminal isolation,
   repair-error settlement, current-session repair configuration and truthful
-  controller-ownership headers; focused local
-  checks and final 154 exact local acceptance cases passed; native gates and exact-commit
-  publication pending.
+  controller-ownership headers and cache-retirement observations. Historical 156-case
+  local checks passed. The first .11 matrix settled nine green/three platform compile
+  failures; bounded repair proof continuation and native portability corrections
+  passed 157 exact local cases, strict Clippy, portability checks and eight Linux
+  process cases. Fresh native credential gates and publication remain pending.

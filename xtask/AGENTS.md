@@ -79,7 +79,10 @@ architecture, MSRV, and source-oracle checks.
   remains mandatory and must not be weakened to make that negative case pass.
   Every target requires deterministic target-cache disappearance and non-missing
   I/O failure cases. Cache retirement must not stop resource observation; genuine
-  observation failures still refuse admission.
+  observation failures still refuse admission. Fresh symlink metadata must observe
+  retired Windows entries instead of cached enumeration sizes. Every target also
+  requires the two-provider real-command repair continuation case: documentation
+  after an earlier check triggers bounded fresh proof in the same admission.
 
 - `xtask` may depend on `vesper-testkit`; production crates may not depend on it.
 - Commands must not call providers or mutate source/user state.

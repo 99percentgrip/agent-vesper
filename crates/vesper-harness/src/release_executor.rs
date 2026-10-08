@@ -2002,6 +2002,13 @@ fn run_bounded_repair_agent(
     )
 }
 
+pub(crate) fn repair_completion_needs_proof(
+    history: &[vesper_domain::ConversationMessage],
+) -> bool {
+    let (mutation, proof) = observed_repair_receipts(history);
+    mutation && proof.is_none()
+}
+
 fn observed_repair_receipts(
     history: &[vesper_domain::ConversationMessage],
 ) -> (bool, Option<String>) {
@@ -7687,7 +7694,9 @@ pub(crate) mod tests {
         for label in ["fixture.segment-a", "fixture.segment-b"] {
             let root = tempfile::tempdir().unwrap();
             fs::create_dir(root.path().join("src")).unwrap();
-            let commands = (0..30)
+            fs::write(root.path().join("Cargo.toml"),
+                "[package]\nname = \"release-segment-fixture\"\nversion = \"0.1.0\"\nedition = \"2024\"\n").unwrap();
+            let mut commands = (0..30)
                 .map(|index| {
                     let path = format!("part-{index}");
                     fs::write(
@@ -7698,9 +7707,11 @@ pub(crate) mod tests {
                     format!("fixture-read:{path}")
                 })
                 .collect::<Vec<_>>();
+            commands.push("cargo test exact_regression --offline -- --exact".into());
+            let repaired = "pub fn answer() {}\n#[test] fn exact_regression() { answer(); }\n";
             let refs = commands.iter().map(String::as_str).collect::<Vec<_>>();
             let (factory, session, runtime) =
-                repair_test_factory_with_commands(label, "pub fn answer() {}\n", &refs);
+                repair_test_factory_with_commands(label, repaired, &refs);
             let (outcome, history) = runtime
                 .block_on(factory.run_coding_turn_in_workspace(
                     root.path().to_path_buf(),
@@ -7710,14 +7721,14 @@ pub(crate) mod tests {
                 .unwrap();
             assert!(matches!(
                 outcome,
-                vesper_agent::AgentTurnOutcome::Completed { iterations: 32, .. }
+                vesper_agent::AgentTurnOutcome::Completed { iterations: 33, .. }
             ));
-            assert_eq!(session.requests().len(), 32);
+            assert_eq!(session.requests().len(), 33);
             assert!(history.iter().any(|message| message.content.iter().any(|part|
                 matches!(part, ContentPart::ToolCall(call) if call.id.as_str() == "fixture-read_file-30"))));
             assert_eq!(
                 fs::read_to_string(root.path().join("src/lib.rs")).unwrap(),
-                "pub fn answer() {}\n"
+                repaired
             );
         }
     }
@@ -7753,10 +7764,12 @@ pub(crate) mod tests {
         for label in ["fixture.retry-a", "fixture.retry-b"] {
             let root = tempfile::tempdir().unwrap();
             fs::create_dir(root.path().join("src")).unwrap();
+            fs::write(root.path().join("Cargo.toml"),
+                "[package]\nname = \"release-retry-fixture\"\nversion = \"0.1.0\"\nedition = \"2024\"\n").unwrap();
             let (factory, session, runtime) = repair_test_factory_with_prefix(
                 label,
-                "pub fn answer() {}\n",
-                &[],
+                "pub fn answer() {}\n#[test] fn exact_regression() { answer(); }\n",
+                &["cargo test exact_regression --offline -- --exact"],
                 vec![failure(
                     label,
                     vesper_domain::Retryability::BeforeVisibleOutput,
@@ -7771,7 +7784,7 @@ pub(crate) mod tests {
                 ))
                 .unwrap();
             assert!(outcome.is_success());
-            assert_eq!(session.requests().len(), 3);
+            assert_eq!(session.requests().len(), 4);
             assert_eq!(
                 session.requests()[0].messages,
                 session.requests()[1].messages
@@ -7966,7 +7979,7 @@ pub(crate) mod tests {
                 "Repair source without publishing".into(),
                 Arc::new(vesper_runtime::RuntimeCancellation::new()),
             ))
-            .unwrap();
+            .expect_err("a denied lifecycle command cannot finish verified repair");
         assert!(
             !native
                 .command(
@@ -8101,6 +8114,108 @@ pub(crate) mod tests {
             assert!(cargo_test_executed(&String::from_utf8_lossy(
                 &output.stdout
             )));
+        }
+    }
+
+    #[test]
+    fn repair_factory_continues_after_documentation_invalidates_focused_proof() {
+        use vesper_provider::ProviderStreamEvent;
+        let root = tempfile::tempdir().unwrap();
+        fs::create_dir(root.path().join("src")).unwrap();
+        fs::write(
+            root.path().join("Cargo.toml"),
+            "[package]\nname = \"release-fixture\"\nversion = \"0.1.0\"\nedition = \"2024\"\n",
+        )
+        .unwrap();
+        let repaired = "pub fn answer() -> u32 { 42 }\n#[test] fn exact_regression() { assert_eq!(answer(), 42); }\n";
+        let tool = |name: &str, arguments, id: &str| {
+            Ok(vec![
+                Ok(ProviderStreamEvent::ToolCallCompleted(
+                    vesper_domain::ToolCall {
+                        id: vesper_domain::ToolCallId::new(id).unwrap(),
+                        tool_id: vesper_domain::ToolId::new(name).unwrap(),
+                        arguments,
+                        extensions: vesper_domain::ExtensionMap::default(),
+                    },
+                )),
+                Ok(ProviderStreamEvent::Completed {
+                    finish: vesper_domain::FinishOutcome::ToolCalls,
+                    metadata: vesper_domain::ExtensionMap::default(),
+                }),
+            ])
+        };
+        let stop = Ok(vec![
+            Ok(ProviderStreamEvent::ContentDelta {
+                stream_id: vesper_domain::BoundedString::new("text").unwrap(),
+                part: ContentPart::Text(
+                    vesper_domain::ContentText::new("Repair complete.").unwrap(),
+                ),
+            }),
+            Ok(ProviderStreamEvent::Completed {
+                finish: vesper_domain::FinishOutcome::Stop,
+                metadata: vesper_domain::ExtensionMap::default(),
+            }),
+        ]);
+        for label in ["fixture.release-a", "fixture.release-b"] {
+            let prefix = vec![
+                tool(
+                    "write_file",
+                    serde_json::json!({"path":"src/lib.rs", "content":repaired}),
+                    "initial-source",
+                ),
+                tool(
+                    "run_command",
+                    serde_json::json!({"command":"cargo test exact_regression --offline -- --exact"}),
+                    "initial-proof",
+                ),
+                tool(
+                    "write_file",
+                    serde_json::json!({"path":"report.md", "content":"Current proof pending.\n"}),
+                    "final-report",
+                ),
+                stop.clone(),
+            ];
+            let (factory, session, runtime) = repair_test_factory_with_prefix(
+                label,
+                repaired,
+                &["cargo test exact_regression --offline -- --exact"],
+                prefix,
+            );
+            let (outcome, history) = runtime
+                .block_on(factory.run_coding_turn_in_workspace(
+                    root.path().to_path_buf(),
+                    "Repair with required documentation".into(),
+                    Arc::new(vesper_runtime::RuntimeCancellation::new()),
+                ))
+                .unwrap();
+            assert!(outcome.is_success());
+            assert_eq!(session.requests().len(), 7);
+            let (mutation, proof) = observed_repair_receipts(&history);
+            assert!(mutation);
+            assert_eq!(
+                proof.as_deref(),
+                Some("cargo test exact_regression --offline -- --exact")
+            );
+            assert!(history.iter().any(|message| message.content.iter().any(|part|
+                matches!(part, ContentPart::Text(text) if text.as_str().contains("The repair is unfinished")))));
+            let mut prefix = Vec::new();
+            for index in 0..4 {
+                prefix.push(tool("write_file",
+                    serde_json::json!({"path":"report.md", "content":format!("Unverified claim {index}\n")}),
+                    &format!("unverified-{index}")));
+                prefix.push(stop.clone());
+            }
+            let (factory, session, runtime) =
+                repair_test_factory_with_prefix(label, repaired, &[], prefix);
+            let error = runtime
+                .block_on(factory.run_coding_turn_in_workspace(
+                    root.path().to_path_buf(),
+                    "Never count prose as proof".into(),
+                    Arc::new(vesper_runtime::RuntimeCancellation::new()),
+                ))
+                .unwrap_err();
+            assert!(error.contains("repair continuation segment ceiling"));
+            assert_eq!(session.requests().len(), 8);
         }
     }
 
@@ -9905,7 +10020,7 @@ fn run_bounded_repair_agent_with_verification(
          The controller admitted the following local or settled exact-SHA failures. It contains {} distinct admitted failure fingerprints.\n\
          Cluster related first causes before editing, repair every evidence-backed causal family in this one candidate, and do not stop after the first failure.\n\
          <untrusted-ci-failures>\n{}\n</untrusted-ci-failures>\n\
-         Make only causally relevant source/configuration edits. After the final edit, run one smallest credible focused command that proves all repaired families (it may select multiple exact tests). Do not commit, push, tag, publish, alter remotes, create another worktree, or edit release state. Finish with a concise family-by-family repair hypothesis and the focused command/result.",
+         Make only causally relevant source/configuration edits. Finish all required DOX and execution-report edits before verification. After the final edit, run one smallest credible focused command that proves all repaired families (it may select multiple exact tests). Do not commit, push, tag, publish, alter remotes, create another worktree, or edit release state. Finish with a concise family-by-family repair hypothesis and the focused command/result.",
         failures.len(),
         clustered_evidence,
     );

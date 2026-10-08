@@ -2006,7 +2006,7 @@ struct Dependency {
 /// External coding agents and CI run the same runtime/evaluator regression gate.
 /// Exact names make a deleted, renamed, ignored, or zero-match case a failure.
 fn acceptance_verify() -> Result<(), String> {
-    let cases: Vec<(&str, &[&str], &str)> = vec![
+    let mut cases: Vec<(&str, &[&str], &str)> = vec![
         (
             "vesper-harness",
             &["--lib"],
@@ -2707,9 +2707,12 @@ fn acceptance_verify() -> Result<(), String> {
             &["--lib"],
             "host_resources::tests::target_cache_scan_preserves_non_missing_errors",
         ),
+        (
+            "vesper-harness",
+            &["--lib"],
+            "release_executor::tests::repair_factory_continues_after_documentation_invalidates_focused_proof",
+        ),
     ];
-    #[cfg(unix)]
-    let mut cases = cases;
     #[cfg(target_os = "linux")]
     cases.extend([
         (

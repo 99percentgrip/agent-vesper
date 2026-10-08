@@ -1097,8 +1097,13 @@ reset, stashed or mutated by this process.
 [Windows credential persistence and native RRC follow-up](foundation/2026-10-08-windows-credential-persistence-repair.md)
 records the later post-login save defect, controlling-terminal fixture failure,
 hidden repair dispatch error, stale boot-model repair configuration, falsely
-running ownerless TUI header and managed-cache disappearance observation. These
-newly exposed gaps are repaired locally; the current candidate still requires
+running ownerless TUI header and managed-cache disappearance observation. The
+first .11 matrix additionally found Windows acceptance-vector mutability and
+macOS PTY request ABI compile errors; its automatic repair stopped after required
+report edits invalidated its earlier check. The follow-up adds bounded same-history
+proof continuation and fresh Windows cache metadata. These newly exposed gaps
+passed 157 exact local cases, strict Clippy and eight Linux process checks;
+the current candidate still requires
 native exact-source gates, OS credential receipts and Complete/Idle publication.
 Historical green releases do not certify these new behaviors.
 

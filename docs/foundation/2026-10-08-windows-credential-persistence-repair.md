@@ -332,3 +332,80 @@ guarded inspection/reclamation inventories. Hashes and scope are recorded in the
 existing evidence manifest; earlier archives remain unchanged. Native Windows
 and macOS persistence/execution, exact-source publication and final closeout
 remain required.
+
+
+## Settled .11 platform matrix and repair handoff follow-up
+
+The native attached owner completed all eight local gates and pushed candidate
+`61bc1ffeb4d1ec7ad710d582e794eb5ad3c75116`. It waited for all twelve prerequisite
+jobs to settle: nine passed and three failed. Both Linux foundation lanes passed
+native credential acceptance. Windows and both macOS foundation lanes failed
+compilation before credential acceptance, which was skipped and is not proof.
+No .11 tag or publication occurred.
+
+The actual compiler causes were an immutable Windows `xtask` acceptance vector
+and macOS `TIOCSCTTY` request type mismatch. RRC fingerprinted all three failed
+jobs and admitted one focused worker for the two related causes. It edited both
+sites, executed compilation, then wrote the required report/DOX files. The last
+edit invalidated its observed proof. The controller correctly refused promotion
+but lacked automatic continuation for this ordinary unfinished handoff. The
+native owner was stopped with `/quit` after its persisted failed state, exit zero;
+no live worker was interrupted. Its reserved admissions and full settled matrix
+are retained in the failure-ledger snapshot, with no counters or journals reset.
+
+The shared repair factory now continues a normal completed response with successful
+mutations but no post-edit proof using its complete history and existing bounded
+segment/iteration ceiling. It preserves the same admission and permissions and
+requires final observed proof followed by controller-owned frozen-patch verification.
+The prompt puts required documentation before the final check. Missing mutations,
+interruption, cancellation and the ultimate ceiling do not authorize promotion.
+The two-provider real Rust-command regression failed before continuation (four
+requests, premature stop) and passed with continuation (seven requests and final
+proof). It is mandatory native acceptance on every platform.
+
+The two compile sites are corrected in the integrated source. The governor now
+reads fresh `symlink_metadata` rather than `DirEntry::metadata`: the latter caches
+enumeration data on Windows and could retain a retired entry's old size. This
+additional gap is a source-backed inference, not an executed Windows failure;
+[the Rust DirEntry metadata contract](https://doc.rust-lang.org/std/fs/struct.DirEntry.html#method.metadata)
+describes the platform difference. The exact disappearance assertion is retained;
+symlinks are still not traversed and non-missing errors still refuse admission.
+
+Current follow-up: strict workspace Clippy passed. Expanded acceptance, refreshed
+hosts, native platform credential proof and .11 release/closeout remain required.
+The original Windows laptop has not validated this repair. Parent DOX ownership
+and child indexes remain unchanged; harness/xtask local contracts were updated.
+
+
+The first expanded 157-case run stopped at the older unplanned-segment fixture:
+it had deliberately ended after reads/source edits without focused proof. The
+initial repair-only suite likewise exposed success-path fixture gaps in initial
+provider retry and lifecycle-denial coverage (17 passed, two failed). These failed
+receipts are retained. The successful fixtures now execute an actual Rust test;
+the lifecycle-denial fixture explicitly refuses verified completion. Existing
+segment, retry, preserved-action and no-tag assertions remain. Final repair-only
+suite passed **19 cases**, no failures. The new documentation-order case also
+requires repeated unverified claims to stop at the shared four-segment ceiling.
+
+The isolated repair branch was advanced to the already pushed .11 version commit
+before final verification, preserving fast-forward main ancestry and the original
+version number. This is still the same unpublished .11 objective; no second
+version, tag or release was created. The failed epoch snapshot and unused native
+repair worktree remain intact. The updated integrated source must enter native
+RRC admission with its own scope-bound proof; historical gates are not reused.
+
+
+Final .11 source passed **157 exact acceptance cases**, strict all-target/all-feature
+workspace Clippy, format and 31-package architecture validation. The Windows
+`xtask` cross-check passed. The isolated PTY request expression type-checked for
+Intel and Apple-silicon macOS with explicit Rust 1.95.0; the first temporary-crate
+attempt used the shell's different default toolchain without that target and is
+retained as a failed environment check. These expression checks do not certify
+native terminal behavior. The shipping-feature rebuilt TUI/ACP passed four
+signed-out Linux first-launch cases and four shared release-control cases.
+
+[Platform/continuation receipts](2026-10-08-windows-credential-platform-continuation-receipts.tar.gz)
+retain all intermediate failures, final local passes, the full stopped ledger and
+first-candidate causal logs. The existing evidence manifest binds 20 receipts,
+source hashes and immutable rebuilt-host identities. Current-source hosted Windows
+and macOS persistence, exact-commit matrices and final native closeout remain pending.

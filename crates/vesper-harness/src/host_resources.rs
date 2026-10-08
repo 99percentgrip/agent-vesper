@@ -1411,12 +1411,15 @@ fn directory_size_with_observer(
             let Some(entry) = cache_observation(entry)? else {
                 continue;
             };
-            before_observation(&entry.path());
-            let Some(metadata) = cache_observation(entry.metadata())? else {
+            let entry_path = entry.path();
+            before_observation(&entry_path);
+            // DirEntry caches enumeration metadata on Windows. Observe the path
+            // again so retired entries are absent consistently on every host.
+            let Some(metadata) = cache_observation(fs::symlink_metadata(&entry_path))? else {
                 continue;
             };
             if metadata.is_dir() {
-                pending.push(entry.path());
+                pending.push(entry_path);
             } else if metadata.is_file() {
                 total = total.saturating_add(metadata.len());
             }

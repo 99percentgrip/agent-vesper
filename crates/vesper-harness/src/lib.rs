@@ -2918,16 +2918,20 @@ impl WorkerFactory {
             };
             spent = spent.saturating_add(*iterations);
             *iterations = spent;
-            if !matches!(outcome, AgentTurnOutcome::MaxIterationsReached { .. })
+            let missing_proof = matches!(outcome, AgentTurnOutcome::Completed { .. })
+                && release_executor::repair_completion_needs_proof(&next_history);
+            if (!matches!(outcome, AgentTurnOutcome::MaxIterationsReached { .. }) && !missing_proof)
                 || spent >= total_limit
                 || cancellation.is_cancelled()
             {
                 return Ok((outcome, next_history));
             }
             history = next_history;
-            history.push(build_user_message(
-                "The ordinary repair segment ended with unfinished work. Continue this same isolated repair using the preserved history. Do not repeat completed actions. Keep the existing permissions and release prohibitions; finish all admitted families and run focused proof after the final edit.",
-            ));
+            history.push(build_user_message(if missing_proof {
+                "The repair is unfinished: no successful supported focused command was observed after the final file edit. Continue this same admission with preserved history and permissions. Finish required documentation first, then execute focused verification of the final patch. Do not repeat completed edits or claim prior checks as current proof. Commit, push, tag, release-state edits and publication remain forbidden."
+            } else {
+                "The ordinary repair segment ended with unfinished work. Continue this same isolated repair using the preserved history. Do not repeat completed actions. Keep the existing permissions and release prohibitions; finish all admitted families and run focused proof after the final edit."
+            }));
         }
         Err("repair continuation segment ceiling reached with unfinished work".into())
     }

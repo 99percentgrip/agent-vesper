@@ -76,7 +76,11 @@ Z.ai and Playwright MCP server descriptors.
   Unplanned segment exhaustion continues with preserved complete history for at most
   four segments in the same admitted attempt; the total role ceiling is at most
   96 turns (smaller host caps remain smaller). Native plan continuation shares this
-  ceiling. Interruption never continues or replays ambiguous calls. Semantic and
+  ceiling. A normal completed provider response after a successful edit but without
+  a successful focused command after the final edit continues with the same
+  complete history, permissions, admission and shared segment/iteration ceiling.
+  Finish required DOX/report edits before final proof. Continuation never converts
+  missing or failed proof into success; final controller verification remains required. Interruption never continues or replays ambiguous calls. Semantic and
   heartbeat watchdogs span all segments; terminal refusals identify their outcome.
   Initial provider rejection permits one retry within the same admission only when
   the adapter permits retry before visible output, exactly one request has started,
@@ -304,7 +308,8 @@ Z.ai and Playwright MCP server descriptors.
   filesystem; logical zram occupancy is never treated as physical RAM consumption.
   Managed-target size scans tolerate entries retired between enumeration and
   observation. Only `NotFound` is omitted; permission and other I/O errors remain
-  failures, and live filesystem free-space admission is unchanged. The scan never
+  failures. Fresh symlink metadata avoids cached Windows enumeration sizes;
+  live filesystem free-space admission is unchanged. The scan never
   deletes cache entries or weakens the reserve/growth budget.
   It reserves desktop headroom, exports one inherited
   `CARGO_BUILD_JOBS`/`RUST_TEST_THREADS`/`CARGO_TARGET_DIR` policy, serializes
