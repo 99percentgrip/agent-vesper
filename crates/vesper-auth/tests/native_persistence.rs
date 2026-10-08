@@ -68,14 +68,17 @@ fn hosted_native_credential_persistence() {
                 "--ignored",
                 "--exact",
                 "hosted_native_credential_reload_child",
-                "--nocapture",
+                "--show-output",
             ])
             .env("VESPER_CREDENTIAL_FIXTURE_SERVICE", service)
             .env("VESPER_CREDENTIAL_FIXTURE_VAULT", &vault)
             .env("VESPER_CREDENTIAL_FIXTURE_PHASE", phase)
             .output()
             .unwrap();
-        assert!(child.status.success(), "fresh-process reload failed");
+        assert!(
+            valid_reload_receipt(&child.stdout, child.status.success()),
+            "fresh-process reload lacks one passing exact case"
+        );
         println!(
             "native credential round-trip/restart {phase}: {:?}",
             receipt.backend
@@ -109,4 +112,31 @@ fn hosted_native_credential_reload_child() {
         store.load(ID).unwrap().unwrap().expose().as_str(),
         synthetic_record(&phase)
     );
+}
+
+fn valid_reload_receipt(output: &[u8], success: bool) -> bool {
+    let Ok(output) = std::str::from_utf8(output) else {
+        return false;
+    };
+    success
+        && output
+            .lines()
+            .any(|line| line.trim() == "test hosted_native_credential_reload_child ... ok")
+        && output
+            .lines()
+            .any(|line| line.starts_with("test result: ok. 1 passed; 0 failed; 0 ignored;"))
+}
+
+#[test]
+fn reload_receipt_rejects_missing_ignored_failed_and_zero_cases() {
+    let passed = b"test hosted_native_credential_reload_child ... ok\ntest result: ok. 1 passed; 0 failed; 0 ignored; 1 filtered out;\n";
+    assert!(valid_reload_receipt(passed, true));
+    assert!(!valid_reload_receipt(passed, false));
+    for output in [
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 2 filtered out;\n",
+        "test hosted_native_credential_reload_child ... ignored\ntest result: ok. 0 passed; 0 failed; 1 ignored;\n",
+        "test renamed ... ok\ntest result: ok. 1 passed; 0 failed; 0 ignored;\n",
+    ] {
+        assert!(!valid_reload_receipt(output.as_bytes(), true));
+    }
 }

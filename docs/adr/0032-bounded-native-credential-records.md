@@ -78,7 +78,9 @@ Accepted ADR 0014 is retained unchanged as the historical decision.
 - Explicit five-target `native_persistence` hosted acceptance uses the public
   production store, multiple synthetic subscription tokens, a fresh child
   process, rotation and removal. Windows must return `NativeKeyring` and must
-  not create a plaintext vault; Unix reports its actual backend.
+  not create a plaintext vault; Unix reports its actual backend. The CI collector
+  and child reload both require one named passing exact receipt; zero-match,
+  ignored, renamed and failed cases cannot satisfy native proof.
 - Strict Clippy, Windows target compilation, architecture, workspace tests and
   the existing OpenAI device-auth fixtures remain required.
 - Current execution evidence: [Windows credential persistence repair](../foundation/2026-10-08-windows-credential-persistence-repair.md).

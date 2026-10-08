@@ -116,6 +116,9 @@ jobs:
         env:
           RUSTC_WRAPPER: ${{ steps.sccache_check.outputs.sccache_ready == 'true' && 'sccache' || '' }}
         run: cargo test --workspace --all-features
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.13'
       - name: Verify isolated native credential persistence and fresh-process reload
         shell: bash
         timeout-minutes: 5
@@ -123,8 +126,8 @@ jobs:
           VESPER_NATIVE_CREDENTIAL_ACCEPTANCE: isolated-hosted-fixture
           RUSTC_WRAPPER: ${{ steps.sccache_check.outputs.sccache_ready == 'true' && 'sccache' || '' }}
         run: |
-          cargo test --locked -p vesper-auth --test native_persistence hosted_native_credential_persistence -- --ignored --exact --test-threads=1 --nocapture
-          cargo test --locked -p vesper-provider-openai --lib auth::tests::hosted_device_flow_persists_large_subscription_record -- --ignored --exact --test-threads=1 --nocapture
+          python -m unittest discover -s .github -p test_verify_native_credentials.py
+          python .github/verify_native_credentials.py
       - name: Validate fixtures and architecture
         shell: bash
         env:
@@ -143,9 +146,6 @@ jobs:
           cargo xtask sessions verify
           cargo xtask architecture
           cargo xtask acceptance
-      - uses: actions/setup-python@v6
-        with:
-          python-version: '3.13'
       - name: Prepare native Windows terminal fixture
         if: matrix.platform_spike == 'windows'
         shell: bash

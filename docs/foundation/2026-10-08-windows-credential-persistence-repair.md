@@ -128,3 +128,33 @@ The save failure is reproduced and the provider-neutral repair passed focused
 local verification. Release readiness remains pending complete native RRC local
 gates and exact-SHA native matrices. The previous menu-only evidence is explicitly insufficient for
 credential persistence.
+
+
+## Exact native receipt hardening before publication
+
+Final review found that Cargo may return zero when a named filter matches no
+cases. The child reload and hosted parent collector now require both the exact
+named `ok` line and a one-passed/zero-failed/zero-ignored summary, in addition to
+successful process exit. Offline Rust and Python regressions reject zero matches,
+renamed cases, ignored cases and missing receipts.
+
+The first native v0.24.11 attempt was stopped through `/release cancel` during
+local workspace verification before any push or tag. Its controller settled
+`Cancelled`/`Idle`, retained its checkpoint and used zero retry budget. No release
+was published by that attempt. The corrected candidate must enter native RRC
+again through ordinary admission; no journal clearing or counter reset is allowed.
+
+Before that attempt, RRC deferred version preparation under actual exhausted
+swap/narrow RAM margin. Two stopped, owned v0.24.10 verification binaries were
+retained byte-for-byte off tmpfs, with original-path symlinks and SHA-256 receipts.
+The same attached controller then resumed automatically under unchanged policy.
+The active owner and user installations were untouched.
+
+
+The strict-receipt refinement passed three offline Python parser/guard cases and
+one exact Rust receipt case, including a real `--show-output` result accepted by
+the same CI collector. Workspace and Windows-auth Clippy, format and focused
+auth/OpenAI checks passed again. Parent invocations retain captured native backend
+receipts with `--show-output`, keeping their named Rust result line intact.
+The default integration suite now has one offline receipt case passed and two
+native cases ignored; neither ignored case counts as native acceptance.

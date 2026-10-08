@@ -13,7 +13,9 @@ managers with an explicit owner-only file fallback on Unix systems.
 - `src/native_records.rs` owns Windows size-bounded native records, immutable
   generations, readback/integrity, interruption recovery and sign-out tombstones.
 - `tests/native_persistence.rs` owns explicit hosted synthetic save/restart/
-  rotation/sign-out acceptance through the public production store.
+  rotation/sign-out acceptance through the public production store. Every
+  reload requires a named one-case passing child receipt; missing/renamed/ignored
+  or zero-match selections fail, including an offline parser regression.
 
 ## Local Contracts
 

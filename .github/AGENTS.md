@@ -57,6 +57,10 @@ migration gates and disposable platform assumptions on hosts unavailable locally
   entries only, production store, fresh-process reload, rotation and sign-out.
   Windows must prove native storage with no plaintext vault. Default tests keep
   this lane ignored; real credentials and provider calls remain prohibited.
+  `verify_native_credentials.py` requires one named passing Rust receipt for
+  each parent case; the core fixture likewise requires one exact child receipt.
+  Missing, renamed, ignored and zero-match cases fail even when Cargo exits zero.
+  Its offline parser/guard tests never invoke Cargo or native credential access.
 - Validation workflows must not call live providers or require credentials.
   `release-recovery-acceptance.yml` is a manually dispatched, read-only controlled
   fixture for deterministic complete-matrix red, repeated-fingerprint, focused-green
@@ -179,6 +183,9 @@ migration gates and disposable platform assumptions on hosts unavailable locally
   cannot replace complete production prerequisite or publishing gates.
 
 ## Child DOX Index
+
+- `verify_native_credentials.py` and `test_verify_native_credentials.py` —
+  explicitly hosted native credential acceptance and offline exact-receipt guards.
 
 - `workflows/ci.yml` — pull-request canonical gate (`cargo xtask verify`),
   documentation-structure check, and the supply-chain job (`cargo audit` +
