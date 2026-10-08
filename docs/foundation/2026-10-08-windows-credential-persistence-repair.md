@@ -409,3 +409,105 @@ retain all intermediate failures, final local passes, the full stopped ledger an
 first-candidate causal logs. The existing evidence manifest binds 20 receipts,
 source hashes and immutable rebuilt-host identities. Current-source hosted Windows
 and macOS persistence, exact-commit matrices and final native closeout remain pending.
+
+
+## Proof isolation and authoritative cancellation follow-up
+
+### Objective, methods and retained failure
+
+The integrated source `81dec11aee92f99426f25a596aeb222466ff25e9`
+entered native `.11` release verification. A server restart killed the first
+owner and compiler tree; the same frozen TUI automatically reconciled the
+recoverable epoch and resumed it. The resumed full workspace suite failed
+`repair_verification_changes_cannot_be_promoted_as_verified` at the assertion
+requiring safe failure context. Fingerprint:
+`5a3c65acf55aedf381bd9e1e30138d1bf17d192386d9d4ff6cd78cb2c1a05200`.
+
+The RRC admitted one bounded model repair. Its final patch added wording to the
+snapshot diagnostic, retaining the `verification changed` phrase already present
+in the original source. Its focused test passed, and native full verification
+started. This did not explain the original assertion. The operator stopped that
+attempt before promotion/push/tag; no successful full-gate receipt or promoted
+repair is claimed. The complete cancelled ledger preserves the admission and
+unchanged release counters. The native repair worktree remains retained.
+
+A read-only cache audit found that independent temporary `repair-composition`
+packages shared the same artifact hash. A new deterministic regression compiled
+two different projects into a private shared target and asserted separate proof
+executables. It failed before the fix: both executable paths were
+`shared-target/debug/deps/repair_composition-7d2322b3d901d44b` on this Linux host.
+This proves artifact aliasing. The original full-suite assertion did not include
+its actual safe error text, so aliasing remains a supported explanation rather
+than a reproduced exact causal chain. A two-thread focused rerun before the fix
+passed 90 cases; that successful rerun is retained, not represented as a repair.
+
+Cancellation also reproduced a separate production settlement defect: the
+cancelled checkpoint was relabelled with failed liveness for a late `stale release
+checkpoint writer` error. The new regression failed against the original code.
+The fix returns before late worker-error settlement when the durable state is
+already Cancelled; it leaves the checkpoint, evidence, mutation journal and
+admission counters intact. Existing active-epoch authorization/watchdog/failure
+settlement still reports failures and remains tested.
+
+### Files and contracts
+
+- `crates/vesper-harness/src/release_executor.rs`: authoritative cancellation;
+  unique temporary repair Cargo identities retained by Git repair worktrees;
+  bounded real binary execution and diagnostic assertion evidence.
+- `xtask/src/main.rs`: both new exact cases mandatory on every platform.
+- Owning harness/xtask/foundation DOX, RRC section 37, evidence index and this
+  report: stable contracts, exact evidence and unresolved platform scope.
+- Release-objective provenance: the same Windows-authentication objective and
+  `.11` target, with explicit canonical descendant lineage; no second version.
+
+The source does not adopt the unproven model diagnostic change, weaken any
+snapshot/promotion assertion, reduce test concurrency, alter resource reserves,
+clear a ledger or create a manual release. The factory and isolated promotion
+fixtures use per-workspace Cargo package identities; copied repair manifests
+retain that identity. The regression runs both compiled binaries only after both
+projects have been built, verifies nonzero passing tests, and proves neither
+project can overwrite the other's proof executable.
+
+### Evidence and readiness
+
+Retained receipts currently include:
+
+- `vesper-v0.24.11-server-restart-checkpoint.json`: interrupted owner snapshot.
+- `vesper-v0.24.11-unproven-diagnostic-repair-cancelled-ledger.json`: original
+  failure, stopped repair admission and no candidate/tag/publication mutation.
+- `vesper-v0.24.11-shared-cache-diagnostic-red.log`: diagnostic instrumentation
+  alone; 90 focused cases passed without reproducing the intermittent assertion.
+- `vesper-v0.24.11-shared-artifact-alias-red.log`: exact executable collision
+  assertion failed, 0 passed/1 failed.
+- `vesper-v0.24.11-cancelled-checkpoint-red.log`: late settlement regression
+  failed, 0 passed/1 failed.
+- `vesper-v0.24.11-cache-and-cancellation-green.log`: initial repaired focused
+  suite, 92 passed/0 failed with two test threads. The final bounded binary-run
+  refinement is covered by the subsequent exact acceptance receipt.
+
+Final local checks passed on the corrected source:
+
+- `cargo xtask acceptance`: **159/159**, 220693 ms; no live-model effectiveness
+  claim. Both added cases execute on every native target.
+- Four shared-cache isolation/snapshot cases repeated **five times**, two test
+  threads: **20 passed**, no failures. The original three verifier-mutation
+  scenarios run for both fixture providers and both preparation/remote routes.
+- Strict all-target/all-feature workspace Clippy, format check and architecture
+  (**31 packages**): passed. Windows MSVC `xtask` cross-check: passed; this is
+  compilation proof only.
+- Shipping-feature TUI/ACP builds and frozen-host Linux process checks: passed;
+  four signed-out provider/landing cases and four shared release-control cases,
+  with private state and no provider calls.
+- Owning report local links (**7**), JSON/receipt hashes and whitespace: checked
+  before candidate admission. Root/apps/auth/OpenAI contracts remain unchanged:
+  the follow-up changes shared cancellation and test proof isolation, and their
+  existing ownership/provider/persistence rules still apply. Owning harness,
+  xtask and foundation contracts were updated in the same candidate.
+
+The evidence manifest's `proof_isolation_follow_up` binds final source and frozen
+hosts to `2026-10-08-windows-credential-proof-isolation-receipts.tar.gz`, retaining
+failed, stopped and intermediate receipts alongside the final checks.
+No actual Windows/macOS credential gate for this new source has passed yet;
+native exact-source release gates and original-laptop retesting remain pending.
+A stopped local repair is not successful autonomous release proof. Native RRC
+must finish its full local/hosted gates, publication and Complete/Idle closeout.

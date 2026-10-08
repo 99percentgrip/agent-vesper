@@ -51,6 +51,8 @@ Z.ai and Playwright MCP server descriptors.
   staged tree; ignored new inputs cannot supply proof for a patch that omits them.
   Failed verification retains bounded redacted diagnostic text and includes it in
   the next attempt's untrusted prior evidence, alongside its existing digest.
+  A cancelled checkpoint is authoritative: late worker-error settlement must not
+  relabel it, replace its evidence or change its retry admissions.
   Cargo test proof must execute tests and include an identifiable failing test,
   including explicit rustup toolchain selections. Rust panic parsing accepts numeric
   thread IDs as well as older messages, preserving exact failing-test binding.
@@ -104,6 +106,8 @@ Z.ai and Playwright MCP server descriptors.
   The RRC coding factory fixture runs real file/command tools and native failing
   then passing Rust tests with two registered fixture provider IDs; fixture
   streams never establish real model effectiveness or production transport.
+  Independent temporary repair packages have distinct Cargo identities, retained
+  by their Git worktrees, so the shared managed cache cannot alias proof binaries.
   The combined composition fixture verifies native isolated-worktree proof and
   one-patch promotion for both fixture IDs in remote and preparation routes; only its fixture-wide gate port is
   substituted. Production always executes the complete native gate set.

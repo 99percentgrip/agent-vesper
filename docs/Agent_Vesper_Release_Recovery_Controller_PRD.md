@@ -1106,6 +1106,15 @@ passed 157 exact local cases, strict Clippy and eight Linux process checks;
 the current candidate still requires
 native exact-source gates, OS credential receipts and Complete/Idle publication.
 Historical green releases do not certify these new behaviors.
+The later local verification exposed an intermittent repair-fixture assertion.
+The proof-isolation follow-up reproduces shared Cargo executable aliasing and a
+late worker error overwriting cancelled liveness. Independent fixture identities
+and authoritative cancelled-checkpoint settlement now have mandatory native
+acceptance cases. A diagnostic-only model patch was stopped without promotion;
+its passing focused rerun does not establish the original failure's cause.
+The integrated correction passed 159 exact local acceptance cases, five repeated
+shared-cache runs, strict Clippy and eight refreshed Linux host process cases.
+Fresh exact-source native credential and release gates remain required.
 
 [Native first-launch and RRC workspace repair](foundation/2026-10-08-native-first-launch-and-rrc-workspace-repair.md)
 records a newly reproduced verification-scope defect: a shared cached `xtask`

@@ -3446,6 +3446,12 @@ fn persist_worker_failure(root: &Path, repo_identity: &str, error: &RrcError) {
     let Ok(Some(mut record)) = ledger.load() else {
         return;
     };
+    // Cancellation is the authoritative settlement. A late repair/gate save
+    // may fail because that checkpoint is now newer; it must not relabel the
+    // cancelled epoch or replace its preserved evidence and retry admissions.
+    if record.state == ReleaseRecoveryState::Cancelled {
+        return;
+    }
     if matches!(error, RrcError::ResourceConstrained(_)) {
         record.liveness.state = crate::release_recovery::ReleaseLivenessState::OwnerExited;
         record.liveness.detail = redact_secrets(&error.to_string());
@@ -7413,6 +7419,43 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn cancelled_checkpoint_rejects_late_worker_failure_settlement() {
+        let temporary = tempfile::tempdir().unwrap();
+        let ledger = ReleaseLedger::open(temporary.path(), "repo").unwrap();
+        let mut record =
+            crate::release_recovery::start_release("repo", "patch", "main", "abcdef123456")
+                .unwrap();
+        record.state = ReleaseRecoveryState::DiagnosingLocalFailure;
+        record.note_liveness_active("focused repair agent");
+        record
+            .mutation
+            .repair_admissions
+            .insert("fixture-family".into(), 1);
+        record
+            .transition(
+                ReleaseRecoveryState::Cancelled,
+                "abcdef123456",
+                "cancelled locally",
+                vec![],
+                None,
+            )
+            .unwrap();
+        record.liveness = Default::default();
+        ledger.save(&record).unwrap();
+        for error in [
+            RrcError::Invalid("stale release checkpoint writer".into()),
+            RrcError::ResourceConstrained("fixture resource observation".into()),
+            RrcError::WatchdogStalled {
+                operation: "focused repair agent".into(),
+                limit_seconds: 600,
+            },
+        ] {
+            persist_worker_failure(temporary.path(), "repo", &error);
+            assert_eq!(ledger.load().unwrap().unwrap(), record);
+        }
+    }
+
+    #[test]
     fn cancellation_does_not_create_local_failure_evidence() {
         let temporary = tempfile::tempdir().unwrap();
         let ledger = ReleaseLedger::open(temporary.path(), "repo").unwrap();
@@ -8068,7 +8111,7 @@ pub(crate) mod tests {
             fs::create_dir(root.path().join("src")).unwrap();
             fs::write(
                 root.path().join("Cargo.toml"),
-                "[package]\nname = \"release-fixture\"\nversion = \"0.1.0\"\nedition = \"2024\"\n",
+                isolated_repair_fixture_manifest(root.path()),
             )
             .unwrap();
             let broken = "pub fn answer() -> u32 { 0 }\n#[test] fn exact_regression() { assert_eq!(answer(), 42); }\n";
@@ -8124,7 +8167,7 @@ pub(crate) mod tests {
         fs::create_dir(root.path().join("src")).unwrap();
         fs::write(
             root.path().join("Cargo.toml"),
-            "[package]\nname = \"release-fixture\"\nversion = \"0.1.0\"\nedition = \"2024\"\n",
+            isolated_repair_fixture_manifest(root.path()),
         )
         .unwrap();
         let repaired = "pub fn answer() -> u32 { 42 }\n#[test] fn exact_regression() { assert_eq!(answer(), 42); }\n";
@@ -8246,6 +8289,72 @@ pub(crate) mod tests {
         assert_isolated_repair_promotion(Some("whitespace"));
     }
 
+    fn isolated_repair_fixture_manifest(workspace: &Path) -> String {
+        // Cargo root packages with the same name share artifact paths even
+        // across different temporary roots. The governor intentionally shares
+        // its target cache, so each independent fixture needs its own identity.
+        // Git repair worktrees retain this manifest and therefore that identity.
+        let identity = digest(workspace.as_os_str().as_encoded_bytes());
+        format!(
+            "[package]\nname=\"repair-composition-{}\"\nversion=\"0.1.0\"\nedition=\"2024\"\n",
+            &identity[..16]
+        )
+    }
+
+    #[test]
+    fn isolated_repair_fixtures_do_not_alias_shared_cargo_artifacts() {
+        let temp = tempfile::tempdir().unwrap();
+        let target = temp.path().join("shared-target");
+        let target = target.to_str().unwrap();
+        let mut executables = Vec::new();
+        for (name, answer) in [("first", 42), ("second", 43)] {
+            let workspace = temp.path().join(name);
+            fs::create_dir_all(workspace.join("src")).unwrap();
+            fs::write(
+                workspace.join("Cargo.toml"),
+                isolated_repair_fixture_manifest(&workspace),
+            )
+            .unwrap();
+            fs::write(
+                workspace.join("src/lib.rs"),
+                format!("pub fn answer() -> u32 {{ {answer} }}\n#[test] fn exact_regression() {{ assert_eq!(answer(), {answer}); }}\n"),
+            )
+            .unwrap();
+            let executor =
+                NativeReleaseExecutor::new(&workspace, Arc::new(AtomicBool::new(false))).unwrap();
+            let output = executor
+                .command_with_env(
+                    "cargo",
+                    &["test", "--offline", "--no-run", "--message-format=json"],
+                    &[("CARGO_TARGET_DIR", target)],
+                )
+                .unwrap();
+            assert!(output.status.success(), "{:?}", output);
+            let executable = String::from_utf8(output.stdout)
+                .unwrap()
+                .lines()
+                .filter_map(|line| serde_json::from_str::<serde_json::Value>(line).ok())
+                .find_map(|value| value.get("executable")?.as_str().map(str::to_owned))
+                .expect("Cargo must report the compiled test executable");
+            executables.push(executable);
+        }
+        assert_ne!(
+            executables[0], executables[1],
+            "independent repair fixtures must not overwrite one another's proof executable"
+        );
+        let executor =
+            NativeReleaseExecutor::new(temp.path(), Arc::new(AtomicBool::new(false))).unwrap();
+        for executable in executables {
+            let output = executor
+                .command(&executable, &["exact_regression", "--exact"])
+                .unwrap();
+            assert!(output.status.success(), "{:?}", output);
+            assert!(cargo_test_executed(&String::from_utf8_lossy(
+                &output.stdout
+            )));
+        }
+    }
+
     fn assert_isolated_repair_promotion(verification_change: Option<&str>) {
         for label in ["fixture.release-a", "fixture.release-b"] {
             for preparing in [false, true] {
@@ -8260,7 +8369,7 @@ pub(crate) mod tests {
                 .unwrap();
                 fs::write(
                     workspace.join("Cargo.toml"),
-                    "[package]\nname=\"repair-composition\"\nversion=\"0.1.0\"\nedition=\"2024\"\n",
+                    isolated_repair_fixture_manifest(&workspace),
                 )
                 .unwrap();
                 fs::write(workspace.join(".gitattributes"), "* text eol=lf\n").unwrap();
@@ -8452,7 +8561,8 @@ pub(crate) mod tests {
                             } else {
                                 "verification changed"
                             })),
-                        "safe failure context must survive for the next bounded attempt"
+                        "safe failure context must survive for the next bounded attempt: {:?}",
+                        receipt.evidence_refs
                     );
                     assert_eq!(record.retry_budget.full_gate_used, 0);
                     assert_eq!(

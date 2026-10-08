@@ -2712,6 +2712,16 @@ fn acceptance_verify() -> Result<(), String> {
             &["--lib"],
             "release_executor::tests::repair_factory_continues_after_documentation_invalidates_focused_proof",
         ),
+        (
+            "vesper-harness",
+            &["--lib"],
+            "release_executor::tests::isolated_repair_fixtures_do_not_alias_shared_cargo_artifacts",
+        ),
+        (
+            "vesper-harness",
+            &["--lib"],
+            "release_executor::tests::cancelled_checkpoint_rejects_late_worker_failure_settlement",
+        ),
     ];
     #[cfg(target_os = "linux")]
     cases.extend([

@@ -83,6 +83,8 @@ architecture, MSRV, and source-oracle checks.
   retired Windows entries instead of cached enumeration sizes. Every target also
   requires the two-provider real-command repair continuation case: documentation
   after an earlier check triggers bounded fresh proof in the same admission.
+  Shared-cache proof-executable isolation and rejection of late worker failures
+  after authoritative cancellation are mandatory on every target.
 
 - `xtask` may depend on `vesper-testkit`; production crates may not depend on it.
 - Commands must not call providers or mutate source/user state.

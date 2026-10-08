@@ -15,6 +15,8 @@ Own evidence and decisions that close the pre-workspace blockers identified by r
   disappearance regression, fail-closed I/O repair and guarded obsolete-cache receipts.
   Its settled-platform follow-up owns compile portability, bounded post-report
   proof continuation and retained exact-matrix/failed-admission evidence.
+  Its proof-isolation follow-up retains reproduced Cargo artifact aliasing,
+  authoritative cancellation settlement and the unproven diagnostic-only repair.
 
 - `2026-10-08-native-first-launch-and-rrc-workspace-repair.md` owns the Windows
   first-launch/authentication trap, hidden provider category, cached xtask root

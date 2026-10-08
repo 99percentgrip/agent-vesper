@@ -2209,3 +2209,9 @@ v0.21.6 release notes own the final run links, image IDs and local-install recei
   failures; bounded repair proof continuation and native portability corrections
   passed 157 exact local cases, strict Clippy, portability checks and eight Linux
   process cases. Fresh native credential gates and publication remain pending.
+  The proof-isolation follow-up preserves the failed full-suite assertion,
+  reproduced shared-cache executable collision, cancellation-settlement regression
+  and the stopped, unpromoted diagnostic-only repair.
+  The corrected source passed 159 exact acceptance cases, five shared-cache
+  repetitions, strict Clippy and eight refreshed Linux process cases; fresh
+  five-target credential proof and native release closeout remain pending.
