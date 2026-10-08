@@ -112,6 +112,9 @@ Own durable project documentation and evidence-backed engineering records.
   process-tree repair, five-target lifecycle evidence and final non-publishing
   audit. `foundation/2026-09-30-release-intent-autonomy-repair.md` records
   ordinary-language admission and isolated-worktree repair;
+  `foundation/2026-10-08-rrc-windows-compact-fixture-identity-repair.md` records
+  the later Windows-only isolated proof script exhaustion, compact unique Cargo
+  fixture identity and pending native Windows rerun;
   `foundation/2026-09-30-rrc-source-resolution-ux-repair.md` records the
   objective-provenance follow-up; `foundation/2026-09-30-rrc-task-lifecycle-repair.md`
   records registered worker ownership, real local-gate progression and truthful TUI

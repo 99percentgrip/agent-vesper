@@ -1115,6 +1115,10 @@ its passing focused rerun does not establish the original failure's cause.
 The integrated correction passed 159 exact local acceptance cases, five repeated
 shared-cache runs, strict Clippy and eight refreshed Linux host process cases.
 Fresh exact-source native credential and release gates remain required.
+A later Windows-only execution of the combined isolated-repair test exhausted its
+script after the focused proof step. The [compact fixture identity repair](foundation/2026-10-08-rrc-windows-compact-fixture-identity-repair.md)
+preserves per-workspace artifact isolation while restoring Windows path headroom;
+its exact local proof does not replace the pending fresh native Windows matrix.
 
 [Native first-launch and RRC workspace repair](foundation/2026-10-08-native-first-launch-and-rrc-workspace-repair.md)
 records a newly reproduced verification-scope defect: a shared cached `xtask`

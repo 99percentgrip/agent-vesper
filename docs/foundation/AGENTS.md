@@ -6,6 +6,10 @@ Own evidence and decisions that close the pre-workspace blockers identified by r
 
 ## Ownership
 
+- `2026-10-08-rrc-windows-compact-fixture-identity-repair.md` owns the admitted
+  Windows isolated-repair script-exhaustion failure, compact unique Cargo fixture
+  identity, focused local proof and pending fresh native Windows boundary.
+
 - `2026-10-08-windows-credential-persistence-repair.md` owns the reported
   post-device-login Windows save failure, ADR 0032 storage repair and actual
   native save/restart/rotation/sign-out proof; menu receipts alone are insufficient.

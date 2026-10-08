@@ -8293,10 +8293,12 @@ pub(crate) mod tests {
         // Cargo root packages with the same name share artifact paths even
         // across different temporary roots. The governor intentionally shares
         // its target cache, so each independent fixture needs its own identity.
-        // Git repair worktrees retain this manifest and therefore that identity.
+        // Keep that identity compact: test-only ungoverned Cargo targets live
+        // below the already-long isolated worktree path on Windows. Git repair
+        // worktrees retain this manifest and therefore this identity.
         let identity = digest(workspace.as_os_str().as_encoded_bytes());
         format!(
-            "[package]\nname=\"repair-composition-{}\"\nversion=\"0.1.0\"\nedition=\"2024\"\n",
+            "[package]\nname=\"r{}\"\nversion=\"0.1.0\"\nedition=\"2024\"\n",
             &identity[..16]
         )
     }

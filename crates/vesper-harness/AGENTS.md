@@ -106,8 +106,9 @@ Z.ai and Playwright MCP server descriptors.
   The RRC coding factory fixture runs real file/command tools and native failing
   then passing Rust tests with two registered fixture provider IDs; fixture
   streams never establish real model effectiveness or production transport.
-  Independent temporary repair packages have distinct Cargo identities, retained
-  by their Git worktrees, so the shared managed cache cannot alias proof binaries.
+  Independent temporary repair packages have distinct compact Cargo identities,
+  retained by their Git worktrees, so the shared managed cache cannot alias proof
+  binaries without exhausting Windows isolated-worktree path headroom.
   The combined composition fixture verifies native isolated-worktree proof and
   one-patch promotion for both fixture IDs in remote and preparation routes; only its fixture-wide gate port is
   substituted. Production always executes the complete native gate set.

@@ -1,5 +1,7 @@
 # Foundation Evidence Index
 
+- [RRC Windows compact fixture identity repair](2026-10-08-rrc-windows-compact-fixture-identity-repair.md) — admitted Windows-only isolated-repair script exhaustion, compact unique Cargo fixture identity, one exact local proof command and pending fresh native Windows exact-SHA rerun.
+
 - [Native first launch and RRC verification workspace repair](2026-10-08-native-first-launch-and-rrc-workspace-repair.md) — signed-out landing/provider setup, cached-workspace verification repair, native resource observation, retained failed matrix and fixture/source-diagnosis corrections; v0.24.10 passed all five native targets and 108/108 binding PRD/recovery cases per target, published sixteen assets and completed native Registry/final delivery.
 
 - [RRC settled-CI causal diagnosis repair](2026-10-08-rrc-ci-causal-diagnosis-repair.md) — complete failed v0.24.9 matrix, three reproduced diagnosis defects, CLI stream correction and bounded HTTPS dependency setup; integrated v0.24.9 native/hosted proof is recorded in its closeout.
