@@ -5,6 +5,7 @@ use std::fs::{self, File};
 use std::io::{self, Read, Write};
 use std::os::fd::FromRawFd;
 use std::os::unix::fs::PermissionsExt;
+use std::os::unix::process::CommandExt;
 use std::process::{Command, Stdio};
 use std::thread;
 
@@ -54,16 +55,29 @@ sleep 0.40
     let stdin = slave.try_clone().expect("stdin clone");
     let stdout = slave.try_clone().expect("stdout clone");
     let stderr = slave;
-    let mut child = Command::new(env!("CARGO_BIN_EXE_agent-vesper-tui"))
+    let mut command = Command::new(env!("CARGO_BIN_EXE_agent-vesper-tui"));
+    command
         .arg("--rrc-terminal-ownership-probe")
         .arg(&producer)
         .current_dir(fixture.path())
         .env("TERM", "xterm-256color")
         .stdin(Stdio::from(stdin))
         .stdout(Stdio::from(stdout))
-        .stderr(Stdio::from(stderr))
-        .spawn()
-        .expect("launch TUI in PTY");
+        .stderr(Stdio::from(stderr));
+    // SAFETY: only async-signal-safe syscalls execute between fork and exec.
+    // Stdio has already duplicated the fixture slave onto stdin. A new
+    // session must own that slave so crossterm cannot query or change the
+    // invoking release host's controlling terminal through /dev/tty.
+    unsafe {
+        command.pre_exec(|| {
+            if libc::setsid() < 0 || libc::ioctl(libc::STDIN_FILENO, libc::TIOCSCTTY, 0) < 0 {
+                return Err(io::Error::last_os_error());
+            }
+            Ok(())
+        });
+    }
+    let mut child = command.spawn().expect("launch TUI in owned PTY");
+    drop(command); // Close the parent's slave handles so reader EOF can settle.
     let reader = thread::spawn(move || read_pty(master));
     let status = child.wait().expect("wait for TUI");
     let bytes = reader

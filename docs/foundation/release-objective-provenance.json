@@ -2,10 +2,11 @@
   "version": 1,
   "objective_id": "windows-native-credential-persistence-20261008",
   "objective_label": "Windows subscription credential persistence and cross-platform native acceptance",
-  "variant_label": "Final focused-source and strict receipt verified; exact native persistence and release gates required",
-  "variant_id": "windows-native-records-auth-nonzero-acceptance-integrated-20261008",
+  "variant_label": "Integrated local verification passed; native persistence and exact-commit release gates required",
+  "variant_id": "windows-native-auth-and-rrc-current-session-integrated-20261008",
   "canonical_release_source": true,
   "supersedes": [
+    "windows-native-records-auth-nonzero-acceptance-integrated-20261008",
     "windows-native-records-and-auth-persistence-integrated-20261008",
     "native-first-launch-rrc-fixture-diagnosis-integrated-20261008",
     "native-first-launch-and-cross-platform-rrc-20261008",
@@ -21,7 +22,7 @@
     "windows-ps51-installer-hosted-20261007",
     "rrc-autonomy-prd-audit-20261006"
   ],
-  "completed_at": "2026-10-08T14:49:25.099155+00:00",
+  "completed_at": "2026-10-08T16:10:25.530164+00:00",
   "evidence_reports": [
     "docs/foundation/2026-10-08-windows-credential-persistence-repair.md",
     "docs/foundation/2026-10-08-native-first-launch-and-rrc-workspace-repair.md",

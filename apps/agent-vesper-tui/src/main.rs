@@ -3051,7 +3051,14 @@ async fn drive_loop(
                 {
                     let repair_factory = vesper_harness::WorkerFactory::new(
                         Arc::clone(registry),
-                        agent.configuration().clone(),
+                        match release_repair_configuration(agent, &session.state, surface) {
+                            Ok(config) => config,
+                            Err(error) => {
+                                session.state.status =
+                                    Some(format!("release configuration failed: {error}"));
+                                continue;
+                            }
+                        },
                     )
                     .with_permission_port(Arc::clone(&approval_port_for_react))
                     .with_release_policy(
@@ -3144,6 +3151,7 @@ async fn drive_loop(
                         &mut session.state,
                         registry,
                         agent,
+                        surface,
                         Arc::clone(&approval_port_for_react),
                     );
                 }
@@ -8603,13 +8611,32 @@ fn execute_code_block(
     }
 }
 
-/// Clones the real agent-loop configuration and applies every live provider
-/// setting selected in the TUI. This is the execution bridge that prevents
-/// model/reasoning/generation choices from becoming display-only state.
+/// Release repairs use the same live execution choices as coding turns. Account
+/// entitlement remains enforced by the provider factory before model dispatch;
+/// release admission and status remain usable while discovery is pending.
+fn release_repair_configuration(
+    agent: &AgentLoop,
+    state: &SessionState,
+    surface: &ProviderSuperpowerSurface,
+) -> Result<AgentLoopConfig, String> {
+    configuration_for_controls(agent, state, surface, false)
+}
+
+/// Applies live session controls, requiring discovered model availability for
+/// ordinary coding turns.
 fn turn_configuration(
     agent: &AgentLoop,
     state: &SessionState,
     surface: &ProviderSuperpowerSurface,
+) -> Result<AgentLoopConfig, String> {
+    configuration_for_controls(agent, state, surface, true)
+}
+
+fn configuration_for_controls(
+    agent: &AgentLoop,
+    state: &SessionState,
+    surface: &ProviderSuperpowerSurface,
+    require_available_model: bool,
 ) -> Result<AgentLoopConfig, String> {
     let mut config = agent.configuration().clone();
     config.max_tool_iterations = state.controls.max_tool_iterations;
@@ -8617,7 +8644,7 @@ fn turn_configuration(
     if config.provider_id.as_str() == "openai" {
         let model = active_superpower_choice(state, surface, "model")
             .unwrap_or_else(|| vesper_provider_openai::DEFAULT_MODEL.to_owned());
-        if surface.by_alias("model").is_none_or(|descriptor| !descriptor.allowed_values.iter().any(|value| matches!(value, vesper_provider::SuperpowerValue::Choice { value } if value.as_str() == model))) {
+        if require_available_model && surface.by_alias("model").is_none_or(|descriptor| !descriptor.allowed_values.iter().any(|value| matches!(value, vesper_provider::SuperpowerValue::Choice { value } if value.as_str() == model))) {
             return Err("Choose an available OpenAI model in Settings; reopen Settings to refresh the account list".into());
         }
         let effort = active_superpower_choice(state, surface, "thinking")
@@ -14267,6 +14294,7 @@ fn drain_checkpoint_op(
     state: &mut SessionState,
     registry: &Arc<vesper_runtime::ProviderRegistry>,
     agent: &Arc<AgentLoop>,
+    surface: &ProviderSuperpowerSurface,
     permission: Arc<dyn vesper_agent::PermissionPort>,
 ) {
     use agent_vesper_tui::commands::CheckpointOp;
@@ -14276,7 +14304,13 @@ fn drain_checkpoint_op(
         CheckpointOp::ReleaseControl { argument } => {
             let repair_factory = vesper_harness::WorkerFactory::new(
                 Arc::clone(registry),
-                agent.configuration().clone(),
+                match release_repair_configuration(agent, state, surface) {
+                    Ok(config) => config,
+                    Err(error) => {
+                        state.status = Some(format!("release configuration failed: {error}"));
+                        return;
+                    }
+                },
             )
             .with_permission_port(permission)
             .with_release_policy(
@@ -16091,6 +16125,61 @@ mod tests {
     }
 
     #[test]
+    fn release_repair_uses_selected_model_and_effort_before_account_discovery() {
+        let factory = vesper_provider_openai::OpenAiFactory::default();
+        let available = vesper_provider_openai::AvailableModels {
+            mode: vesper_provider_openai::auth::AuthenticationMode::ChatGpt,
+            models: vec![vesper_provider_openai::OpenAiCatalog::find("gpt-6.1-sol").unwrap()],
+        };
+        let surface = ProviderSuperpowerSurface::new(
+            vesper_provider_openai::provider_id(),
+            factory.superpowers_for(&available),
+        );
+        let mut state = SessionState {
+            overrides: surface.defaults(),
+            ..SessionState::default()
+        };
+        let commands = CommandRegistry::stage_11b();
+        for text in ["/model gpt-6.1-sol", "/thinking high"] {
+            let _ = agent_vesper_tui::dispatch::dispatch(
+                &CommandIntent::parse(text),
+                &commands,
+                &surface,
+                &vesper_provider::PermissiveSuperpowerPolicy,
+                &vesper_provider_openai::provider_id(),
+                &mut state,
+            );
+        }
+        let base = AgentLoop::new(
+            Arc::new(vesper_runtime::ProviderRegistry::new()),
+            ToolRegistry::parity_default(),
+            build_agent_config(&vesper_provider_openai::provider_id()).unwrap(),
+        );
+        let empty = ProviderSuperpowerSurface::new(
+            vesper_provider_openai::provider_id(),
+            factory.superpowers_for(&vesper_provider_openai::AvailableModels::unavailable(
+                available.mode,
+            )),
+        );
+        assert!(turn_configuration(&base, &state, &empty).is_err());
+        state.controls.max_tool_iterations = 37;
+        for surface in [&surface, &empty] {
+            let config = release_repair_configuration(&base, &state, surface).unwrap();
+            assert_eq!(config.max_tool_iterations, 37);
+            assert_eq!(config.model.model_id.as_str(), "gpt-6.1-sol");
+            assert_eq!(
+                config
+                    .provider_configuration
+                    .values
+                    .values
+                    .get("openai:reasoning-mode")
+                    .and_then(serde_json::Value::as_str),
+                Some("high")
+            );
+        }
+    }
+
+    #[test]
     fn native_release_controls_bypass_pending_account_discovery() {
         for input in [
             "release patch",
@@ -16195,6 +16284,14 @@ mod tests {
             build_agent_config(&vesper_provider_xai::provider_id()).unwrap(),
         );
         let projected = turn_configuration(&base, &state, &surface).unwrap();
+        let repair = release_repair_configuration(&base, &state, &surface).unwrap();
+        assert_eq!(repair.model, projected.model);
+        assert_eq!(
+            repair.provider_configuration,
+            projected.provider_configuration
+        );
+        assert_eq!(repair.native_compaction, projected.native_compaction);
+        assert_eq!(repair.hosted_tools, projected.hosted_tools);
         assert_eq!(projected.provider_id.as_str(), "xai");
         assert_eq!(projected.model.model_id.as_str(), "grok-4.7");
         assert_eq!(
@@ -17330,6 +17427,11 @@ mod tests {
         state.controls.generation_profile = "precise".into();
 
         let config = turn_configuration(&agent, &state, &surface).unwrap();
+        let repair = release_repair_configuration(&agent, &state, &surface).unwrap();
+        assert_eq!(repair.model, config.model);
+        assert_eq!(repair.provider_configuration, config.provider_configuration);
+        assert_eq!(repair.max_tool_iterations, config.max_tool_iterations);
+        assert_eq!(repair.context_window_tokens, config.context_window_tokens);
         assert_eq!(config.model.model_id.as_str(), "glm-5-turbo");
         for (key, expected) in [
             ("zai:model", "glm-5-turbo"),

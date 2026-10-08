@@ -2767,6 +2767,28 @@ fn acceptance_verify() -> Result<(), String> {
         &["--test", "openai_startup_responsiveness"],
         "native_release_admission_does_not_wait_for_account_model_discovery",
     ));
+    cases.extend([
+        (
+            "vesper-harness",
+            &["--lib"] as &[&str],
+            "release_executor::tests::only_newly_classified_local_gate_errors_continue_to_repair",
+        ),
+        (
+            "vesper-harness",
+            &["--lib"] as &[&str],
+            "release_executor::tests::local_repair_dispatch_errors_are_retained_as_liveness_failures",
+        ),
+        (
+            "agent-vesper-tui",
+            &["--bin", "agent-vesper-tui"] as &[&str],
+            "tests::release_repair_uses_selected_model_and_effort_before_account_discovery",
+        ),
+        (
+            "agent-vesper-acp",
+            &["--lib"] as &[&str],
+            "tests::release_repair_configuration_uses_session_model_and_provider_controls",
+        ),
+    ]);
     let started = std::time::Instant::now();
     for (index, (package, target, name)) in cases.iter().enumerate() {
         let output = Command::new("cargo")

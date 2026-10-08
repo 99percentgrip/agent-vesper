@@ -417,6 +417,13 @@ impl AcpHarnessEngine {
         }
     }
 
+    async fn release_repair_configuration(
+        &self,
+        request: &AcpPromptRequest,
+    ) -> vesper_agent::AgentLoopConfig {
+        self.turn_configuration(request).await
+    }
+
     async fn turn_configuration(
         &self,
         request: &AcpPromptRequest,
@@ -975,9 +982,12 @@ impl AcpHarnessEngine {
                     }) as Arc<dyn vesper_agent::PermissionPort>
                 })
                 .unwrap_or_else(|| Arc::new(vesper_agent::DenyPermissionPort));
-            let repair_factory = WorkerFactory::new(Arc::clone(&self.registry), config.clone())
-                .with_permission_port(permission)
-                .with_release_policy(request.operating_mode, request.permission_mode);
+            let repair_factory = WorkerFactory::new(
+                Arc::clone(&self.registry),
+                self.release_repair_configuration(&request).await,
+            )
+            .with_permission_port(permission)
+            .with_release_policy(request.operating_mode, request.permission_mode);
             let release_root = root.clone();
             let objective = text.clone();
             let admission = tokio::task::spawn_blocking(move || {
@@ -2037,7 +2047,7 @@ impl AcpHarnessEngine {
                     .unwrap_or_else(|| Arc::new(vesper_agent::DenyPermissionPort));
                 let repair_factory = vesper_harness::WorkerFactory::new(
                     Arc::clone(&self.registry),
-                    self.config.clone(),
+                    self.release_repair_configuration(request).await,
                 )
                 .with_permission_port(permission)
                 .with_release_policy(request.operating_mode, request.permission_mode);
@@ -3842,6 +3852,86 @@ mod tests {
             &first.mcp_session(),
             &engine.session_hosted(&a).mcp_session()
         ));
+    }
+
+    #[tokio::test]
+    async fn release_repair_configuration_uses_session_model_and_provider_controls() {
+        let root = tempfile::tempdir().unwrap();
+        let stores = Arc::new(MemoryStores::open_at(
+            root.path(),
+            root.path().join("no-global"),
+        ));
+        let hosted = Arc::new(HarnessToolService::new_with_checkpoint_gate(
+            stores,
+            root.path().join("cron"),
+            root.path().join("mcp"),
+            None,
+            false,
+        ));
+        let provider = ProviderId::new("fixture").unwrap();
+        let config = vesper_agent::AgentLoopConfig {
+            provider_id: provider.clone(),
+            provider_configuration: vesper_provider::ProviderConfiguration {
+                provider_id: provider.clone(),
+                values: vesper_domain::VersionedExtensionEnvelope {
+                    namespace: vesper_domain::ExtensionNamespace::new("provider.fixture").unwrap(),
+                    version: vesper_domain::SchemaVersion::new(1).unwrap(),
+                    values: Default::default(),
+                },
+            },
+            model: vesper_domain::QualifiedModelId {
+                provider_id: provider,
+                model_id: vesper_domain::ModelId::new("fixture").unwrap(),
+            },
+            context_window_tokens: 8192,
+            native_compaction: vesper_agent::NativeCompactionPolicy::Disabled,
+            hosted_tools: Vec::new(),
+            system_instructions: vec![],
+            workspace_roots: vec![],
+            max_tool_iterations: 1,
+            firewall: None,
+            sandbox: None,
+        };
+        let engine = AcpHarnessEngine::new(
+            Arc::new(ProviderRegistry::new()),
+            config,
+            hosted,
+            cognition::CognitionBundle::open_disabled(),
+            vesper_agent::VroOrchestrator::disabled(),
+            BTreeMap::new(),
+        );
+        let mut selected = engine.config.provider_configuration.clone();
+        selected
+            .values
+            .values
+            .insert("fixture:effort", serde_json::json!("high"))
+            .unwrap();
+        let request = AcpPromptRequest {
+            session_id: vesper_domain::SessionId::new("release-fixture").unwrap(),
+            content: vec![],
+            history: vec![],
+            operating_mode: vesper_domain::SessionOperatingMode::Code,
+            permission_mode: vesper_domain::SessionPermissionMode::Bypass,
+            workspace_roots: vec![],
+            provider_configuration: Some(selected),
+            model: Some(vesper_domain::QualifiedModelId {
+                provider_id: ProviderId::new("fixture").unwrap(),
+                model_id: ModelId::new("selected-model").unwrap(),
+            }),
+            permission_requester: None,
+            event_sink: None,
+        };
+        let config = engine.release_repair_configuration(&request).await;
+        assert_eq!(config.model.model_id.as_str(), "selected-model");
+        assert_eq!(
+            config
+                .provider_configuration
+                .values
+                .values
+                .get("fixture:effort"),
+            Some(&serde_json::json!("high"))
+        );
+        assert_eq!(engine.config.model.model_id.as_str(), "fixture");
     }
 
     #[test]

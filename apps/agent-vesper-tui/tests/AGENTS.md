@@ -16,6 +16,10 @@ Verify terminal interaction through the production TUI binary with isolated stat
   cleanup are bounded; no production dependency is added. Native keyboard
   navigation runs on every OS; POSIX authentication fixtures also retain clicks.
 
+- `rrc_terminal_pty.rs` gives the child its own session and controlling slave
+  terminal before exec; close parent slave handles after spawn so EOF settles.
+  The fixture must not query or change the invoking release host via `/dev/tty`.
+
 - `release_hosts_pty.py` observes one isolated RRC ledger through real TUI/ACP
   processes for all four selected, signed-out adapters: partial matrix, blocked no-write retry, Published/main degraded,
   and cross-host cancellation preserving epoch/run/tag/assets. ACP pipe reading uses a bounded queue on every OS; Windows identities retain

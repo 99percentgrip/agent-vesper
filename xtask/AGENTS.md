@@ -71,6 +71,9 @@ architecture, MSRV, and source-oracle checks.
   The Unix real-PTY case runs the actual TUI and a noisy registered child, rejecting
   inherited stdout/stderr, raw terminal controls, writes outside RUN, premature Ready,
   and stale telemetry after settlement. Deleting or renaming any case fails the gate.
+  The probe owns its controlling terminal independently of the invoking host.
+  Every platform also requires exact repair-error liveness settlement and TUI/ACP
+  effective-session repair configuration cases, including pending catalog routing.
 
 - `xtask` may depend on `vesper-testkit`; production crates may not depend on it.
 - Commands must not call providers or mutate source/user state.

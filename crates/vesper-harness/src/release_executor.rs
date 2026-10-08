@@ -3211,12 +3211,7 @@ fn run_release_worker(
                 cancelled: Arc::clone(&cancelled),
             },
         );
-        if let Err(error) = outcome
-            && (record.state != ReleaseRecoveryState::DiagnosingLocalFailure
-                || controller_stop_is_not_source_failure(&error))
-        {
-            return Err(error);
-        }
+        settle_release_step_outcome(before, record.state, outcome)?;
         if journals_mutation && record.state != ReleaseRecoveryState::Cancelled {
             record.mutation.in_flight_operation = None;
             record.updated_at = Utc::now();
@@ -3284,6 +3279,23 @@ fn run_release_worker(
         }
     }
     Ok(())
+}
+
+fn settle_release_step_outcome(
+    before: ReleaseRecoveryState,
+    after: ReleaseRecoveryState,
+    outcome: Result<(), RrcError>,
+) -> Result<(), RrcError> {
+    match outcome {
+        Err(error)
+            if before == ReleaseRecoveryState::LocalVerification
+                && after == ReleaseRecoveryState::DiagnosingLocalFailure
+                && !controller_stop_is_not_source_failure(&error) =>
+        {
+            Ok(())
+        }
+        result => result,
+    }
 }
 
 fn retry_budget_label(record: &ReleaseRecoveryRecord) -> String {
@@ -7003,6 +7015,79 @@ pub(crate) mod tests {
             "pub fn answer() -> u32 { 42 }\n"
         );
         assert!(record.release_commit.is_none() || !record.mutation.candidate_pushed);
+    }
+
+    #[test]
+    fn only_newly_classified_local_gate_errors_continue_to_repair() {
+        assert!(
+            settle_release_step_outcome(
+                ReleaseRecoveryState::LocalVerification,
+                ReleaseRecoveryState::DiagnosingLocalFailure,
+                Err(RrcError::Invalid("fixture gate has causal evidence".into())),
+            )
+            .is_ok()
+        );
+        assert!(
+            settle_release_step_outcome(
+                ReleaseRecoveryState::LocalVerification,
+                ReleaseRecoveryState::DiagnosingLocalFailure,
+                Err(RrcError::AuthorizationBlocked("fixture denial".into())),
+            )
+            .is_err()
+        );
+        for state in [
+            ReleaseRecoveryState::DiagnosingLocalFailure,
+            ReleaseRecoveryState::DiagnosingRepair,
+        ] {
+            assert!(
+                settle_release_step_outcome(
+                    state,
+                    state,
+                    Err(RrcError::Invalid("fixture repair failed".into())),
+                )
+                .is_err()
+            );
+        }
+    }
+
+    #[test]
+    fn local_repair_dispatch_errors_are_retained_as_liveness_failures() {
+        let temporary = tempfile::tempdir().unwrap();
+        let ledger = ReleaseLedger::open(temporary.path(), "repo").unwrap();
+        let mut record =
+            crate::release_recovery::start_release("repo", "patch", "main", "abcdef123456")
+                .unwrap();
+        record.state = ReleaseRecoveryState::DiagnosingLocalFailure;
+        record
+            .mutation
+            .repair_admissions
+            .insert("fixture-family".into(), 1);
+        ledger.save(&record).unwrap();
+        let error = settle_release_step_outcome(
+            record.state,
+            record.state,
+            Err(RrcError::Invalid("fixture repair dispatch refused".into())),
+        )
+        .expect_err("a repair error must reach worker failure settlement");
+        persist_worker_failure(temporary.path(), "repo", &error);
+        let persisted = ledger.load().unwrap().unwrap();
+        assert_eq!(persisted.state, record.state);
+        assert_eq!(
+            persisted.liveness.state,
+            crate::release_recovery::ReleaseLivenessState::Failed
+        );
+        assert!(
+            persisted
+                .liveness
+                .detail
+                .contains("fixture repair dispatch refused")
+        );
+        assert_eq!(
+            persisted.mutation.repair_admissions,
+            record.mutation.repair_admissions
+        );
+        assert!(persisted.failures.is_empty());
+        assert!(!persisted.mutation.candidate_pushed);
     }
 
     #[test]

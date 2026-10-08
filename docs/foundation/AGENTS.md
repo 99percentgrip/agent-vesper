@@ -9,6 +9,8 @@ Own evidence and decisions that close the pre-workspace blockers identified by r
 - `2026-10-08-windows-credential-persistence-repair.md` owns the reported
   post-device-login Windows save failure, ADR 0032 storage repair and actual
   native save/restart/rotation/sign-out proof; menu receipts alone are insufficient.
+  Its native-release follow-up also owns controlling-terminal isolation, retained
+  repair dispatch failures and current-session TUI/ACP repair configuration proof.
 
 - `2026-10-08-native-first-launch-and-rrc-workspace-repair.md` owns the Windows
   first-launch/authentication trap, hidden provider category, cached xtask root

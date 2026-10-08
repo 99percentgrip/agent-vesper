@@ -33,6 +33,9 @@ Z.ai and Playwright MCP server descriptors.
   the release checkpoint, gate evidence and retry budget; they never create source
   failure evidence or authorize autonomous permission escalation. Nonrepeatable operations are
   journaled before execution; uncertain restart never replays them.
+  Only a newly diagnosed local verification failure proceeds into repair. Repair
+  dispatch errors must settle as persisted liveness failures with their redacted
+  cause; an existing diagnosis must never swallow them or imply an idle success.
   Promotion requires an observed mutation, explicit hypothesis, native focused
   re-verification after the final edit, a nonempty patch and full local gates.
   Pin the repair's complete Git status, full patch and index tree before native

@@ -158,6 +158,10 @@ business logic.
   repair, the TUI supplies its ordinary approval port; controller state never
   bypasses permission. `/ci` appends the same persisted RRC status shown by ACP.
   The terminal owns presentation only.
+  Explicit and natural-language release repair factories use the same session
+  execution projection as coding turns: selected model, reasoning, context,
+  iteration cap, compaction and hosted tools. Admission/status remain available
+  while discovery is pending; factory dispatch still validates account entitlement.
   Explicit and natural-language release routes both inherit current operating/
   permission controls and the ordinary approval port.
   Ordinary free-text release imperatives are intercepted before provider dispatch

@@ -1094,6 +1094,13 @@ reset, stashed or mutated by this process.
 
 ## 37. Current Implementation Status
 
+[Windows credential persistence and native RRC follow-up](foundation/2026-10-08-windows-credential-persistence-repair.md)
+records the later post-login save defect, controlling-terminal fixture failure,
+hidden repair dispatch error and stale boot-model repair configuration. These
+newly exposed gaps are repaired locally; the current candidate still requires
+native exact-source gates, OS credential receipts and Complete/Idle publication.
+Historical green releases do not certify these new behaviors.
+
 [Native first-launch and RRC workspace repair](foundation/2026-10-08-native-first-launch-and-rrc-workspace-repair.md)
 records a newly reproduced verification-scope defect: a shared cached `xtask`
 validated its embedded old release worktree instead of the invoking candidate.

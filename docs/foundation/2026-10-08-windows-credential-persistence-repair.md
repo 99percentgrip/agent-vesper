@@ -158,3 +158,89 @@ auth/OpenAI checks passed again. Parent invocations retain captured native backe
 receipts with `--show-output`, keeping their named Rust result line intact.
 The default integration suite now has one offline receipt case passed and two
 native cases ignored; neither ignored case counts as native acceptance.
+
+## Native release follow-up: terminal ownership and repair dispatch
+
+The next admitted native epoch, `20261008T144956.264870742Z-7c3fae229f64`,
+recovered automatically from measured resource deferrals and completed version
+preparation, but workspace verification failed in the real-PTY RRC ownership case.
+Its candidate was not committed or pushed; no tag or publication occurred.
+The failed ledger and its repair admissions remain intact.
+
+Three separate defects were then demonstrated and repaired:
+
+1. The Unix test child inherited the release host's controlling terminal, despite
+   sending its streams to a private slave. At a 32×140 parent terminal the named
+   assertion failed because the telemetry marker was not visible. The child now
+   creates its own session and controlling slave with async-signal-safe syscalls;
+   parent slave handles close after spawn so EOF settles. The corrected exact
+   case passed at the previously failing geometry. The initial 33×142 run passed
+   before the fix and is retained as a non-reproducer, not fabricated red evidence.
+2. The controller discarded a repair error when it was already diagnosing a local
+   failure, then marked unchanged state idle. Only a newly classified local gate
+   error may now continue into repair. Repair dispatch errors persist their cause
+   and failed liveness without changing source-failure or retry evidence. The
+   regression failed with the old behavior and passed after the repair.
+3. With the cause visible, a bounded diagnostic resume exposed an invalid-request
+   model rejection before HTTP dispatch. The TUI showed the selected model, but
+   the RRC repair factory copied the boot configuration. Both TUI routes now use
+   the normal execution projection for current controls, while provider dispatch
+   still enforces entitlement. ACP's explicit route likewise uses effective
+   session configuration, matching its existing natural-language behavior.
+   No new provider-specific RRC branch or account-access inference was added.
+
+The diagnostic resume consumed the second persisted repair admission; it is not
+reset or erased. The owner quit cleanly after failure settlement. The corrected
+committed source must enter ordinary native admission under explicit canonical
+supersession; the old epoch and its bounded admissions remain historical evidence.
+
+Focused evidence: all **89 executor cases passed**, including actual source-gate
+failure, watchdog stops, repair error settlement and unchanged permission refusal.
+The exact TUI selected-model/effort case and ACP fixture-provider session case
+passed. Initial intermediary compile/hang/assertion failures remain in retained
+logs; only subsequent named successful executions count as proof. Four added
+exact cases are mandatory in `cargo xtask acceptance` on every native platform.
+Full integrated verification, hosted persistence and publication are still pending.
+
+Resource recovery retained only stopped, owned artifacts with full SHA-256
+comparison before relocation off tmpfs: the prior installer verification target
+and v0.24.10 host binaries. Original paths remain symlinks. No user installation,
+active owner, governor threshold, ledger or retry counter was replaced or cleared.
+Normal native release startup used the existing selected provider account; this
+is distinct from offline foundation verification. Its observed repair rejection
+had `InvalidRequest`, `retry=Never`, and no HTTP status, so it is not billing or
+an external outage diagnosis.
+
+Owning harness, TUI, ACP, terminal-test and xtask DOX were updated. Parent ownership
+and child indexes remain unchanged because no subtree moved or new boundary was
+created. The owning RRC PRD status links this evidence without altering its frozen
+requirements. Final release readiness still requires every native local gate,
+exact-SHA platform matrix, published asset inventory and actual Complete/Idle
+closeout; successful menu navigation alone cannot prove credential persistence.
+
+### Integrated local verification before corrected admission
+
+`cargo xtask verify` exited zero: workspace format, strict all-target/all-feature
+Clippy, workspace tests/doc tests, fixture/contracts/architecture checks and
+**153 exact acceptance cases** passed. The final selected-model test additionally
+checks the iteration cap and retains ordinary coding-turn refusal when account
+discovery is unavailable. Z.ai and xAI cases compare repair configuration with
+normal execution, including native compaction and hosted tools. The fixed PTY
+case also passed with 32×140, 33×142 and 48×180 invoking terminals.
+The final small test assertion refinement occurred during this preliminary run;
+its exact acceptance rerun passed afterward. Strict Clippy is rerun after all
+source edits, and the committed candidate still requires fresh native local gates.
+
+Changed documentation links were checked after URL decoding. No new missing link
+was found. Eleven pre-existing targets in the evidence index are present only in
+the original checkout and remain outside this candidate; unrelated source and
+reports were not imported. The retained document-check receipt distinguishes this
+baseline from the newly added links rather than claiming every index link passed.
+
+Final strict workspace Clippy and the shipping-feature TUI/ACP build exited zero
+after all source edits. Frozen binaries, the failed native ledger, geometry
+receipts, red/green/intermediary logs and integrated verification are retained in
+[the RRC follow-up archive](2026-10-08-windows-credential-persistence-rrc-follow-up-receipts.tar.gz),
+with hashes and source basis in the existing evidence manifest. The original
+storage-repair archive remains unchanged. Native restart uses these separately
+frozen binaries; Alex's installation remains untouched.

@@ -2202,5 +2202,7 @@ v0.21.6 release notes own the final run links, image IDs and local-install recei
 
 - [Windows credential persistence repair](2026-10-08-windows-credential-persistence-repair.md) —
   reproduced post-device-login native blob overflow, bounded provider-neutral
-  storage repair and final focused local checks; actual hosted native save/restart
-  and exact-commit publication pending.
+  storage repair, exact native receipt collection, controlling-terminal isolation,
+  repair-error settlement and current-session repair configuration; focused local
+  checks and 153 exact local acceptance cases passed; native gates and exact-commit
+  publication pending.
