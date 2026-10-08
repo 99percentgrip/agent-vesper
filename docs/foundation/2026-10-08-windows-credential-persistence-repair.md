@@ -285,3 +285,50 @@ from degraded main and propagated cancellation without changing epoch/run/tag/as
 No provider call was dispatched. [Current host fixture receipts](2026-10-08-windows-credential-current-host-fixture-receipts.tar.gz)
 retain these eight exact platform-scoped passes. Windows/macOS execution and
 successful native subscription persistence remain required in exact-source CI.
+
+## Managed-cache observation follow-up
+
+The attached native epoch `20261008T163239.014212294Z-7bcc3aef98aa`
+passed version preparation, workspace verification, acceptance, architecture and
+Rust 1.88 verification. It automatically recovered from measured resource
+deferrals without retry-budget use. Before supply-chain verification, the governor
+correctly withheld admission because free disk space was below its reserve plus
+growth margin. No candidate commit, push, tag or publication occurred.
+
+Read-only inspection identified obsolete compiler incremental intermediates under
+the repository-owned managed target. Reclamation revalidated each inventory,
+refused symlinks and active compiler/open-handle use, and removed only inspected
+entries last modified before noon UTC. Two operations reclaimed 10.7 and 25.1 GiB
+of actual filesystem capacity. Source, executables, publication assets, user
+installation and release journals were retained. This was operator cache
+maintenance; RRC did not automatically delete those entries or lower its limits.
+
+During the second reclamation, the resource watcher stopped with `NotFound` from
+resource discovery. The target-size walker propagated missing directory/entry
+observations. A deterministic production-scanner regression reproduced this
+failure for an entry removed after enumeration and a directory retired before
+its queued scan. This reproduces the filesystem race consistent with the native
+failure; the original bounded diagnostic did not identify the vanished path.
+
+The walker now omits only `NotFound` observations. Permission and other I/O
+failures still propagate, filesystem free-space admission remains authoritative,
+and the scanner never deletes entries. Two exact cross-platform cases are now
+mandatory acceptance. The disappearance case failed before the correction;
+both focused cases passed afterward. The stopped ledger was retained, then the
+native epoch was cancelled and its owner quit cleanly before source mutation.
+Existing failed evidence and retry admissions were not reset. Current-source
+acceptance, strict Clippy, refreshed hosts and native release gates are required
+before claiming this follow-up complete.
+
+The expanded acceptance run passed **156 exact cases**, including both new
+scanner cases. A formatting-only test assertion correction was applied during
+that run; no behavior changed, and native RRC still requires its complete frozen
+commit gates. Final format, strict workspace Clippy and shipping-feature TUI/ACP
+build passed. The refreshed binaries passed four signed-out first-launch cases
+and four provider-neutral TUI/ACP release-control cases on Linux. The
+[cache-observation receipt archive](2026-10-08-windows-credential-cache-observation-receipts.tar.gz)
+retains red/green logs, host identities, both stopped-ledger snapshots and the
+guarded inspection/reclamation inventories. Hashes and scope are recorded in the
+existing evidence manifest; earlier archives remain unchanged. Native Windows
+and macOS persistence/execution, exact-source publication and final closeout
+remain required.

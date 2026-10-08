@@ -77,6 +77,9 @@ architecture, MSRV, and source-oracle checks.
   The exact terminal header case rejects RUNNING/READY/DEFERRED for an ownerless
   epoch in ordinary and screen-reader modes; the live deferred-controller case
   remains mandatory and must not be weakened to make that negative case pass.
+  Every target requires deterministic target-cache disappearance and non-missing
+  I/O failure cases. Cache retirement must not stop resource observation; genuine
+  observation failures still refuse admission.
 
 - `xtask` may depend on `vesper-testkit`; production crates may not depend on it.
 - Commands must not call providers or mutate source/user state.

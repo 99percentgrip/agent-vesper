@@ -1096,8 +1096,8 @@ reset, stashed or mutated by this process.
 
 [Windows credential persistence and native RRC follow-up](foundation/2026-10-08-windows-credential-persistence-repair.md)
 records the later post-login save defect, controlling-terminal fixture failure,
-hidden repair dispatch error, stale boot-model repair configuration and falsely
-running ownerless TUI header. These
+hidden repair dispatch error, stale boot-model repair configuration, falsely
+running ownerless TUI header and managed-cache disappearance observation. These
 newly exposed gaps are repaired locally; the current candidate still requires
 native exact-source gates, OS credential receipts and Complete/Idle publication.
 Historical green releases do not certify these new behaviors.

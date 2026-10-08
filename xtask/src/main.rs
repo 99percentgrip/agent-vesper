@@ -2697,6 +2697,16 @@ fn acceptance_verify() -> Result<(), String> {
             &["--lib"],
             "host_resources::tests::swap_growth_window_preserves_sustained_pressure_and_critical_signals",
         ),
+        (
+            "vesper-harness",
+            &["--lib"],
+            "host_resources::tests::target_cache_scan_tolerates_disappearing_entries",
+        ),
+        (
+            "vesper-harness",
+            &["--lib"],
+            "host_resources::tests::target_cache_scan_preserves_non_missing_errors",
+        ),
     ];
     #[cfg(unix)]
     let mut cases = cases;

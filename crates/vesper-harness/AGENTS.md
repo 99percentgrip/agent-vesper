@@ -302,6 +302,10 @@ Z.ai and Playwright MCP server descriptors.
   headroom must use the same selected budget. Reduced jobs never waive pressure. It observes
   zram logical/compressed/physical values, the owned process tree and managed-target
   filesystem; logical zram occupancy is never treated as physical RAM consumption.
+  Managed-target size scans tolerate entries retired between enumeration and
+  observation. Only `NotFound` is omitted; permission and other I/O errors remain
+  failures, and live filesystem free-space admission is unchanged. The scan never
+  deletes cache entries or weakens the reserve/growth budget.
   It reserves desktop headroom, exports one inherited
   `CARGO_BUILD_JOBS`/`RUST_TEST_THREADS`/`CARGO_TARGET_DIR` policy, serializes
   expensive compiler gates (including Windows `ERROR_LOCK_VIOLATION` contention),

@@ -1393,15 +1393,28 @@ fn existing_ancestor(path: &Path) -> io::Result<PathBuf> {
 }
 
 fn directory_size(path: &Path) -> io::Result<u64> {
-    if !path.exists() {
-        return Ok(0);
-    }
+    directory_size_with_observer(path, |_| {})
+}
+
+fn directory_size_with_observer(
+    path: &Path,
+    mut before_observation: impl FnMut(&Path),
+) -> io::Result<u64> {
     let mut total = 0_u64;
     let mut pending = vec![path.to_path_buf()];
     while let Some(path) = pending.pop() {
-        for entry in fs::read_dir(path)? {
-            let entry = entry?;
-            let metadata = entry.metadata()?;
+        before_observation(&path);
+        let Some(entries) = cache_observation(fs::read_dir(path))? else {
+            continue;
+        };
+        for entry in entries {
+            let Some(entry) = cache_observation(entry)? else {
+                continue;
+            };
+            before_observation(&entry.path());
+            let Some(metadata) = cache_observation(entry.metadata())? else {
+                continue;
+            };
             if metadata.is_dir() {
                 pending.push(entry.path());
             } else if metadata.is_file() {
@@ -1412,6 +1425,16 @@ fn directory_size(path: &Path) -> io::Result<u64> {
     Ok(total)
 }
 
+fn cache_observation<T>(result: io::Result<T>) -> io::Result<Option<T>> {
+    match result {
+        Ok(value) => Ok(Some(value)),
+        // Cargo and owned cache maintenance can retire entries between directory
+        // enumeration and observation. Their absence is not a telemetry failure.
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(None),
+        Err(error) => Err(error),
+    }
+}
+
 fn gib(bytes: u64) -> String {
     format!("{:.1}", bytes as f64 / GIB as f64)
 }
@@ -1419,6 +1442,50 @@ fn gib(bytes: u64) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn target_cache_scan_tolerates_disappearing_entries() {
+        for remove_directory in [false, true] {
+            let root = tempfile::tempdir().unwrap();
+            let retained = root.path().join("retained");
+            fs::write(&retained, b"retained bytes").unwrap();
+            let removed = root.path().join("obsolete");
+            if remove_directory {
+                fs::create_dir(&removed).unwrap();
+                fs::write(removed.join("old-cache"), b"obsolete").unwrap();
+            } else {
+                fs::write(&removed, b"obsolete").unwrap();
+            }
+            let mut observations = 0;
+            let result = directory_size_with_observer(root.path(), |path| {
+                if path == removed {
+                    observations += 1;
+                    if observations == if remove_directory { 2 } else { 1 } {
+                        if remove_directory {
+                            fs::remove_dir_all(&removed).unwrap();
+                        } else {
+                            fs::remove_file(&removed).unwrap();
+                        }
+                    }
+                }
+            });
+            assert_eq!(result.unwrap(), b"retained bytes".len() as u64);
+            assert!(retained.exists());
+            assert!(!removed.exists());
+        }
+    }
+
+    #[test]
+    fn target_cache_scan_preserves_non_missing_errors() {
+        let root = tempfile::tempdir().unwrap();
+        let file = root.path().join("not-a-directory");
+        fs::write(&file, b"cache").unwrap();
+        assert!(directory_size(&file).is_err());
+        assert!(
+            cache_observation::<u64>(Err(io::Error::from(io::ErrorKind::PermissionDenied)))
+                .is_err()
+        );
+    }
 
     fn capacity(available: u64, swap_used_percent: u64, cpus: u32) -> HostCapacity {
         let swap_total = 8 * GIB;
