@@ -1,13 +1,13 @@
 {
   "version": 1,
   "objective": "native-first-launch-and-cross-platform-rrc-20261008",
-  "observed_at": "2026-10-08T06:14:15.067249+00:00",
+  "observed_at": "2026-10-08T08:41:59.798945+00:00",
   "base_commit": "82b5e4183fa74e012ee4c3f36b7a9715d22d02b8",
   "source": {
     "apps/agent-vesper-tui/src/main.rs": "bdb3457463052c9827f1c8d778e406ef064ae74ae3092dfcc9ccc15de2cf7462",
     "apps/agent-vesper-tui/src/auth_hub.rs": "3ba5acc7b7e72cb1e13edf44f3c8ad4e3a16f27d12454d01039d05fc42086350",
     "apps/agent-vesper-tui/src/lib.rs": "a57c5d4e1e13ada74e99d7568a117dc61b8b41f7250f3c3fb27f20f55b1fbf5f",
-    "xtask/src/main.rs": "0f750ec85190c16ae164881d96c57495729e5d3df656b22920e95f05a6ac35a4",
+    "xtask/src/main.rs": "ef6c8fbf932e2cc4733cddb32b105369317d672f9ddb27a6781d8a3e885b6dab",
     "xtask/tests/cached_workspace.rs": "0bf786c498cbe54205467121b821f1225900172938f3e993d090d958a1c68494",
     "crates/vesper-testkit/src/fixture.rs": "b54188267730434ed93375b99975b47dfe72d1b3d7b6feae4ce124156b3e81d2",
     "crates/vesper-harness/src/host_resources.rs": "3310cbfacdd36a4297df5ea21b89a05a3ad42f921b36e397180e48866f5bac9d",
@@ -15,9 +15,12 @@
     "crates/vesper-harness/src/host_resources_windows_job.ps1": "c78873285f317e34a171f6d43b99dacbe863ff57a089bcea2fc7d09274f7612e",
     "crates/vesper-harness/src/release_executor.rs": "babcda00b8f3d5298bdfba981d01d4a7e476000aa9c331d580d0d0bb0a978303",
     "crates/vesper-harness/tests/windows_resource_job.py": "02a0e936cd3f713747cec77a4b6c7d4902fb311a96a6902461218048cd271e75",
-    ".github/workflows/platform-foundation.yml": "dc9595784ad8648e1715e5ee141f6a09dc16743b20efcd648ab772d4188c6187",
+    ".github/workflows/platform-foundation.yml": "d371365762d9451d6a2f31fa199ad623d7fac15c744bd221037ee9473f94fee1",
     ".github/workflows/ci.yml": "e5f2f00d92a3a59b7277ba4f6736c1847f03a480c1ebbb85693e211819a908bb",
-    "Cargo.lock": "d5beebc4407bc00c21ee0bef2473adfc4b5efb87b485781676648ae30ef8f576"
+    "Cargo.lock": "9f41c00ae582a68fb82e4ba4881c0e30a6977f764752babeb80fa97e413bc56f",
+    "crates/vesper-harness/src/release_recovery.rs": "052f5007ee5aa25969c45ef54560d9b597e072e509a9c494d88279ed8d0f2656",
+    "apps/agent-vesper-tui/tests/settings_pty.py": "ed65fbcbe9c16ea95ed45501761a57b184b56e4ac0285a5023a191322822a490",
+    "apps/agent-vesper-tui/tests/release_hosts_pty.py": "e45f67ba2c9d7d4a6e6561663a2f161f188464b98a64732e3c7582e0cc829799"
   },
   "receipts": [
     {
@@ -123,12 +126,168 @@
   ],
   "archive_sha256": "32e41bbe0002d126cf73b1d923ca5624ecccb20dd4d305a6f2f4f0625ddcddd3",
   "binary_sha256": {
+    "/tmp/vesper-fixture-classifier-tui-20261008": "99644a50f67a627f6b2ed0aae05075101f497a6d68b179167ed3a67081982856",
+    "/tmp/vesper-fixture-classifier-acp-20261008": "8e05f21866717c410af3180df8fb0f4801c91070c8bd5893c8610662d015af79"
+  },
+  "current_local_acceptance": 149,
+  "native_hosted_acceptance": "initial matrix failed; corrected exact-SHA matrix pending",
+  "publication": "pending",
+  "original_windows_10_device": "not observed",
+  "live_provider_account": "not exercised",
+  "initial_source": {
+    "apps/agent-vesper-tui/src/main.rs": "bdb3457463052c9827f1c8d778e406ef064ae74ae3092dfcc9ccc15de2cf7462",
+    "apps/agent-vesper-tui/src/auth_hub.rs": "3ba5acc7b7e72cb1e13edf44f3c8ad4e3a16f27d12454d01039d05fc42086350",
+    "apps/agent-vesper-tui/src/lib.rs": "a57c5d4e1e13ada74e99d7568a117dc61b8b41f7250f3c3fb27f20f55b1fbf5f",
+    "xtask/src/main.rs": "0f750ec85190c16ae164881d96c57495729e5d3df656b22920e95f05a6ac35a4",
+    "xtask/tests/cached_workspace.rs": "0bf786c498cbe54205467121b821f1225900172938f3e993d090d958a1c68494",
+    "crates/vesper-testkit/src/fixture.rs": "b54188267730434ed93375b99975b47dfe72d1b3d7b6feae4ce124156b3e81d2",
+    "crates/vesper-harness/src/host_resources.rs": "3310cbfacdd36a4297df5ea21b89a05a3ad42f921b36e397180e48866f5bac9d",
+    "crates/vesper-harness/src/host_resources_native.rs": "642a890e33225d37e6365ec3f41c02f11464b46655d2f5c919adf245a43cd1a2",
+    "crates/vesper-harness/src/host_resources_windows_job.ps1": "c78873285f317e34a171f6d43b99dacbe863ff57a089bcea2fc7d09274f7612e",
+    "crates/vesper-harness/src/release_executor.rs": "babcda00b8f3d5298bdfba981d01d4a7e476000aa9c331d580d0d0bb0a978303",
+    "crates/vesper-harness/tests/windows_resource_job.py": "02a0e936cd3f713747cec77a4b6c7d4902fb311a96a6902461218048cd271e75",
+    ".github/workflows/platform-foundation.yml": "dc9595784ad8648e1715e5ee141f6a09dc16743b20efcd648ab772d4188c6187",
+    ".github/workflows/ci.yml": "e5f2f00d92a3a59b7277ba4f6736c1847f03a480c1ebbb85693e211819a908bb",
+    "Cargo.lock": "d5beebc4407bc00c21ee0bef2473adfc4b5efb87b485781676648ae30ef8f576"
+  },
+  "initial_binary_sha256": {
     "/tmp/vesper-final-tui-20261008": "1cd94261ec1546e06a4f0d1aa71b6fd2bda1caa4ba644881a03d5135794ee3b3",
     "/tmp/vesper-final-acp-20261008": "cfbf17a6bca202a87bbdae3b35ada25f1bc6f41813f6c42e90e4cbd5f5b1f5fa"
   },
-  "current_local_acceptance": 147,
-  "native_hosted_acceptance": "pending",
-  "publication": "pending",
-  "original_windows_10_device": "not observed",
-  "live_provider_account": "not exercised"
+  "initial_local_acceptance": 147,
+  "follow_up": {
+    "base_commit": "960fe620d5f5a2f9071b76379bf64b9644fccd77",
+    "archive": "2026-10-08-native-first-launch-and-rrc-ci-follow-up-receipts.tar.gz",
+    "archive_sha256": "a3ddaa0f3121872a43a13166dd4e98ba428fca13a0ce7c52cd4d90607bdf1ddb",
+    "receipts": [
+      {
+        "file": "vesper-v0.24.10-failed-job-113198413281.log",
+        "sha256": "861361c6f1a75e0648184f18c9fb592359f5b83f3c7b5bd08374e95aa0c7d682",
+        "bytes": 618859
+      },
+      {
+        "file": "vesper-v0.24.10-failed-job-113198413458.log",
+        "sha256": "9190064374892bb367c3ba77577e3bef8e05b2c923a7bea060fb5e4677553164",
+        "bytes": 622645
+      },
+      {
+        "file": "vesper-v0.24.10-failed-job-113198413472.log",
+        "sha256": "8384d35df347ee5b187f0588c978d87dd9507c6ce8745ce10761074ef202c8d8",
+        "bytes": 619758
+      },
+      {
+        "file": "vesper-v0.24.10-failed-job-113198413511.log",
+        "sha256": "905e69401f124b6a95872fe7d39200abab7a4621a4b01ab88faf2817bb265542",
+        "bytes": 630468
+      },
+      {
+        "file": "vesper-v0.24.10-failed-job-113198413585.log",
+        "sha256": "9218963155b9d7f316699d35f4205fe5fd984b08e02e416c780ce06b3fbee413",
+        "bytes": 622178
+      },
+      {
+        "file": "vesper-v0.24.10-complete-foundation-matrix.json",
+        "sha256": "22d24602077e70b169ef19d7abfe652ba6be9678d28765242f9bbaee5aedb4e0",
+        "bytes": 20305
+      },
+      {
+        "file": "vesper-v0.24.10-complete-run-37743177212.json",
+        "sha256": "c9b4a59542dbfd01c9fd64b1b815bd9c994e2acb1b03a13432cda554b163a9d3",
+        "bytes": 2361
+      },
+      {
+        "file": "vesper-v0.24.10-complete-run-37743177494.json",
+        "sha256": "db9357a20cf04cf03490d40f1bf22af6918a416a8ab689e4a1fa4c2e60fe0121",
+        "bytes": 7054
+      },
+      {
+        "file": "vesper-v0.24.10-complete-run-37743177514.json",
+        "sha256": "74749234e95bbfd65573bc70da87b92c38355a049bd7f63f57680a2c94cfc81c",
+        "bytes": 6315
+      },
+      {
+        "file": "vesper-v0.24.10-windows-release-profile.log",
+        "sha256": "b172fa7b8763beb2f2c5fa18bb38e43ec9ff30f5a684071a75d41e141ae509bf",
+        "bytes": 88329
+      },
+      {
+        "file": "vesper-v0.24.10-job-113198414386.log",
+        "sha256": "d42d19821876480ff00613ccd34d207990d30919df675ca9ea8fc72a9a7a1b20",
+        "bytes": 646955
+      },
+      {
+        "file": "vesper-v0.24.10-job-113198412561.log",
+        "sha256": "91b830e4524559ae5d18cf80f6032c0ab305554d644adb6274172135f210ff36",
+        "bytes": 574317
+      },
+      {
+        "file": "vesper-v0.24.10-first-matrix-native-terminal-ledger.json",
+        "sha256": "42af78c63435cfd77f7228fa100784b8702ec9c323c7a15875d64d01c5e53f34",
+        "bytes": 38052
+      },
+      {
+        "file": "vesper-v0.24.10-first-matrix-terminal-tail.ansi",
+        "sha256": "3d3a9c8f1ba098956de20dd76154c240901fdbd71f751b8a6eafb12066379980",
+        "bytes": 60023
+      },
+      {
+        "file": "vesper-v0.24.10-relative-fixture-red.log",
+        "sha256": "921fe496529a92b65decb20478be4c5fea78ab6d97321234ef64ca72448d5403",
+        "bytes": 1568
+      },
+      {
+        "file": "vesper-v0.24.10-encoding-fixture-red.log",
+        "sha256": "e1a8ccc6eb04a7cc43fda2fb19232736210dab3f931342158b78a4004f6922c4",
+        "bytes": 1025
+      },
+      {
+        "file": "vesper-v0.24.10-relative-encoding-fixture-green.log",
+        "sha256": "87cabd995af7c6400985199b11eb09b9747b5689f6094c4592a77a08dd67fefb",
+        "bytes": 337
+      },
+      {
+        "file": "vesper-v0.24.10-python-classifier-red.log",
+        "sha256": "0d4dedab03ff5321bfa35134aae8349cd30da31635aa083746ee0a8d7dd9eb3c",
+        "bytes": 1221
+      },
+      {
+        "file": "vesper-v0.24.10-python-classifier-green.log",
+        "sha256": "0647f67ab5726bff3b403d7fc4459f2d9720365aee4411ae6eded16bc5e14fbe",
+        "bytes": 699
+      },
+      {
+        "file": "vesper-v0.24.10-fixture-classifier-full-verify.log",
+        "sha256": "54e95b40253b9c5187c3eaf1762ec6d7a8797c623ca741db6810529908de31fa",
+        "bytes": 382003
+      },
+      {
+        "file": "vesper-v0.24.10-fixture-classifier-shipping-build.log",
+        "sha256": "e1d13a3707310ca89a2ee522f3ea74296bc5eda77624ef8d375002b61cfec773",
+        "bytes": 2625
+      },
+      {
+        "file": "vesper-v0.24.10-final-shipping-process.log",
+        "sha256": "eb9187eacc00fafd85b37bed9bd6c3ea4bf0ce4722ab090a4879764392a446b5",
+        "bytes": 1826
+      },
+      {
+        "file": "vesper-v0.24.10-follow-up-local-binding-trace.json",
+        "sha256": "23e1291cfcaa89a24643bf9fc99958df95ed3dd0742bd7b8851033fe10de3c35",
+        "bytes": 105869
+      },
+      {
+        "file": "vesper-final-inactive-cache-reclamation.log",
+        "sha256": "eebe9a7698e7655d67ff78e9b7d99c7bfb11a35d71f0378a038ad38deb8503d3",
+        "bytes": 121
+      }
+    ],
+    "initial_matrix_jobs": 12,
+    "initial_native_welcome_passed": 20,
+    "initial_matrix_failures": 5,
+    "initial_native_terminal": "need_more_evidence",
+    "initial_owner_exit": 0,
+    "corrected_local_process_cases_passed": 10,
+    "retry_budget_reset": false,
+    "version_rebump": false
+  }
 }

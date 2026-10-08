@@ -222,6 +222,10 @@ Verify terminal interaction through the production TUI binary with isolated stat
 ## Local Contracts
 
 - Use temporary HOME, workspace and global data roots plus synthetic credentials.
+- Resolve executable arguments against the caller directory before changing child
+  cwd. Terminal receipts use UTF-8 even under redirected Windows code pages; ACP
+  fixtures exchange UTF-8 JSON bytes. Verify relative executable arguments and
+  CP1252 redirected output without weakening native UI assertions.
 - Block outbound proxies, submit no provider prompt, and never install a public release or write to real user state.
 - Exercise production keyboard/mouse handlers and inspect saved files and restart
   behavior. Kill and observe child processes before removing fixture directories.

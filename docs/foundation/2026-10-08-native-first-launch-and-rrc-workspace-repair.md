@@ -56,6 +56,20 @@ and Windows, and eliminate newly reproduced RRC verification-scope defects.
    malformed/missing/inaccessible observations. A real constrained-Windows-job
    fixture and native observation/descendant cases are required hosted evidence.
 
+10. The first exact v0.24.10 matrix reproduced two terminal-fixture faults after
+    the signed-out welcome assertions passed: relative executable paths were
+    interpreted in the child's private directory, and Windows CP1252 redirected
+    output rejected the successful authentication receipt's Unicode arrow. The
+    common host now resolves caller paths before changing cwd and explicitly
+    writes UTF-8 receipts. ACP already exchanges UTF-8 JSON bytes; its executable
+    path is resolved by the same caller-directory rule.
+11. The shared RRC classified those typed Python exceptions as Unknown and safely
+    stopped before repair. FileNotFoundError, UnicodeEncodeError and
+    UnicodeDecodeError now provide strongly supported source-diagnosis evidence;
+    permission/infrastructure priority and unknown-exception refusal remain.
+    Two exact classifier cases are mandatory native acceptance. This is a
+    diagnosis gap; the observed full-matrix wait is not a dead loop.
+
 ## Methods and commands
 
 - Inspected both user screenshots, unconditional provider registration, startup,
@@ -78,7 +92,8 @@ and Windows, and eliminate newly reproduced RRC verification-scope defects.
 
 Source: TUI `main.rs`, `auth_hub.rs`, `lib.rs`; xtask `src/main.rs` and
 `tests/cached_workspace.rs`; testkit `src/fixture.rs`; shared harness resource
-observer, Windows query script, executor cancellation/admission and real constrained
+observer, Windows query script, executor cancellation/admission, shared Python
+runtime failure classification and real constrained
 Job Object fixture, with manifest/lockfile and dependency-register changes. Process fixtures: `first_launch_pty.py`,
 `settings_pty.py`, `settings_auth_pty.py` (unchanged test scenarios),
 `release_hosts_pty.py`, `openai_startup_responsiveness.rs`,
@@ -110,7 +125,7 @@ Parent apps/docs indexes retain their existing subtree boundaries and are unchan
 - Native cached verifier tests: 2 passed, 0 failed. Current full verification must
   show `/tmp/vesper-rrc-closeout-fix` (or its exact native release worktree), never
   an embedded historical root.
-- Current workspace verification passed formatting, strict all-target/all-feature
+- Initial repaired-source workspace verification passed formatting, strict all-target/all-feature
   Clippy, the complete workspace and fixture/runtime/architecture checks, and
   **147/147 exact acceptance cases**. The invocation log names this current worktree.
 - Native resource cases passed locally: 30 selected cases, including real physical
@@ -133,10 +148,15 @@ the existing RAII `LegacyStoreBuilder`, adding no dependency. That failed receip
 is retained; final-source verification is rerun after this correction.
 
 
-No live provider/account/inference request, installer into Alex's home, credential
-save/read from his native stores, cache deletion, manual version/tag/publication,
-separate documentation-only push or disposable release driver is used. Test state
-is private; GLM's deliberately malformed vault prevents keyring fallback and other
+Foundation verification makes no live provider/account/inference request and
+uses no real credential stores. The separately authorized production release uses
+native configured credential ports, without printing credential contents. No
+installer replaces Alex's installation, and no manual version/tag/publication,
+separate documentation-only push or disposable release driver is used. During
+production release builds, three confirmed inactive historical Cargo target caches
+were reclaimed with Cargo's scoped clean operation; source, active caches and
+user state were preserved. The retained reclamation receipt records the targets
+and actual removed counts. Test state is private; GLM's deliberately malformed vault prevents keyring fallback and other
 providers use signed-out tombstones. Native Windows fixture transport comes from
 [PyWinpty's own implementation](https://github.com/andfoy/pywinpty/blob/main/winpty/ptyprocess.py)
 and [ConPTY backend declaration](https://github.com/andfoy/pywinpty/blob/main/winpty/enums.py).
@@ -155,6 +175,30 @@ Windows swap fields describe the native commit extension above physical RAM.
 Job observation applies to the inherited immediate Job Object; it does not invent
 undiscoverable ancestor handles or claim arbitrary nested-job constraints.
 
+## v0.24.10 first exact-candidate CI and follow-up
+
+Candidate `960fe620d5f5a2f9071b76379bf64b9644fccd77` was prepared and pushed by
+native RRC after all eight local gates passed, with its persisted retry budget
+unchanged. Canonical `37743177494`, MSRV `37743177212` and web-driver
+`37743177514` passed. Canonical Windows ran the real release-profile welcome
+checks and actual private installs under PowerShell 5.1 and 7 successfully.
+Five-target `37743177347` exposed the relative-path/receipt faults described
+above. Passing foundational and welcome cases do not certify the skipped RRC
+process or constrained-Windows-job checks. No v0.24.10 tag/publication is
+permitted by this failed matrix.
+
+Local red receipts reproduce both faults; the corrected authentication fixture
+passes with `bin/tui` resolved from a private caller directory and
+`PYTHONIOENCODING=cp1252`. The classifier red observed `(Unknown, Unknown)`;
+its two corrected cases pass. Full current-source verification now passed formatting, strict Clippy, workspace
+and process/fixture checks, architecture, and 149/149 exact acceptance. Fresh
+shipping TUI/ACP process checks passed all ten cases with relative executable
+arguments and CP1252 redirected output. The binding trace observes all 100
+distinct mapped cases plus eight additional recovery cases (108 total); an
+initial observer conflated those counts, then corrected its assertion without
+altering any requirement or test. A fresh exact-SHA native matrix must pass
+before publication under this same version. Native admission retains historical matrix and retry state.
+
 ## Readiness effect
 
 Confirmed source defects are repaired; current-source and exact native-platform
@@ -168,4 +212,12 @@ closeout; the invoking native owner must remain attached until Complete/Idle.
 [Evidence manifest](2026-10-08-native-first-launch-and-rrc-workspace-repair-evidence.json)
 and [receipt archive](2026-10-08-native-first-launch-and-rrc-workspace-repair-receipts.tar.gz)
 bind current source bytes, preserved failed attempts, invocation-scoped green gates
-and frozen shipping-feature binary identities. Hosted results remain pending.
+and frozen shipping-feature binary identities. Initial candidate results are retained separately from the corrected-source
+[CI follow-up receipts](2026-10-08-native-first-launch-and-rrc-ci-follow-up-receipts.tar.gz).
+All twelve initial prerequisite jobs settled; twenty native welcome cases and
+Windows release-profile/private-install checks passed, while five downstream
+fixture failures blocked publication. RRC captured all five causes, settled at
+NeedMoreEvidence with its budget unchanged, and its idle UI quit with exit 0.
+The terminal receipt is a bounded retained tail, not a complete initial transcript.
+Corrected exact-SHA native prerequisites, constrained Windows job, publication
+and final delivery remain pending.

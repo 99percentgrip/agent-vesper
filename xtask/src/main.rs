@@ -2435,6 +2435,16 @@ fn acceptance_verify() -> Result<(), String> {
         (
             "vesper-harness",
             &["--lib"],
+            "release_recovery::tests::settled_python_fixture_exceptions_admit_source_diagnosis",
+        ),
+        (
+            "vesper-harness",
+            &["--lib"],
+            "release_recovery::tests::python_fixture_classification_preserves_owner_action_and_uncertainty",
+        ),
+        (
+            "vesper-harness",
+            &["--lib"],
             "release_recovery::tests::settled_dependency_download_precedes_downstream_missing_binary_panic",
         ),
         (

@@ -147,6 +147,8 @@ jobs:
         shell: bash
         timeout-minutes: 12
         env:
+          # Reproduce redirected Windows receipt encoding on every native lane.
+          PYTHONIOENCODING: cp1252
           RUSTC_WRAPPER: ${{ steps.sccache_check.outputs.sccache_ready == 'true' && 'sccache' || '' }}
         run: |
           cargo build --locked -p agent-vesper-tui -p agent-vesper-acp --features agent-vesper-tui/docker,agent-vesper-tui/swarm,agent-vesper-tui/bridge,agent-vesper-tui/voice-kokoro,agent-vesper-tui/voice-flm,agent-vesper-acp/docker,agent-vesper-acp/swarm,agent-vesper-acp/bridge

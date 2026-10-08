@@ -1106,6 +1106,11 @@ macOS/Windows governor backends replace the prior unavailable extension points;
 current native platform, constrained-job and cancellable-observer evidence remains
 required before completion.
 Earlier test counts alone do not establish this newly uncovered scope.
+The first v0.24.10 exact matrix also exposed relative executable/Windows receipt
+encoding faults and Unknown classification of typed Python runtime exceptions.
+These are repaired with caller-path/UTF-8 fixture contracts and shared, priority-
+preserving source diagnosis. Fresh complete native acceptance remains required;
+passing welcome cases do not certify skipped RRC or constrained-job checks.
 
 
 [Windows missing runtime package repair](foundation/2026-10-08-windows-missing-runtime-package-repair.md)

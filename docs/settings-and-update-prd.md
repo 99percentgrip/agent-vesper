@@ -36,6 +36,9 @@ tracks the user-reported Windows landing/authentication trap and the cached
 verification binary selecting an old release worktree. Earlier seeded-key or
 version/help checks do not certify S0. Current evidence must match the exact source
 and native platform, including signed-out startup.
+The first v0.24.10 matrix passed twenty signed-out native welcome/provider cases
+and Windows release-profile/private-install checks; later fixture transport/receipt
+failures still block release and require the corrected exact-source matrix.
 
 
 [Windows missing runtime package repair](foundation/2026-10-08-windows-missing-runtime-package-repair.md)

@@ -113,6 +113,8 @@ architecture, MSRV, and source-oracle checks.
   linker wrappers, concrete dependency errors, unknown OS-labelled messages and
   remote cancellation without a local user-cancel claim, and account execution
   restrictions requiring owner action without source repair or outage retry.
+  Typed Python fixture runtime exceptions and preserved owner-action/unknown
+  classification are mandatory source-diagnosis cases on every native target.
   Settled Windows CLI assertions, earlier APT download errors and same-step
   dependency-index timeout context are mandatory cases; metadata, command echoes,
   previous steps and unproven timeouts must not authorize repair.

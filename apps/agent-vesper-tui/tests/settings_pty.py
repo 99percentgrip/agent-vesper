@@ -13,6 +13,12 @@ import tempfile
 import time
 import codecs
 
+# Receipts use the same UTF-8 contract as the native terminal, independent of
+# the Windows redirected-output code page.
+for stream in (sys.stdout, sys.stderr):
+    if hasattr(stream, "reconfigure"):
+        stream.reconfigure(encoding="utf-8")
+
 if os.name != "nt":
     import fcntl
     import pty
@@ -55,6 +61,8 @@ class WindowsChild:
 
 class Host:
     def __init__(self, binary, root, extra_env=None):
+        # Resolve in the caller workspace before the child enters its private cwd.
+        binary = str(Path(binary).resolve())
         self.screen = [[' '] * 120 for _ in range(40)]
         self.x = self.y = 0
         self.pending = ''

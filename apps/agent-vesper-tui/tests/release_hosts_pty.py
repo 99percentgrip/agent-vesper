@@ -56,6 +56,7 @@ def seed(root, sha, published=False):
 
 class Acp:
     def __init__(self, binary, root, env):
+        binary = str(Path(binary).resolve())
         self.child = subprocess.Popen([binary], cwd=root, env=env, stdin=subprocess.PIPE,
                                       stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
         self.rows = queue.Queue()

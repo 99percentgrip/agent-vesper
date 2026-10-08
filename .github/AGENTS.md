@@ -42,7 +42,9 @@ migration gates and disposable platform assumptions on hosts unavailable locally
   for a real clean Windows release install.
 - The five-target prerequisite builds shipping-feature TUI/ACP and runs actual
   signed-out landing, all-provider Settings authentication and cross-host RRC
-  ledger controls on every native runner. Windows uses pinned, hash-verified
+  ledger controls on every native runner. Relative executable arguments and
+  explicit CP1252 redirected Python output exercise the shared path/UTF-8 receipt
+  contract on every lane. Windows uses pinned, hash-verified
   Python 3.13 ConPTY; Linux/macOS use stdlib PTYs. Version/help and seeded-key
   tests cannot substitute for this interactive first-launch gate. Native governor
   cases run on all targets; Windows additionally runs a real constrained Job Object

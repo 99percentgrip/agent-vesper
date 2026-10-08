@@ -2869,6 +2869,8 @@ pub fn classify_failure(
         ReleaseFailureClass::ArtifactInfrastructureFailure
     } else if normalized.contains("timed out") || normalized.contains("timeout") {
         ReleaseFailureClass::Timeout
+    } else if python_fixture_runtime_exception(&normalized) {
+        ReleaseFailureClass::TestRegression
     } else if normalized.contains("package") || normalized.contains("archive") {
         ReleaseFailureClass::PackagingFailure
     } else {
@@ -2891,6 +2893,17 @@ pub fn classify_failure(
         EvidenceConfidence::Tentative
     };
     (class, confidence)
+}
+
+// Typed runtime diagnostics authorize source diagnosis, while arbitrary exception
+// names and command metadata remain insufficient evidence. Owner-action and
+// infrastructure causes above retain priority over this fixture classification.
+fn python_fixture_runtime_exception(diagnostic: &str) -> bool {
+    static EXCEPTION: LazyLock<Regex> = LazyLock::new(|| {
+        Regex::new(r"(?:^|\s)(?:filenotfounderror|unicodeencodeerror|unicodedecodeerror):\s")
+            .expect("static Python fixture exception regex")
+    });
+    EXCEPTION.is_match(diagnostic)
 }
 
 fn dependency_index_timeout(excerpt: &str) -> bool {
@@ -8619,6 +8632,56 @@ mod tests {
             ),
             (ReleaseFailureClass::Unknown, EvidenceConfidence::Unknown)
         );
+    }
+
+    #[test]
+    fn settled_python_fixture_exceptions_admit_source_diagnosis() {
+        for cause in [
+            "FileNotFoundError: [Errno 2] No such file or directory: 'target/debug/agent-vesper-tui'",
+            "UnicodeEncodeError: 'charmap' codec can't encode character '\u{2192}' in position 26: character maps to <undefined>",
+            "UnicodeDecodeError: 'utf-8' codec can't decode byte 0xff in position 0: invalid start byte",
+        ] {
+            let log = format!(
+                "##[group]Run python settings_auth_pty.py\necho 'FileNotFoundError: command echo'\n##[endgroup]\ntest error::tests::fixture ... ok\nPASS: native welcome and provider Settings\nTraceback (most recent call last):\n  File \"settings_pty.py\", line 93, in __init__\n    subprocess.Popen([binary], cwd=root)\n{cause}\n##[error]Process completed with exit code 1"
+            );
+            let excerpt = first_causal_excerpt(&log);
+            assert!(excerpt.contains(cause), "{excerpt}");
+            assert!(!excerpt.contains("command echo"), "{excerpt}");
+            for platform in ["ubuntu-24.04", "windows-2025", "macos-15"] {
+                assert_eq!(
+                    classify_failure(&excerpt, Some(platform)),
+                    (
+                        ReleaseFailureClass::TestRegression,
+                        EvidenceConfidence::StronglySupported
+                    )
+                );
+            }
+            assert_eq!(
+                failure_fingerprint("workflow", "job", None, None, None, &excerpt),
+                failure_fingerprint("workflow", "job", None, None, None, cause)
+            );
+        }
+    }
+
+    #[test]
+    fn python_fixture_classification_preserves_owner_action_and_uncertainty() {
+        assert_eq!(
+            classify_failure("FileNotFoundError: permission denied", None),
+            (
+                ReleaseFailureClass::CredentialOrPermissionFailure,
+                EvidenceConfidence::StronglySupported
+            )
+        );
+        for cause in [
+            "CustomFixtureError: unexplained failure",
+            "metadata describes FileNotFoundError without a runtime diagnostic",
+            "test error::tests::UnicodeEncodeError ... ok",
+        ] {
+            assert_eq!(
+                classify_failure(cause, None),
+                (ReleaseFailureClass::Unknown, EvidenceConfidence::Unknown)
+            );
+        }
     }
 
     #[test]

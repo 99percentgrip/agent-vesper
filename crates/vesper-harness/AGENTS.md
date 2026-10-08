@@ -142,6 +142,9 @@ Z.ai and Playwright MCP server descriptors.
   retain bounded observed dependency/mirror/fetch context from the same step;
   command echoes, earlier steps and generic timeouts never establish that cause.
   Ordinary runner provisioning text is not an infrastructure failure.
+  Typed runtime FileNotFoundError, UnicodeEncodeError and UnicodeDecodeError
+  diagnostics admit source diagnosis after owner-action/infrastructure priority;
+  command echoes, passing test names and unknown exceptions do not grant repair.
   GitHub account payment/spending restrictions
   require owner action: classify as credential/permission failures and escalate
   without model source repair, outage claims or automatic retry.

@@ -1,6 +1,6 @@
 # Foundation Evidence Index
 
-- [Native first launch and RRC verification workspace repair](2026-10-08-native-first-launch-and-rrc-workspace-repair.md) — signed-out landing/provider setup, cached old-worktree verification reproduction, runtime source/fixture roots and mandatory five-native-platform process acceptance.
+- [Native first launch and RRC verification workspace repair](2026-10-08-native-first-launch-and-rrc-workspace-repair.md) — signed-out landing/provider setup, cached old-worktree verification reproduction, native resource observation, exact v0.24.10 failed-matrix receipts, relative-path/UTF-8 terminal correction and typed Python failure diagnosis; fresh five-native-platform acceptance remains required.
 
 - [RRC settled-CI causal diagnosis repair](2026-10-08-rrc-ci-causal-diagnosis-repair.md) — complete failed v0.24.9 matrix, three reproduced diagnosis defects, CLI stream correction and bounded HTTPS dependency setup; integrated v0.24.9 native/hosted proof is recorded in its closeout.
 
