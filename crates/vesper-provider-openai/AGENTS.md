@@ -11,6 +11,9 @@ Both hosts register one provider with API-key and subscription authentication.
 - `src/auth_tests.rs` owns offline loopback authentication protocol evidence.
 - `src/credentials.rs` owns Vesper-only credential records, selected billing
   mode, local logout, bounded refresh, and cross-process RAII file locking.
+  The explicitly opted-in ADR 0032 hosted fixture uses a UUID native service
+  identity with production serialization/storage to prove large device tokens,
+  restored subscription selection, preserved API key, mode switch and logout.
   An environment/scoped API key reports API authentication metadata when no stored
   mode is selected; a selected subscription or sign-out tombstone takes precedence.
   Subscription login and refresh preserve a separately stored valid API key.
@@ -85,7 +88,9 @@ Both hosts register one provider with API-key and subscription authentication.
 - Secrets never enter Debug, errors, events, or normal serialization. Token
   exposure is explicit at authenticated transport or secure-storage boundaries.
 - Cancellation and bounded response sizes apply to login and refresh as well
-  as generation. No live accounts or user storage in verification.
+  as generation. No live accounts or user storage in verification. Explicit
+  hosted ADR 0032 native acceptance uses only disposable UUID synthetic entries
+  and loopback device endpoints; it is ignored by default.
 - Subscription protocol evidence is pinned upstream source, not a claim that
   OpenAI publishes a stable third-party subscription API or grants entitlement.
 - Production endpoints are fixed. The non-default integration-test feature

@@ -136,7 +136,12 @@ impl Credentials {
             .map_err(|_| CredentialError::Unavailable)?;
         match fs2::FileExt::try_lock_exclusive(&file) {
             Ok(()) => Ok(Some(file)),
-            Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => Ok(None),
+            Err(error)
+                if error.kind() == std::io::ErrorKind::WouldBlock
+                    || error.raw_os_error() == fs2::lock_contended_error().raw_os_error() =>
+            {
+                Ok(None)
+            }
             Err(_) => Err(CredentialError::Unavailable),
         }
     }
@@ -608,4 +613,87 @@ mod tests {
         assert!(!debug.contains("fixture-access"));
         assert!(!debug.contains("fixture-account"));
     }
+}
+
+// Explicit native persistence acceptance owns a private native namespace on a
+// disposable hosted runner. This bypasses only the service identity, not the
+// production secure store or adapter serialization/mode-selection paths.
+#[cfg(test)]
+pub(crate) async fn verify_hosted_subscription_persistence(result: SubscriptionTokens) {
+    assert_eq!(std::env::var("GITHUB_ACTIONS").as_deref(), Ok("true"));
+    assert_eq!(
+        std::env::var("VESPER_NATIVE_CREDENTIAL_ACCEPTANCE").as_deref(),
+        Ok("isolated-hosted-fixture")
+    );
+    let temporary = tempfile::tempdir().unwrap();
+    let path = temporary.path().join("fixture.json");
+    let service = format!("vesper-ci-openai-{}", uuid::Uuid::new_v4().simple());
+    let store = SecureCredentialStore::new(Box::leak(service.into_boxed_str()), path.clone());
+    struct Cleanup(SecureCredentialStore);
+    impl Drop for Cleanup {
+        fn drop(&mut self) {
+            let _ = self.0.remove(ID);
+        }
+    }
+    let cleanup = Cleanup(store.clone());
+    let credentials = Credentials {
+        store,
+        lock_path: path.with_extension("lock"),
+        lock: Arc::new(Mutex::new(())),
+        test_store: None,
+    };
+    let process_lock = credentials.try_process_lock().unwrap().unwrap();
+    assert!(credentials.try_process_lock().unwrap().is_none());
+    drop(process_lock);
+    let this = credentials.clone();
+    tokio::task::spawn_blocking(move || this.store_api_key("synthetic-preserved-api-key"))
+        .await
+        .unwrap()
+        .unwrap();
+    account(&result).unwrap();
+    let value = token_value_preserving_api_key(&result, &credentials.read().unwrap());
+    let encoded = serde_json::to_string(&value).unwrap();
+    assert!(encoded.len() > 16 * 1024);
+    let this = credentials.clone();
+    tokio::task::spawn_blocking(move || this.write(value))
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        credentials.authentication_method().unwrap().as_deref(),
+        Some("openai-chatgpt")
+    );
+    assert!(credentials.present().unwrap());
+    // A newly composed adapter must restore the selected subscription and all
+    // tokens from the native store; it cannot depend on an in-memory result.
+    let reopened = Credentials {
+        lock: Arc::new(Mutex::new(())),
+        ..credentials.clone()
+    };
+    assert_eq!(
+        reopened.read().unwrap()["access_token"].as_str().unwrap(),
+        result.access_token().expose().as_str()
+    );
+    assert_eq!(
+        reopened.read().unwrap()["api_key"],
+        "synthetic-preserved-api-key"
+    );
+    let this = reopened.clone();
+    tokio::task::spawn_blocking(move || {
+        this.select_method("openai-api-key").unwrap();
+        this.select_method("openai-chatgpt").unwrap();
+        assert_eq!(
+            this.authentication_method().unwrap().as_deref(),
+            Some("openai-chatgpt")
+        );
+        this.logout().unwrap();
+        assert!(!this.present().unwrap());
+        assert_eq!(this.authentication_method().unwrap(), None);
+    })
+    .await
+    .unwrap();
+    if cfg!(windows) {
+        assert!(!path.exists());
+    }
+    drop(cleanup);
 }

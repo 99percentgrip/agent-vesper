@@ -1103,14 +1103,20 @@ native gate also exercises signed-out provider setup and TUI/ACP release control
 with every registered adapter selected. Natural-language native release admission
 now bypasses pending account discovery through the shared classifier. Production
 macOS/Windows governor backends replace the prior unavailable extension points;
-current native platform, constrained-job and cancellable-observer evidence remains
-required before completion.
+current native platform, constrained-job and cancellable-observer evidence passed
+for the corrected v0.24.10 candidate.
 Earlier test counts alone do not establish this newly uncovered scope.
 The first v0.24.10 exact matrix also exposed relative executable/Windows receipt
 encoding faults and Unknown classification of typed Python runtime exceptions.
 These are repaired with caller-path/UTF-8 fixture contracts and shared, priority-
-preserving source diagnosis. Fresh complete native acceptance remains required;
-passing welcome cases do not certify skipped RRC or constrained-job checks.
+preserving source diagnosis. Corrected commit `4426004d` passed all twelve exact-SHA
+prerequisite jobs and all five native lanes, including the previously skipped
+TUI/ACP RRC and real constrained-Windows-job checks. All 100 distinct mapped cases
+plus eight recovery cases passed on every target. Native RRC published sixteen
+assets, refreshed green main, updated Registry PR #539 in place and delivered its
+final summary at Complete/Idle on 2026-10-08. This green release did not invoke a
+live model repair; the provider-neutral repair contract retains its named
+two-provider regression evidence and explicit unknown-failure refusal.
 
 
 [Windows missing runtime package repair](foundation/2026-10-08-windows-missing-runtime-package-repair.md)
@@ -1232,3 +1238,5 @@ plus eight publication/causal regressions, to observed passes in completed
 exact-source canonical CI (108/108). No mapped acceptance case is uncovered.
 This is current bounded-contract evidence, not universal absence of defects or
 live-model/device acceptance beyond the recorded scope.
+
+[Release v0.24.10 closeout evidence](foundation/release-v0.24.10-closeout.md) records this release; full PRD parity remains separately evidenced.

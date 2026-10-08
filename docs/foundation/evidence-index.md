@@ -1,6 +1,6 @@
 # Foundation Evidence Index
 
-- [Native first launch and RRC verification workspace repair](2026-10-08-native-first-launch-and-rrc-workspace-repair.md) — signed-out landing/provider setup, cached old-worktree verification reproduction, native resource observation, exact v0.24.10 failed-matrix receipts, relative-path/UTF-8 terminal correction and typed Python failure diagnosis; fresh five-native-platform acceptance remains required.
+- [Native first launch and RRC verification workspace repair](2026-10-08-native-first-launch-and-rrc-workspace-repair.md) — signed-out landing/provider setup, cached-workspace verification repair, native resource observation, retained failed matrix and fixture/source-diagnosis corrections; v0.24.10 passed all five native targets and 108/108 binding PRD/recovery cases per target, published sixteen assets and completed native Registry/final delivery.
 
 - [RRC settled-CI causal diagnosis repair](2026-10-08-rrc-ci-causal-diagnosis-repair.md) — complete failed v0.24.9 matrix, three reproduced diagnosis defects, CLI stream correction and bounded HTTPS dependency setup; integrated v0.24.9 native/hosted proof is recorded in its closeout.
 
@@ -2197,3 +2197,10 @@ v0.21.6 release notes own the final run links, image IDs and local-install recei
 - [Release v0.24.9 closeout](release-v0.24.9-closeout.md) — native publication, main-health, registry and completion receipts.
 
 - [Final v0.24.9 PRD evidence reconciliation](release-v0.24.9-closeout.md#requested-prd-evidence-reconciliation) — all 36 binding sections/23 criteria and 108 unique named cases matched to actual passes in exact-source canonical CI; raw log and trace retained; live-model/device boundaries explicit.
+
+- [Release v0.24.10 closeout](release-v0.24.10-closeout.md) — native publication, main-health, registry and completion receipts.
+
+- [Windows credential persistence repair](2026-10-08-windows-credential-persistence-repair.md) —
+  reproduced post-device-login native blob overflow, bounded provider-neutral
+  storage repair and final focused local checks; actual hosted native save/restart
+  and exact-commit publication pending.

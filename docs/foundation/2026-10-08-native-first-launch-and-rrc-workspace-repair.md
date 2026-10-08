@@ -6,6 +6,11 @@ Repair Alex's Windows first-launch report without platform/provider shortcuts;
 require the same usable welcome/Settings flow on Linux, both macOS architectures
 and Windows, and eliminate newly reproduced RRC verification-scope defects.
 
+**Completed and released as v0.24.10 at
+`4426004d59882ef680c7ce388b4151360d893e4e`.** All required exact-source native
+checks passed. The invoking RRC reached Complete/Idle, delivered its final summary
+and updated the existing Registry PR before its owner quit successfully.
+
 ## Findings and changes
 
 1. All four real adapters were already registered on every platform. Startup
@@ -137,8 +142,8 @@ Parent apps/docs indexes retain their existing subtree boundaries and are unchan
 - Supply-chain advisory, ban, license and source gates passed; ten exact-release
   policy tests passed. Final shipping-feature process reruns passed: four clean
   first-launch cases, two Settings/authentication cases and four selected-provider
-  TUI/ACP RRC cases. Exact five native interactive lanes, producing assets and
-  native RRC Complete/Idle remain pending.
+  TUI/ACP RRC cases. The subsequent exact five-native-platform matrix, producing
+  assets and native RRC Complete/Idle passed as recorded below.
 
 ## Deviations and unresolved boundaries
 
@@ -196,16 +201,84 @@ shipping TUI/ACP process checks passed all ten cases with relative executable
 arguments and CP1252 redirected output. The binding trace observes all 100
 distinct mapped cases plus eight additional recovery cases (108 total); an
 initial observer conflated those counts, then corrected its assertion without
-altering any requirement or test. A fresh exact-SHA native matrix must pass
-before publication under this same version. Native admission retains historical matrix and retry state.
+altering any requirement or test. The required fresh exact-SHA native matrix
+subsequently passed before publication under this same version. Native admission
+retained historical matrix and retry state.
+
+## Final exact-source native acceptance and publication
+
+The corrected candidate is `4426004d59882ef680c7ce388b4151360d893e4e`.
+Canonical [37759889285](https://github.com/99percentgrip/agent-vesper/actions/runs/37759889285),
+MSRV [37759889260](https://github.com/99percentgrip/agent-vesper/actions/runs/37759889260),
+web-driver [37759889344](https://github.com/99percentgrip/agent-vesper/actions/runs/37759889344)
+and five-target [37759889363](https://github.com/99percentgrip/agent-vesper/actions/runs/37759889363)
+completed successfully: all twelve prerequisite jobs, without skipped required
+native checks. The eight local gates also passed in the exact native release worktree.
+
+| Native target | Exact acceptance cases | Named binding PRD/recovery cases | Signed-out welcome | TUI/ACP RRC provider cases |
+| --- | ---: | ---: | ---: | ---: |
+| Linux x86_64 | 149 | 108/108 | 4/4 | 4/4 |
+| Linux ARM64 | 149 | 108/108 | 4/4 | 4/4 |
+| Intel macOS | 140 | 108/108 | 4/4 | 4/4 |
+| Apple Silicon macOS | 140 | 108/108 | 4/4 | 4/4 |
+| Windows x86_64 | 138 | 108/108 | 4/4 | 4/4 |
+
+Platform-specific exact-case inventories differ; Linux-only cgroup/PSI and Unix
+process cases are not counted as Windows checks. All 100 distinct cases mapped
+through the frozen 36 binding sections/23 criteria plus eight additional recovery
+cases passed on every target. The new source-diagnosis cases also passed. The
+native resource observer ran on every platform. Windows additionally passed the
+real 2 GiB Job Object production-governor refusal case. Canonical Windows passed
+all four release-profile welcome cases, static CRT/import checks for all four
+executables, and real exact-candidate installs under PowerShell 5.1 and 7.
+
+The first post-publication canonical observer searched only `acceptance verified`
+markers and incorrectly reported 37 mapped cases absent. Those cases passed as
+workspace `test … ok` results. The corrected observer checks both receipt forms;
+108/108 mapped/recovery cases and 149 exact cases are observed without changing
+requirements, tests or their inventories.
+
+Native RRC verified all twelve green jobs before creating the annotated immutable
+tag. Producing [37765708101](https://github.com/99percentgrip/agent-vesper/actions/runs/37765708101)
+passed all seven jobs; [v0.24.10](https://github.com/99percentgrip/agent-vesper/releases/tag/v0.24.10)
+contains sixteen nonempty uploaded assets. RRC waited through the intermediate
+fourteen-asset publication, verified the full inventory and refreshed green main
+at the same commit. Registry [PR #539](https://github.com/agentclientprotocol/registry/pull/539)
+remains open on `agent-vesper/v0.20.51`, updated in place to 0.24.10; independent
+readback matches blob `62f7a8a6572bc3d153cb38f6d45996994c9933de`.
+
+The corrected epoch `20261008T084400.527663493Z-4426004d5988` reached Complete
+at `2026-10-08T11:03:52.635979651Z`. Its liveness is Idle, no operation remains
+in flight, and the actual terminal delivered `Release v0.24.10 completed`,
+returned to Ready and displayed no active tasks. Owner PID 4051577 stayed attached
+through closeout, then `/quit` exited 0. No corrective continue/resume prompt,
+journal clearing, retry-budget reset, second version bump or replacement PR was
+used. The earlier failed same-version epoch remains archived. This green run
+needed no live model repair; provider-neutral repair behavior is evidenced by the
+named two-provider regressions, not invented live recovery receipts.
+
+Initial version preparation paused on observed host memory/swap pressure and
+resumed automatically when capacity recovered. Two stopped, owned earlier
+verification binaries were moved off RAM-backed `/tmp` to the owned release
+evidence directory; their bytes/hashes and original paths were preserved through
+symlinks. No process used them, the active owner binary was untouched, and no
+governor reserve or retry policy was weakened. The receipt records both identities.
+
+Final terminal evidence is an 18,000-character bounded tail. An initial export of
+60,000 characters was rejected before execution because escaped argv exceeded the
+OS limit; the bounded export succeeded. It is not a complete initial transcript.
+The separately authorized native production session saved its conversation on
+normal Quit; hermetic foundation fixtures remained isolated and made no live calls.
 
 ## Readiness effect
 
-Confirmed source defects are repaired; current-source and exact native-platform
-acceptance is required before release/completion. The prior v0.24.9 publication
-alone did not cover signed-out first-launch behavior. RRC owns the subsequent single
-version bump, exact-SHA matrices, immutable tag/publication and registry/report
-closeout; the invoking native owner must remain attached until Complete/Idle.
+Confirmed source defects are repaired and all required current-source/native
+acceptance passed. The prior v0.24.9 publication did not cover signed-out
+first-launch behavior; v0.24.10 now carries these repairs on all five targets.
+Native release, publication, main-health, Registry and final delivery completed.
+Original Windows 10 laptop retesting, live provider effectiveness and optional
+device capabilities remain unobserved here; hosted evidence does not establish
+every possible device configuration or absence of future bugs.
 
 ## Retained source-candidate receipts
 
@@ -219,5 +292,28 @@ Windows release-profile/private-install checks passed, while five downstream
 fixture failures blocked publication. RRC captured all five causes, settled at
 NeedMoreEvidence with its budget unchanged, and its idle UI quit with exit 0.
 The terminal receipt is a bounded retained tail, not a complete initial transcript.
-Corrected exact-SHA native prerequisites, constrained Windows job, publication
-and final delivery remain pending.
+Corrected exact-SHA native prerequisites, the constrained Windows job, publication
+and final delivery subsequently passed. [Native closeout](release-v0.24.10-closeout.md)
+and the [final requirements trace](2026-10-08-native-first-launch-and-rrc-workspace-repair-requirements.json)
+and [38 final receipts](2026-10-08-native-first-launch-and-rrc-workspace-repair-final-receipts.tar.gz)
+retain their independent identities and results. The evidence manifest binds every
+receipt and both archives to source hashes. Post-publication
+reports and links stay local for the next authorized code change; no separate
+documentation push, new CI cycle, version bump, release or installation follows.
+
+DOX closeout: the nearest foundation owner now describes the final receipts;
+Settings/RRC status and evidence-index links reflect the completed candidate.
+Root, apps, crates and docs parent indexes are intentionally unchanged because
+ownership and subtree boundaries are unchanged. Final report updates receive
+content/link/JSON/hash/whitespace checks, not another program suite or release;
+the [document verification receipt](2026-10-08-native-first-launch-and-rrc-workspace-repair-document-verification.json)
+records those checks.
+
+
+## Later credential-persistence finding
+
+The subsequent original Windows laptop test completed OpenAI website device
+sign-in but failed to save the tokens. This report's green landing/menu/RRC
+receipts remain scoped to their named cases and do not certify successful native
+credential persistence. Corrective work and its separate native acceptance are
+tracked in [Windows credential persistence repair](2026-10-08-windows-credential-persistence-repair.md).

@@ -304,3 +304,14 @@ metadata. Shared repair code honors that metadata before any output/tools, permi
 one bounded retry and retains typed failure diagnostics. Both authentication modes
 retain Never for authentication/payment/quota rejections. These offline receipts
 do not establish the HTTP status of the earlier live error or a vendor outage.
+
+
+## Windows persistence corrective acceptance — 2026-10-08
+
+Alex's v0.24.10 laptop test found that successful website device authorization
+could still fail while saving the composite credential. Earlier provider-menu
+checks did not prove persistence. The provider-neutral ADR 0032 repair must pass
+large native save/fresh-process reload, rotation, restored subscription selection,
+API-key retention, mode switch and sign-out on all five hosted platforms before
+publication. Current evidence and open boundaries: [Windows credential persistence
+repair](foundation/2026-10-08-windows-credential-persistence-repair.md). Original-laptop acceptance remains pending.

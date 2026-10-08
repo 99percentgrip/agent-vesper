@@ -15,8 +15,13 @@ use thiserror::Error;
 use vesper_security::SecretValue;
 use zeroize::{Zeroize, Zeroizing};
 
+#[cfg(any(windows, test))]
+mod native_records;
+
+// Composite provider records can contain several independently bounded tokens.
 const MAX_SECRET_BYTES: usize = 16 * 1024;
-const MAX_VAULT_BYTES: u64 = 64 * 1024;
+const MAX_RECORD_BYTES: usize = 256 * 1024;
+const MAX_VAULT_BYTES: u64 = 1024 * 1024;
 static TEMPORARY_SEQUENCE: AtomicU64 = AtomicU64::new(1);
 
 /// Stable identity of one provider credential.
@@ -77,8 +82,16 @@ pub enum CredentialStoreError {
 
 /// Validates a secret without imposing provider-invented formatting rules.
 pub fn validate_secret(value: &str) -> Result<&str, CredentialStoreError> {
+    validate_bounded_value(value, MAX_SECRET_BYTES)
+}
+
+fn validate_record(value: &str) -> Result<&str, CredentialStoreError> {
+    validate_bounded_value(value, MAX_RECORD_BYTES)
+}
+
+fn validate_bounded_value(value: &str, maximum: usize) -> Result<&str, CredentialStoreError> {
     let value = value.trim();
-    if value.is_empty() || value.len() > MAX_SECRET_BYTES || value.chars().any(char::is_control) {
+    if value.is_empty() || value.len() > maximum || value.chars().any(char::is_control) {
         return Err(CredentialStoreError::InvalidSecret);
     }
     Ok(value)
@@ -115,17 +128,28 @@ impl SecureCredentialStore {
     /// a newer fallback write must not resurrect an older keyring credential.
     pub fn load(&self, id: CredentialId) -> Result<Option<SecretValue>, CredentialStoreError> {
         validate_identity(id)?;
+        // Preserve read-only compatibility and retained-vault precedence.
+        // Windows still cannot create or permission-verify a fallback write.
         if let Some(value) = self.fallback.load(id)? {
             return Ok(Some(value));
         }
-        let account = keyring_account(id);
-        if let Ok(entry) = Entry::new(self.service, &account)
-            && let Ok(value) = entry.get_password()
+        #[cfg(windows)]
         {
-            let value = Zeroizing::new(value);
-            return Ok(Some(SecretValue::new(validate_secret(&value)?)));
+            let _lease = self.native_lease()?;
+            native_records::load(&NativeBackend(self.service), &keyring_account(id))
+                .map(|value| value.map(|value| SecretValue::new(value.as_str())))
         }
-        Ok(None)
+        #[cfg(not(windows))]
+        {
+            let account = keyring_account(id);
+            if let Ok(entry) = Entry::new(self.service, &account)
+                && let Ok(value) = entry.get_password()
+            {
+                let value = Zeroizing::new(value);
+                return Ok(Some(SecretValue::new(validate_record(&value)?)));
+            }
+            Ok(None)
+        }
     }
 
     /// Saves to the OS manager, falling back only where file permissions can
@@ -136,24 +160,40 @@ impl SecureCredentialStore {
         secret: &str,
     ) -> Result<StoreReceipt, CredentialStoreError> {
         validate_identity(id)?;
-        let secret = validate_secret(secret)?;
+        let secret = validate_record(secret)?;
         let account = keyring_account(id);
-        if let Ok(entry) = Entry::new(self.service, &account)
-            && entry.set_password(secret).is_ok()
+        #[cfg(windows)]
         {
-            // Prevent an older fallback from resurfacing when keyring is down.
-            self.fallback.remove(id)?;
-            return Ok(StoreReceipt {
+            // Refuse before native mutation if a retained legacy vault would
+            // remain authoritative and cannot be safely rewritten on Windows.
+            if self.fallback.load(id)?.is_some() {
+                return Err(CredentialStoreError::Unavailable);
+            }
+            let _lease = self.native_lease()?;
+            native_records::store(&NativeBackend(self.service), &account, secret)?;
+            Ok(StoreReceipt {
                 backend: StorageBackend::NativeKeyring,
-            });
+            })
         }
-        #[cfg(unix)]
+        #[cfg(not(windows))]
         {
-            self.fallback.store(id, secret)
-        }
-        #[cfg(not(unix))]
-        {
-            Err(CredentialStoreError::Unavailable)
+            if let Ok(entry) = Entry::new(self.service, &account)
+                && entry.set_password(secret).is_ok()
+            {
+                // Prevent an older fallback from resurfacing when keyring is down.
+                self.fallback.remove(id)?;
+                return Ok(StoreReceipt {
+                    backend: StorageBackend::NativeKeyring,
+                });
+            }
+            #[cfg(unix)]
+            {
+                self.fallback.store(id, secret)
+            }
+            #[cfg(not(unix))]
+            {
+                Err(CredentialStoreError::Unavailable)
+            }
         }
     }
 
@@ -163,13 +203,84 @@ impl SecureCredentialStore {
     pub fn remove(&self, id: CredentialId) -> Result<(), CredentialStoreError> {
         validate_identity(id)?;
         let account = keyring_account(id);
-        if let Ok(entry) = Entry::new(self.service, &account)
-            && entry.delete_credential().is_err()
-            && entry.get_password().is_ok()
+        #[cfg(windows)]
         {
+            if self.fallback.load(id)?.is_some() {
+                return Err(CredentialStoreError::Unavailable);
+            }
+            let _lease = self.native_lease()?;
+            native_records::remove(&NativeBackend(self.service), &account)
+        }
+        #[cfg(not(windows))]
+        {
+            if let Ok(entry) = Entry::new(self.service, &account)
+                && entry.delete_credential().is_err()
+                && entry.get_password().is_ok()
+            {
+                return Err(CredentialStoreError::Unavailable);
+            }
+            self.fallback.remove(id)
+        }
+    }
+
+    #[cfg(windows)]
+    fn native_lease(&self) -> Result<std::fs::File, CredentialStoreError> {
+        let path = self.fallback.path().with_extension("native-lock");
+        let parent = path.parent().ok_or(CredentialStoreError::InvalidPath)?;
+        std::fs::create_dir_all(parent).map_err(|_| CredentialStoreError::Io)?;
+        if std::fs::symlink_metadata(&path).is_ok_and(|m| !m.is_file()) {
             return Err(CredentialStoreError::Unavailable);
         }
-        self.fallback.remove(id)
+        let file = std::fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .truncate(false)
+            .open(path)
+            .map_err(|_| CredentialStoreError::Io)?;
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
+        loop {
+            match fs2::FileExt::try_lock_exclusive(&file) {
+                Ok(()) => return Ok(file),
+                Err(error)
+                    if error.kind() == std::io::ErrorKind::WouldBlock
+                        || error.raw_os_error() == fs2::lock_contended_error().raw_os_error() =>
+                {
+                    if std::time::Instant::now() >= deadline {
+                        return Err(CredentialStoreError::Unavailable);
+                    }
+                    std::thread::sleep(std::time::Duration::from_millis(25));
+                }
+                Err(_) => return Err(CredentialStoreError::Unavailable),
+            }
+        }
+    }
+}
+
+#[cfg(windows)]
+struct NativeBackend(&'static str);
+
+#[cfg(windows)]
+impl native_records::Backend for NativeBackend {
+    fn read(&self, account: &str) -> Result<Option<Zeroizing<String>>, CredentialStoreError> {
+        let entry = Entry::new(self.0, account).map_err(|_| CredentialStoreError::Unavailable)?;
+        match entry.get_password() {
+            Ok(value) => Ok(Some(Zeroizing::new(value))),
+            Err(keyring::Error::NoEntry) => Ok(None),
+            Err(_) => Err(CredentialStoreError::Unavailable),
+        }
+    }
+    fn write(&self, account: &str, value: &str) -> Result<(), CredentialStoreError> {
+        Entry::new(self.0, account)
+            .and_then(|entry| entry.set_password(value))
+            .map_err(|_| CredentialStoreError::Unavailable)
+    }
+    fn delete(&self, account: &str) -> Result<(), CredentialStoreError> {
+        let entry = Entry::new(self.0, account).map_err(|_| CredentialStoreError::Unavailable)?;
+        match entry.delete_credential() {
+            Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
+            Err(_) => Err(CredentialStoreError::Unavailable),
+        }
     }
 }
 
@@ -228,7 +339,7 @@ impl PrivateFileCredentialStore {
             .credentials
             .get(id.provider)
             .and_then(|entries| entries.get(id.account))
-            .and_then(|value| validate_secret(value).ok())
+            .and_then(|value| validate_record(value).ok())
             .map(SecretValue::new))
     }
 
@@ -239,7 +350,7 @@ impl PrivateFileCredentialStore {
         secret: &str,
     ) -> Result<StoreReceipt, CredentialStoreError> {
         validate_identity(id)?;
-        let secret = validate_secret(secret)?;
+        let secret = validate_record(secret)?;
         let mut vault = self.load_vault()?;
         vault
             .credentials
@@ -314,6 +425,9 @@ fn write_private_vault(path: &Path, vault: &Vault) -> Result<(), CredentialStore
     ));
     let payload =
         Zeroizing::new(serde_json::to_vec(vault).map_err(|_| CredentialStoreError::Serialize)?);
+    if payload.len().saturating_add(1) as u64 > MAX_VAULT_BYTES {
+        return Err(CredentialStoreError::Unavailable);
+    }
     let write_result = (|| {
         let mut options = std::fs::OpenOptions::new();
         options.write(true).create_new(true);
@@ -433,5 +547,76 @@ mod tests {
     fn invalid_secrets_are_rejected() {
         assert!(validate_secret("").is_err());
         assert!(validate_secret("line\nbreak").is_err());
+        assert!(validate_secret(&"x".repeat(MAX_SECRET_BYTES + 1)).is_err());
+        assert!(validate_record(&"x".repeat(MAX_SECRET_BYTES + 1)).is_ok());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn private_vault_large_composite_records_and_overflow_preserve_previous_value() {
+        let temp = TempDir::new().unwrap();
+        let path = temp.path().join("vault.json");
+        let store = PrivateFileCredentialStore::new(path.clone());
+        let record = "synthetic-composite".repeat(2000);
+        store.store(ZAI, &record).unwrap();
+        assert_eq!(store.load(ZAI).unwrap().unwrap().expose().as_str(), record);
+        let before = std::fs::read(&path).unwrap();
+        let mut vault = store.load_vault().unwrap();
+        // Each record is valid, but the aggregate serialized vault is bounded.
+        for index in 0..9 {
+            vault
+                .credentials
+                .entry("fixture".into())
+                .or_default()
+                .insert(format!("key-{index}"), "x".repeat(MAX_RECORD_BYTES));
+        }
+        assert!(write_private_vault(&path, &vault).is_err());
+        assert_eq!(std::fs::read(&path).unwrap(), before);
+        assert_eq!(store.load(ZAI).unwrap().unwrap().expose().as_str(), record);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn native_lease_waits_for_contended_windows_lock_and_releases_on_drop() {
+        let temp = tempfile::tempdir().unwrap();
+        let store =
+            SecureCredentialStore::new("fixture-no-keyring-access", temp.path().join("vault.json"));
+        let held = store.native_lease().unwrap();
+        let (sender, receiver) = std::sync::mpsc::channel();
+        let thread = std::thread::spawn(move || {
+            sender.send(store.native_lease()).unwrap();
+        });
+        assert!(
+            receiver
+                .recv_timeout(std::time::Duration::from_millis(100))
+                .is_err()
+        );
+        drop(held);
+        let acquired = receiver
+            .recv_timeout(std::time::Duration::from_secs(3))
+            .unwrap()
+            .unwrap();
+        drop(acquired);
+        thread.join().unwrap();
+        assert!(!temp.path().join("vault.json").exists());
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn retained_windows_vault_is_read_only_and_blocks_unsettleable_mutations() {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("fixture.json");
+        let bytes = br#"{"credentials":{"fixture":{"auth":"retained-synthetic-key"}}}"#;
+        std::fs::write(&path, bytes).unwrap();
+        let id = CredentialId::new("fixture", "auth");
+        let store = SecureCredentialStore::new("fixture-no-native-access", path.clone());
+        assert_eq!(
+            store.load(id).unwrap().unwrap().expose().as_str(),
+            "retained-synthetic-key"
+        );
+        assert!(store.store(id, "replacement").is_err());
+        assert!(store.remove(id).is_err());
+        assert_eq!(std::fs::read(&path).unwrap(), bytes);
+        assert!(!path.with_extension("native-lock").exists());
     }
 }

@@ -6,6 +6,11 @@ Own accepted, durable architecture and compatibility decisions for Agent Vesper.
 
 ## Local Contracts
 
+- ADR 0032 refines ADR 0014 with bounded Windows native credential chunks,
+  transactional journals, readback, sign-out recovery and explicitly opted-in
+  hosted synthetic credential persistence acceptance; ordinary verification
+  never accesses user credentials.
+
 - ADR 0031 refines ADR 0013 with conversation-owned persistent MCP stdio,
   bounded cancellable I/O, quarantine/no replay and both-host ownership.
 

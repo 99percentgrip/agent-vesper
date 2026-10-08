@@ -965,11 +965,9 @@ fn credential_notice(error: &CredentialError) -> String {
         CredentialError::InvalidSecret => {
             "The API key was rejected before it was saved. The previous credential was kept.".into()
         }
-        CredentialError::Unavailable => {
-            "Credential storage is unavailable. Nothing was changed.".into()
-        }
+        CredentialError::Unavailable => "Credential storage could not be confirmed.".into(),
         CredentialError::Failed => {
-            "The credential operation failed. The previous usable credential was kept.".into()
+            "The credential operation failed. Its saved state could not be confirmed.".into()
         }
     }
 }
@@ -1198,6 +1196,16 @@ mod tests {
     use std::sync::Mutex;
     use vesper_domain::{BoundedString, ExtensionMap, ProviderId};
     use vesper_provider::*;
+
+    #[test]
+    fn credential_failure_notice_does_not_invent_mutation_or_rollback_receipts() {
+        for error in [CredentialError::Unavailable, CredentialError::Failed] {
+            let notice = credential_notice(&error);
+            assert!(notice.contains("could not be confirmed"));
+            assert!(!notice.contains("Nothing was changed"));
+            assert!(!notice.contains("was kept"));
+        }
+    }
 
     struct Script(VecDeque<Event>);
     impl SettingsEvents for Script {

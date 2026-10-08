@@ -4252,11 +4252,14 @@ dependencies = [
 name = "vesper-auth"
 version = "0.24.10"
 dependencies = [
+ "fs2",
  "keyring",
  "serde",
  "serde_json",
+ "sha2 0.11.0",
  "tempfile",
  "thiserror",
+ "uuid",
  "vesper-security",
  "zeroize",
 ]
@@ -4461,6 +4464,7 @@ dependencies = [
  "thiserror",
  "tokio",
  "url",
+ "uuid",
  "vesper-auth",
  "vesper-domain",
  "vesper-provider",

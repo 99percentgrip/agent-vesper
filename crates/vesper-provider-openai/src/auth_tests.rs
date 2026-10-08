@@ -328,3 +328,38 @@ async fn redirects_never_forward_authentication_requests() {
     );
     server.await.unwrap();
 }
+
+#[tokio::test]
+#[ignore = "explicit hosted synthetic device-flow/native-store acceptance only"]
+async fn hosted_device_flow_persists_large_subscription_record() {
+    assert_eq!(std::env::var("GITHUB_ACTIONS").as_deref(), Ok("true"));
+    assert_eq!(
+        std::env::var("VESPER_NATIVE_CREDENTIAL_ACCEPTANCE").as_deref(),
+        Ok("isolated-hosted-fixture")
+    );
+    use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
+    let claims = serde_json::json!({
+        "https://api.openai.com/auth": {"chatgpt_account_id": "synthetic-account"},
+        "fixture_padding": "synthetic-padding".repeat(600)
+    });
+    let jwt = format!(
+        "fixture.{}.signature",
+        URL_SAFE_NO_PAD.encode(serde_json::to_vec(&claims).unwrap())
+    );
+    assert!(jwt.len() < 16 * 1024);
+    let (client, server) = server(vec![
+        user_code(),
+        Reply { path: "/api/accounts/deviceauth/token", status: 200,
+            body: r#"{"authorization_code":"code-secret","code_verifier":"verifier-secret","code_challenge":"challenge"}"#.into(), expected: "ABCD-EFGH" },
+        Reply { path: "/oauth/token", status: 200,
+            body: serde_json::json!({"access_token":jwt,"refresh_token":"synthetic-refresh".repeat(100),"id_token":jwt}).to_string(), expected: "code_verifier=verifier-secret" },
+    ]).await;
+    let cancel = Cancel::default();
+    let login = client.begin_device_login(&cancel).await.unwrap();
+    let result = client.complete_device_login(login, &cancel).await.unwrap();
+    server.await.unwrap();
+    crate::credentials::verify_hosted_subscription_persistence(result).await;
+    println!(
+        "loopback device exchange, native large-record persistence, adapter restore, method switch and logout verified"
+    );
+}

@@ -289,5 +289,298 @@
     "corrected_local_process_cases_passed": 10,
     "retry_budget_reset": false,
     "version_rebump": false
+  },
+  "final": {
+    "observed_at": "2026-10-08T11:09:35.556635+00:00",
+    "source_commit": "4426004d59882ef680c7ce388b4151360d893e4e",
+    "release_version": "0.24.10",
+    "release_url": "https://github.com/99percentgrip/agent-vesper/releases/tag/v0.24.10",
+    "epoch": "20261008T084400.527663493Z-4426004d5988",
+    "state": "complete",
+    "liveness": {
+      "state": "idle",
+      "operation": "",
+      "detail": "",
+      "observed_at": null,
+      "owner_pid": null
+    },
+    "local_gates_passed": 8,
+    "prerequisite_jobs_passed": 12,
+    "producing_jobs_passed": 7,
+    "producing_run": 37765708101,
+    "published_assets": 16,
+    "binding_required_cases_passed_per_native_target": 108,
+    "native_platforms": {
+      "linux-x86_64": {
+        "sha256": "3b54b98e3f81e5970b43aec5dd1dbe0059f1a394bf89421e5f55504c0e3e701c",
+        "exact_acceptance_count": 149,
+        "prd_required_cases_passed": 108,
+        "missing": [],
+        "welcome_cases": 4,
+        "rrc_process_cases": 4,
+        "native_resource_observation_passed": true,
+        "constrained_windows_job_passed": false
+      },
+      "linux-arm64": {
+        "sha256": "9f1eb20f615a57275b9e66e250767a64e936067532755c50b169187e96ae4112",
+        "exact_acceptance_count": 149,
+        "prd_required_cases_passed": 108,
+        "missing": [],
+        "welcome_cases": 4,
+        "rrc_process_cases": 4,
+        "native_resource_observation_passed": true,
+        "constrained_windows_job_passed": false
+      },
+      "macos-intel": {
+        "sha256": "41d8e9f569771b997bc7b92dffda5074eade9631ff003668bc5db39dd62f9115",
+        "exact_acceptance_count": 140,
+        "prd_required_cases_passed": 108,
+        "missing": [],
+        "welcome_cases": 4,
+        "rrc_process_cases": 4,
+        "native_resource_observation_passed": true,
+        "constrained_windows_job_passed": false
+      },
+      "macos-apple-silicon": {
+        "sha256": "0631a6a3ce6db0a3a1323a215f41bf8d0d2c2ce655e449985d36c5954850cf91",
+        "exact_acceptance_count": 140,
+        "prd_required_cases_passed": 108,
+        "missing": [],
+        "welcome_cases": 4,
+        "rrc_process_cases": 4,
+        "native_resource_observation_passed": true,
+        "constrained_windows_job_passed": false
+      },
+      "windows-x86_64": {
+        "sha256": "87ee2e30b37eb05483f823d752575514fafbc21498dce73a43711a9febb9d775",
+        "exact_acceptance_count": 138,
+        "prd_required_cases_passed": 108,
+        "missing": [],
+        "welcome_cases": 4,
+        "rrc_process_cases": 4,
+        "native_resource_observation_passed": true,
+        "constrained_windows_job_passed": true
+      }
+    },
+    "registry": {
+      "report": "/tmp/vesper-rrc-closeout-fix/docs/foundation/release-v0.24.10-closeout.md",
+      "registry_url": "https://github.com/agentclientprotocol/registry/pull/539",
+      "registry_blob": "62f7a8a6572bc3d153cb38f6d45996994c9933de"
+    },
+    "owner_exit_code": 0,
+    "retry_budget": {
+      "full_gate_limit": 1,
+      "full_gate_used": 0,
+      "infrastructure_limit": 1,
+      "infrastructure_used": 0,
+      "targeted_diagnostic_limit": 2,
+      "targeted_diagnostic_used": 0,
+      "repair_attempt_limit_per_family": 2
+    },
+    "live_model_repair_invoked": false,
+    "requirements_file": "2026-10-08-native-first-launch-and-rrc-workspace-repair-requirements.json",
+    "requirements_sha256": "83b246f5939bedad763ac9de6e45c32a3faf26cab6ccaf1a81038a052b26ba16",
+    "archive": "2026-10-08-native-first-launch-and-rrc-workspace-repair-final-receipts.tar.gz",
+    "archive_sha256": "a5e19ba1d39e83bcb997c1c8289ab3bd0d0d9486bb779a0c48404ed0d99c6005",
+    "receipts": [
+      {
+        "file": "vesper-v0.24.10-current-canonical-binding-observation.json",
+        "sha256": "bbdef0433c0d708b3411604f4e9619a5ecb6704dba2ef9d5776e20528dd0a007",
+        "bytes": 400
+      },
+      {
+        "file": "vesper-v0.24.10-current-canonical-quality.log",
+        "sha256": "a9c3326ba43f6e8a90ef6cbddc611e92f3310e648e2d02fca5cade644aff05ef",
+        "bytes": 647754
+      },
+      {
+        "file": "vesper-v0.24.10-current-foundation-linux-arm64.log",
+        "sha256": "9f1eb20f615a57275b9e66e250767a64e936067532755c50b169187e96ae4112",
+        "bytes": 648320
+      },
+      {
+        "file": "vesper-v0.24.10-current-foundation-linux-x86_64.log",
+        "sha256": "3b54b98e3f81e5970b43aec5dd1dbe0059f1a394bf89421e5f55504c0e3e701c",
+        "bytes": 647788
+      },
+      {
+        "file": "vesper-v0.24.10-current-foundation-macos-apple-silicon.log",
+        "sha256": "0631a6a3ce6db0a3a1323a215f41bf8d0d2c2ce655e449985d36c5954850cf91",
+        "bytes": 635844
+      },
+      {
+        "file": "vesper-v0.24.10-current-foundation-macos-intel.log",
+        "sha256": "41d8e9f569771b997bc7b92dffda5074eade9631ff003668bc5db39dd62f9115",
+        "bytes": 639914
+      },
+      {
+        "file": "vesper-v0.24.10-current-foundation-windows-x86_64.log",
+        "sha256": "87ee2e30b37eb05483f823d752575514fafbc21498dce73a43711a9febb9d775",
+        "bytes": 654050
+      },
+      {
+        "file": "vesper-v0.24.10-current-main-ref.json",
+        "sha256": "eedbeadbaf681fe1997619356f61463fd376e4278884dc47c7bdc431013037f8",
+        "bytes": 350
+      },
+      {
+        "file": "vesper-v0.24.10-current-msrv.log",
+        "sha256": "88e0823dc3231fc4da47cb19a0b1c468e3f69b8f3d7d44c8cf21772d2d9c2f01",
+        "bytes": 575123
+      },
+      {
+        "file": "vesper-v0.24.10-current-native-binding-observation.json",
+        "sha256": "4f90d9215af66f4dc55e0f11adbdef63aaf30c29f3cf44c830c247740f13a863",
+        "bytes": 1939
+      },
+      {
+        "file": "vesper-v0.24.10-current-publication-run.json",
+        "sha256": "aa64d8cbaeb959ee52f972c62002947376dc700279715e26e20c7b6f35b53050",
+        "bytes": 14112
+      },
+      {
+        "file": "vesper-v0.24.10-current-run-37759889260.json",
+        "sha256": "1d506e2bb327c97d447a871aa329e294e9bd540dedc8a9f52ffc1b6352599036",
+        "bytes": 2465
+      },
+      {
+        "file": "vesper-v0.24.10-current-run-37759889285.json",
+        "sha256": "eaaa844b6596b20b30e978ed5a833d7e7659d3bba6076bc4ac43dec5a99e9412",
+        "bytes": 7158
+      },
+      {
+        "file": "vesper-v0.24.10-current-run-37759889344.json",
+        "sha256": "d0b275b9a6aed1897205a9cbf78669f57e5d10e8e7ffb17d4678aef4c1566b5e",
+        "bytes": 6419
+      },
+      {
+        "file": "vesper-v0.24.10-current-run-37759889363.json",
+        "sha256": "6def208693d5129add24d230885e73b159839ac6cb7d6b14cd4070bde91cdfb0",
+        "bytes": 20409
+      },
+      {
+        "file": "vesper-v0.24.10-current-supply-chain.log",
+        "sha256": "baac697c8e483e08ff821c5ece74a2ccdcd858fc9480e33c7fa0905dc07f50e4",
+        "bytes": 335789
+      },
+      {
+        "file": "vesper-v0.24.10-current-web-aarch64.log",
+        "sha256": "b9f87755d1eeb8d563e3cbbf2537c61b0ea12a354d2e191eed144cb053f1de75",
+        "bytes": 277315
+      },
+      {
+        "file": "vesper-v0.24.10-current-web-native.log",
+        "sha256": "491f9d8b84ed8d16223bd32ad077fa93ab375c1a51ff4fe7746125525e00aba9",
+        "bytes": 47753
+      },
+      {
+        "file": "vesper-v0.24.10-current-web-x86_64.log",
+        "sha256": "bde0b32d457d36ae537a1acabebe362bbbe51ce94d7c4c8084654c09be521a02",
+        "bytes": 282025
+      },
+      {
+        "file": "vesper-v0.24.10-current-windows-installer.log",
+        "sha256": "faef65ea07301f7c87bc96a0c46ae8bfaf62ec7cc37a8812d90aae43109bb797",
+        "bytes": 87755
+      },
+      {
+        "file": "vesper-v0.24.10-native-complete-ledger.json",
+        "sha256": "edcec145cd5f5969e96c2f29815c119422567dbab37d2d1731c07c262482a074",
+        "bytes": 37968
+      },
+      {
+        "file": "vesper-v0.24.10-native-complete-terminal-tail.ansi",
+        "sha256": "7c4b224cb08125f6bc8785889ea2d706036d1e3e07382d039c1574d3c7a1bf9e",
+        "bytes": 18100
+      },
+      {
+        "file": "vesper-v0.24.10-native-owner-exit.json",
+        "sha256": "0efe4802fefead15373c69c45ba9ecffe0a55e038a0d879d60f46b27623edc62",
+        "bytes": 384
+      },
+      {
+        "file": "vesper-v0.24.10-owned-artifact-ram-reclamation.json",
+        "sha256": "bc2a62861f82c8ca2d3ce8eb00cecf3e6e075de62c7a04696161f912d917c4e6",
+        "bytes": 871
+      },
+      {
+        "file": "vesper-v0.24.10-publication-job-113272729945.log",
+        "sha256": "00dbec793b73e6429f7ea4bd2dcd32d048d744ac54cc17c9bd7e1f7206807f70",
+        "bytes": 32702
+      },
+      {
+        "file": "vesper-v0.24.10-publication-job-113272852306.log",
+        "sha256": "fe7c2e0252e85d3dfde78b0e58c961d713111166cb26cbbf18895b57405197db",
+        "bytes": 74986
+      },
+      {
+        "file": "vesper-v0.24.10-publication-job-113272852357.log",
+        "sha256": "6db67e5842ecfc0d13b16e627950b9a12be82a576effa0e9ca2b8eb504581832",
+        "bytes": 75104
+      },
+      {
+        "file": "vesper-v0.24.10-publication-job-113272852417.log",
+        "sha256": "a9aa73c31859992803334c1200cc8baa234d16df5b207b05ab793227511a69fd",
+        "bytes": 75761
+      },
+      {
+        "file": "vesper-v0.24.10-publication-job-113272852419.log",
+        "sha256": "39c44d0a9fe4682750b6df92c4c10f8c647793d9f24de442f56d19128439ebe6",
+        "bytes": 72078
+      },
+      {
+        "file": "vesper-v0.24.10-publication-job-113272852500.log",
+        "sha256": "21a2399a3fba21b55bcef58148d319d637b7729ba38fdebd11547a0fdbef5767",
+        "bytes": 77955
+      },
+      {
+        "file": "vesper-v0.24.10-publication-job-113277723662.log",
+        "sha256": "09943d52add90e7bd52f2a65211e0d4ed0ae7b7260cfc0e5894c3364faaaa5b7",
+        "bytes": 25937
+      },
+      {
+        "file": "vesper-v0.24.10-published-release.json",
+        "sha256": "1d0f1eb782c08d7bba8283d16d8efd678194cc28a8056b53ecd17642082fb64b",
+        "bytes": 29584
+      },
+      {
+        "file": "vesper-v0.24.10-published-small-asset-checks.json",
+        "sha256": "57cc4e54d25bb3fb0c4aa3d20fc05d02ab0498b6bba50a2a89f63049cb8289ae",
+        "bytes": 3188
+      },
+      {
+        "file": "vesper-v0.24.10-registry-content.json",
+        "sha256": "5225b327bba902a9ad03d022a41719859cad54025bc97b25eb8e3ad993226ab7",
+        "bytes": 4294
+      },
+      {
+        "file": "vesper-v0.24.10-registry-manifest.json",
+        "sha256": "d12ac26909b88f690525f84d857725e3a83ae53244dcfad27085a0f032fe297f",
+        "bytes": 2417
+      },
+      {
+        "file": "vesper-v0.24.10-registry-pr.json",
+        "sha256": "5a50b3ad2acb91a57412bcafa64789e57714e18e08c508dfe25f22f96c28ed24",
+        "bytes": 355
+      },
+      {
+        "file": "vesper-v0.24.10-tag-object.json",
+        "sha256": "2bfb5657195f74437697bad995d6ce1daa240735a460d5576bd4efff44278d64",
+        "bytes": 687
+      },
+      {
+        "file": "vesper-v0.24.10-tag-ref.json",
+        "sha256": "8a64fa4b66346cd2c34dae41ccc674e9c5a35cb75160531ec32831a933b4641d",
+        "bytes": 354
+      }
+    ],
+    "postpublication_docs_pushed": false,
+    "local_installation_replaced": false,
+    "unobserved": [
+      "Original Windows 10 laptop retest",
+      "Live provider/account/inference effectiveness",
+      "Optional device/hardware capability matrices"
+    ],
+    "dox_unchanged": "Root, apps, crates and docs parent indexes retain existing ownership; final evidence changes no production contract."
   }
 }

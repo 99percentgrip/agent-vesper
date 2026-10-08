@@ -15,8 +15,15 @@ thiserror.workspace = true
 vesper-security = { path = "../vesper-security", version = "=0.24.10" }
 zeroize.workspace = true
 
+[target.'cfg(windows)'.dependencies]
+fs2 = "=0.4.3"
+sha2.workspace = true
+uuid.workspace = true
+
 [dev-dependencies]
 tempfile.workspace = true
+sha2.workspace = true
+uuid.workspace = true
 
 [lints]
 workspace = true

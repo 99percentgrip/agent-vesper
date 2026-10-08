@@ -52,6 +52,11 @@ migration gates and disposable platform assumptions on hosts unavailable locally
   withheld without substituting synthetic lifecycle telemetry.
 - Keep the five release-target families explicit in the matrix: linux-x86_64,
   linux-arm64, macos-intel, macos-apple-silicon, windows-x86_64.
+- Five-target foundation explicitly invokes ADR 0032 native credential
+  persistence acceptance on disposable runners: UUID namespaced synthetic
+  entries only, production store, fresh-process reload, rotation and sign-out.
+  Windows must prove native storage with no plaintext vault. Default tests keep
+  this lane ignored; real credentials and provider calls remain prohibited.
 - Validation workflows must not call live providers or require credentials.
   `release-recovery-acceptance.yml` is a manually dispatched, read-only controlled
   fixture for deterministic complete-matrix red, repeated-fingerprint, focused-green

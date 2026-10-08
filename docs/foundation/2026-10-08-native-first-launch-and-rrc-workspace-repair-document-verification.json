@@ -1,0 +1,25 @@
+{
+  "observed_at": "2026-10-08T11:11:03.629550+00:00",
+  "source_commit": "4426004d59882ef680c7ce388b4151360d893e4e",
+  "checks": {
+    "git_diff_whitespace": "passed",
+    "source_sha256_bindings": 17,
+    "final_archived_receipt_sha256_bindings": 38,
+    "relative_links": 15,
+    "native_release_report_embedded_json": "parsed",
+    "requirements_sections": 36,
+    "requirements_acceptance_criteria": 23,
+    "mapped_required_cases_per_target": "108/108 on all five targets",
+    "binding_prd_prefix_sha256": "e85011c696d769837c6ed5a83e4290e77eadc4ae27a9ea42cffe0966d37518db",
+    "binding_prd_prefix_unchanged": true,
+    "main_and_annotated_tag_match": true,
+    "report_whitespace": "passed",
+    "native_state": "complete",
+    "native_liveness": "idle",
+    "native_owner_exit": 0
+  },
+  "program_suites_rerun_for_documentation": false,
+  "postpublication_docs_pushed": false,
+  "additional_version_bump": false,
+  "additional_release": false
+}

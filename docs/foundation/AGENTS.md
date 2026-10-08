@@ -6,12 +6,18 @@ Own evidence and decisions that close the pre-workspace blockers identified by r
 
 ## Ownership
 
+- `2026-10-08-windows-credential-persistence-repair.md` owns the reported
+  post-device-login Windows save failure, ADR 0032 storage repair and actual
+  native save/restart/rotation/sign-out proof; menu receipts alone are insufficient.
+
 - `2026-10-08-native-first-launch-and-rrc-workspace-repair.md` owns the Windows
   first-launch/authentication trap, hidden provider category, cached xtask root
   defect, native resource observation, relative executable/UTF-8 terminal contracts,
   typed Python failure diagnosis and five-native-platform UI/RRC gates.
   Its follow-up receipts retain the complete failed exact matrix and distinguish
   passed welcome/installer checks from skipped downstream process checks.
+  Its final receipts bind the corrected five-target matrix, constrained Windows
+  job, immutable v0.24.10 assets, existing Registry PR and actual Complete/Idle delivery.
 
 - `2026-10-08-rrc-ci-causal-diagnosis-repair.md` owns the fully settled v0.24.9 evidence stop, causal selection/classification repairs, Windows CLI stream check, HTTPS runner setup and retained failed/native receipts.
 

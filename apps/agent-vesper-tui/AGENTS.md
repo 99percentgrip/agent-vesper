@@ -717,6 +717,10 @@ business logic.
 
 ## Local Contracts
 
+- Authentication storage/operation failures must not claim that nothing changed
+  or a previous credential was preserved without a receipt proving that outcome.
+  Report unconfirmed saved state; credential inventory remains adapter-owned.
+
 - TUI release completion uses the shared durable closeout receipt after RUN
   disappears. Its completion cursor is separate from the milestone cursor so
   observing the last active milestone cannot suppress the final summary.

@@ -19,6 +19,11 @@ workspace HTTP, JSON, async, URL, base64, auth, and secret-wrapper dependencies;
 it adds no OpenAI SDK or Codex runtime. Canonical MSRV/platform and supply-chain
 gates cover this dependency.
 
+Windows secure credential records (ADR 0032) reuse the pinned `fs2 = 0.4.3`
+for bounded native-store leases, workspace `sha2 = 0.11.0` for assembled-record
+integrity, and workspace UUID v4 generation identities. No new resolved package
+version is introduced. Hosted synthetic persistence fixtures reuse these pins.
+
 Versions below are exact workspace requirements and resolved versions in
 `Cargo.lock`. All are compatible with the approved Rust 1.88 MSRV.
 

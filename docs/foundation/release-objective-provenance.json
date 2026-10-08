@@ -1,11 +1,13 @@
 {
   "version": 1,
-  "objective_id": "native-first-launch-and-cross-platform-rrc-20261008",
-  "objective_label": "Native signed-out first launch and cross-platform RRC source repair",
-  "variant_label": "Current-source and shipping-host verified follow-up; corrected exact native CI and publication pending",
-  "variant_id": "native-first-launch-rrc-fixture-diagnosis-integrated-20261008",
+  "objective_id": "windows-native-credential-persistence-20261008",
+  "objective_label": "Windows subscription credential persistence and cross-platform native acceptance",
+  "variant_label": "Final focused-source verified credential repair; exact native persistence and release gates required",
+  "variant_id": "windows-native-records-and-auth-persistence-integrated-20261008",
   "canonical_release_source": true,
   "supersedes": [
+    "native-first-launch-rrc-fixture-diagnosis-integrated-20261008",
+    "native-first-launch-and-cross-platform-rrc-20261008",
     "native-first-launch-and-rrc-integrated-20261008",
     "rrc-publication-and-windows-portable-package-20261008",
     "rrc-windows-package-causal-diagnosis-integrated-20261008",
@@ -18,9 +20,10 @@
     "windows-ps51-installer-hosted-20261007",
     "rrc-autonomy-prd-audit-20261006"
   ],
-  "completed_at": "2026-10-08T08:41:59.798945+00:00",
+  "completed_at": "2026-10-08T14:23:06.834661+00:00",
   "evidence_reports": [
+    "docs/foundation/2026-10-08-windows-credential-persistence-repair.md",
     "docs/foundation/2026-10-08-native-first-launch-and-rrc-workspace-repair.md",
-    "docs/foundation/release-v0.24.9-closeout.md"
+    "docs/foundation/release-v0.24.10-closeout.md"
   ]
 }

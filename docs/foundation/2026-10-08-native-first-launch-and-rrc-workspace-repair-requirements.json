@@ -1,0 +1,1499 @@
+{
+  "binding_prd_sha256": "e85011c696d769837c6ed5a83e4290e77eadc4ae27a9ea42cffe0966d37518db",
+  "sections": [
+    {
+      "section": 1,
+      "title": "Executive Summary",
+      "behavior_scope": "Deterministic progression, evidence before retry, and autonomous waiting",
+      "named_cases": [
+        "release_recovery::tests::directives_are_typed_and_back_off_without_model_step_polling",
+        "release_executor::tests::production_orchestrator_reaches_publication_only_through_settled_gates",
+        "release_executor::tests::background_controller_waits_then_publishes_without_continue_prompts"
+      ],
+      "observed_passed": [
+        "release_executor::tests::background_controller_waits_then_publishes_without_continue_prompts",
+        "release_executor::tests::production_orchestrator_reaches_publication_only_through_settled_gates",
+        "release_recovery::tests::directives_are_typed_and_back_off_without_model_step_polling"
+      ],
+      "missing": []
+    },
+    {
+      "section": 2,
+      "title": "Incident Basis",
+      "behavior_scope": "Demonstrated published/docs-red/repair/changed-platform pattern",
+      "named_cases": [
+        "release_recovery::tests::published_docs_red_repair_then_other_platform_red_stops_speculation"
+      ],
+      "observed_passed": [
+        "release_recovery::tests::published_docs_red_repair_then_other_platform_red_stops_speculation"
+      ],
+      "missing": []
+    },
+    {
+      "section": 3,
+      "title": "Goals",
+      "behavior_scope": "Bounded, provider-neutral, persistent and shared recovery",
+      "named_cases": [
+        "release_recovery::tests::verified_repair_is_the_only_path_to_one_full_gate_retry",
+        "release_executor::tests::repair_factory_executes_real_tools_for_two_provider_fixtures",
+        "release_recovery::tests::ledger_round_trip_preserves_job_ids",
+        "release_recovery::tests::status_projection_exposes_product_fields_without_causal_log_content",
+        "release_executor::tests::repair_continues_unplanned_segments_for_two_provider_fixtures",
+        "release_executor::tests::repair_terminal_diagnostics_identify_the_safety_stop",
+        "release_executor::tests::repair_initial_provider_retry_is_bounded_and_never_replays_tools",
+        "release_executor::tests::version_preparation_rollback_routes_to_repair_and_pins_promoted_patch"
+      ],
+      "observed_passed": [
+        "release_executor::tests::repair_continues_unplanned_segments_for_two_provider_fixtures",
+        "release_executor::tests::repair_factory_executes_real_tools_for_two_provider_fixtures",
+        "release_executor::tests::repair_initial_provider_retry_is_bounded_and_never_replays_tools",
+        "release_executor::tests::repair_terminal_diagnostics_identify_the_safety_stop",
+        "release_executor::tests::version_preparation_rollback_routes_to_repair_and_pins_promoted_patch",
+        "release_recovery::tests::ledger_round_trip_preserves_job_ids",
+        "release_recovery::tests::status_projection_exposes_product_fields_without_causal_log_content",
+        "release_recovery::tests::verified_repair_is_the_only_path_to_one_full_gate_retry"
+      ],
+      "missing": []
+    },
+    {
+      "section": 4,
+      "title": "Non-Goals",
+      "behavior_scope": "Controller coordinates existing agent/runtime and exact release gates",
+      "named_cases": [
+        "release_executor::tests::isolated_agent_repair_verifies_and_promotes_one_patch_for_two_provider_fixtures",
+        "release_recovery::tests::tag_and_publication_mutations_fail_closed_without_settled_prerequisites"
+      ],
+      "observed_passed": [
+        "release_executor::tests::isolated_agent_repair_verifies_and_promotes_one_patch_for_two_provider_fixtures",
+        "release_recovery::tests::tag_and_publication_mutations_fail_closed_without_settled_prerequisites"
+      ],
+      "missing": []
+    },
+    {
+      "section": 5,
+      "title": "Binding Product Principles",
+      "behavior_scope": "Complete evidence, small budgets, truthful uncertainty, no blind retries",
+      "named_cases": [
+        "release_recovery::tests::partial_matrix_blocks_retry",
+        "release_recovery::tests::tentative_classification_cannot_authorize_source_repair",
+        "release_recovery::tests::identical_failure_on_new_attempt_without_change_hard_blocks_retry"
+      ],
+      "observed_passed": [
+        "release_recovery::tests::identical_failure_on_new_attempt_without_change_hard_blocks_retry",
+        "release_recovery::tests::partial_matrix_blocks_retry",
+        "release_recovery::tests::tentative_classification_cannot_authorize_source_repair"
+      ],
+      "missing": []
+    },
+    {
+      "section": 6,
+      "title": "Terminology",
+      "behavior_scope": "Exact candidate/gate/matrix identity and normalized failure/recovery scope",
+      "named_cases": [
+        "release_recovery::tests::github_adapter_uses_exact_attempt_and_main_push_provenance",
+        "release_recovery::tests::context_and_process_numbers_do_not_change_causal_fingerprints",
+        "release_recovery::tests::published_release_has_a_distinct_main_epoch_and_archived_history"
+      ],
+      "observed_passed": [
+        "release_recovery::tests::context_and_process_numbers_do_not_change_causal_fingerprints",
+        "release_recovery::tests::github_adapter_uses_exact_attempt_and_main_push_provenance",
+        "release_recovery::tests::published_release_has_a_distinct_main_epoch_and_archived_history"
+      ],
+      "missing": []
+    },
+    {
+      "section": 7,
+      "title": "High-Level Architecture",
+      "behavior_scope": "Shared harness authority and restricted real AgentLoop repair port",
+      "named_cases": [
+        "release_executor::tests::production_orchestrator_reaches_publication_only_through_settled_gates",
+        "release_executor::tests::repair_factory_executes_real_tools_for_two_provider_fixtures",
+        "release_executor::tests::repair_worker_cannot_create_unadmitted_release_tags",
+        "release_executor::tests::repair_preserves_provider_owned_hosted_tool_selections",
+        "release_executor::tests::version_preparation_rollback_routes_to_repair_and_pins_promoted_patch"
+      ],
+      "observed_passed": [
+        "release_executor::tests::production_orchestrator_reaches_publication_only_through_settled_gates",
+        "release_executor::tests::repair_factory_executes_real_tools_for_two_provider_fixtures",
+        "release_executor::tests::repair_preserves_provider_owned_hosted_tool_selections",
+        "release_executor::tests::repair_worker_cannot_create_unadmitted_release_tags",
+        "release_executor::tests::version_preparation_rollback_routes_to_repair_and_pins_promoted_patch"
+      ],
+      "missing": []
+    },
+    {
+      "section": 8,
+      "title": "Release State Machine",
+      "behavior_scope": "Legal transitions, rejected-event transactionality and immutable publication",
+      "named_cases": [
+        "release_recovery::tests::rejected_repair_event_does_not_partially_mutate_the_record",
+        "release_recovery::tests::published_cannot_transition_back_to_publishing",
+        "release_recovery::tests::green_release_then_red_closeout_keeps_publication_immutable"
+      ],
+      "observed_passed": [
+        "release_recovery::tests::green_release_then_red_closeout_keeps_publication_immutable",
+        "release_recovery::tests::published_cannot_transition_back_to_publishing",
+        "release_recovery::tests::rejected_repair_event_does_not_partially_mutate_the_record"
+      ],
+      "missing": []
+    },
+    {
+      "section": 9,
+      "title": "Typed States",
+      "behavior_scope": "Typed directives, dispositions and user-visible state projections",
+      "named_cases": [
+        "release_recovery::tests::directives_are_typed_and_back_off_without_model_step_polling",
+        "release_recovery::tests::status_projection_exposes_product_fields_without_causal_log_content",
+        "release_executor::tests::native_worker_stops_owner_action_and_uncertain_causes_before_repair_permission"
+      ],
+      "observed_passed": [
+        "release_executor::tests::native_worker_stops_owner_action_and_uncertain_causes_before_repair_permission",
+        "release_recovery::tests::directives_are_typed_and_back_off_without_model_step_polling",
+        "release_recovery::tests::status_projection_exposes_product_fields_without_causal_log_content"
+      ],
+      "missing": []
+    },
+    {
+      "section": 10,
+      "title": "Failure Taxonomy",
+      "behavior_scope": "Causal classification, confidence, unknown preservation and last-green comparison",
+      "named_cases": [
+        "release_recovery::tests::complete_matrix_collects_first_causal_log_and_classifies_it",
+        "release_recovery::tests::dependency_errors_and_unrecognized_platform_logs_classify_truthfully",
+        "release_recovery::tests::last_green_comparison_is_exact_and_immutable",
+        "release_recovery::tests::last_green_missing_or_skipped_matching_job_preserves_unknown_context",
+        "release_executor::tests::version_preparation_rollback_routes_to_repair_and_pins_promoted_patch"
+      ],
+      "observed_passed": [
+        "release_executor::tests::version_preparation_rollback_routes_to_repair_and_pins_promoted_patch",
+        "release_recovery::tests::complete_matrix_collects_first_causal_log_and_classifies_it",
+        "release_recovery::tests::dependency_errors_and_unrecognized_platform_logs_classify_truthfully",
+        "release_recovery::tests::last_green_comparison_is_exact_and_immutable",
+        "release_recovery::tests::last_green_missing_or_skipped_matching_job_preserves_unknown_context"
+      ],
+      "missing": []
+    },
+    {
+      "section": 11,
+      "title": "Complete-Matrix Rule",
+      "behavior_scope": "All required workflows and actual attempts/jobs must settle before diagnosis",
+      "named_cases": [
+        "release_recovery::tests::partial_matrix_blocks_retry",
+        "release_recovery::tests::a_running_workflow_with_only_terminal_visible_jobs_is_incomplete",
+        "release_recovery::tests::missing_required_gate_never_counts_as_complete_matrix",
+        "release_recovery::tests::required_skipped_job_never_opens_tag_admission",
+        "release_executor::tests::version_preparation_rollback_routes_to_repair_and_pins_promoted_patch"
+      ],
+      "observed_passed": [
+        "release_executor::tests::version_preparation_rollback_routes_to_repair_and_pins_promoted_patch",
+        "release_recovery::tests::a_running_workflow_with_only_terminal_visible_jobs_is_incomplete",
+        "release_recovery::tests::missing_required_gate_never_counts_as_complete_matrix",
+        "release_recovery::tests::partial_matrix_blocks_retry",
+        "release_recovery::tests::required_skipped_job_never_opens_tag_admission"
+      ],
+      "missing": []
+    },
+    {
+      "section": 12,
+      "title": "GitHub Evidence Adapter",
+      "behavior_scope": "Paginated exact-provenance reads, owned causal fallback and scoped admitted writes",
+      "named_cases": [
+        "release_recovery::tests::github_adapter_uses_exact_attempt_and_main_push_provenance",
+        "release_recovery::tests::pagination_reads_all_jobs_and_refuses_duplicate_page_rows",
+        "release_recovery::tests::missing_runner_log_uses_only_owned_failure_annotations",
+        "release_recovery::tests::github_failed_job_retry_requires_exact_admission_scope",
+        "release_recovery::tests::native_github_write_ports_cannot_bypass_admission",
+        "release_executor::tests::release_read_ports_share_worker_cancellation_before_dispatch",
+        "release_recovery::tests::directives_are_typed_and_back_off_without_model_step_polling",
+        "release_recovery::tests::a_long_running_platform_matrix_is_not_active_repair_stagnation",
+        "release_recovery::tests::missing_runs_cannot_reuse_a_stale_running_matrix_to_avoid_timeout"
+      ],
+      "observed_passed": [
+        "release_executor::tests::release_read_ports_share_worker_cancellation_before_dispatch",
+        "release_recovery::tests::a_long_running_platform_matrix_is_not_active_repair_stagnation",
+        "release_recovery::tests::directives_are_typed_and_back_off_without_model_step_polling",
+        "release_recovery::tests::github_adapter_uses_exact_attempt_and_main_push_provenance",
+        "release_recovery::tests::github_failed_job_retry_requires_exact_admission_scope",
+        "release_recovery::tests::missing_runner_log_uses_only_owned_failure_annotations",
+        "release_recovery::tests::missing_runs_cannot_reuse_a_stale_running_matrix_to_avoid_timeout",
+        "release_recovery::tests::native_github_write_ports_cannot_bypass_admission",
+        "release_recovery::tests::pagination_reads_all_jobs_and_refuses_duplicate_page_rows"
+      ],
+      "missing": []
+    },
+    {
+      "section": 13,
+      "title": "Failure Fingerprinting",
+      "behavior_scope": "Equivalent volatile causes normalize; changed causes open diagnosis",
+      "named_cases": [
+        "release_recovery::tests::equivalent_volatile_logs_have_same_fingerprint",
+        "release_recovery::tests::context_and_process_numbers_do_not_change_causal_fingerprints",
+        "release_recovery::tests::changed_fingerprint_after_retry_opens_a_new_diagnosis"
+      ],
+      "observed_passed": [
+        "release_recovery::tests::changed_fingerprint_after_retry_opens_a_new_diagnosis",
+        "release_recovery::tests::context_and_process_numbers_do_not_change_causal_fingerprints",
+        "release_recovery::tests::equivalent_volatile_logs_have_same_fingerprint"
+      ],
+      "missing": []
+    },
+    {
+      "section": 14,
+      "title": "Retry Budget",
+      "behavior_scope": "One verified full retry, bounded focused/infrastructure scopes and persistent exhaustion",
+      "named_cases": [
+        "release_recovery::tests::verified_repair_is_the_only_path_to_one_full_gate_retry",
+        "release_recovery::tests::two_failed_focused_repairs_exhaust_the_causal_family_budget",
+        "release_recovery::tests::old_attempt_cannot_satisfy_a_reserved_infrastructure_retry",
+        "release_recovery::tests::terminal_epoch_cannot_admit_a_diagnostic_rerun",
+        "release_executor::tests::repair_dispatch_budget_survives_restart_without_a_focused_proof"
+      ],
+      "observed_passed": [
+        "release_executor::tests::repair_dispatch_budget_survives_restart_without_a_focused_proof",
+        "release_recovery::tests::old_attempt_cannot_satisfy_a_reserved_infrastructure_retry",
+        "release_recovery::tests::terminal_epoch_cannot_admit_a_diagnostic_rerun",
+        "release_recovery::tests::two_failed_focused_repairs_exhaust_the_causal_family_budget",
+        "release_recovery::tests::verified_repair_is_the_only_path_to_one_full_gate_retry"
+      ],
+      "missing": []
+    },
+    {
+      "section": 15,
+      "title": "Focused Verification Rule",
+      "behavior_scope": "Focused commands must execute relevant nonzero proof before a full retry",
+      "named_cases": [
+        "release_executor::tests::arbitrary_successful_shell_commands_are_not_focused_proof",
+        "release_executor::tests::focused_test_proof_requires_a_nonzero_executed_pass",
+        "release_recovery::tests::unchanged_commit_is_not_a_verified_source_repair",
+        "release_executor::tests::isolated_agent_repair_verifies_and_promotes_one_patch_for_two_provider_fixtures"
+      ],
+      "observed_passed": [
+        "release_executor::tests::arbitrary_successful_shell_commands_are_not_focused_proof",
+        "release_executor::tests::focused_test_proof_requires_a_nonzero_executed_pass",
+        "release_executor::tests::isolated_agent_repair_verifies_and_promotes_one_patch_for_two_provider_fixtures",
+        "release_recovery::tests::unchanged_commit_is_not_a_verified_source_repair"
+      ],
+      "missing": []
+    },
+    {
+      "section": 16,
+      "title": "Repository Pollution Control",
+      "behavior_scope": "Isolated repair, complete worker delta, seed preservation and native-controlled promotion",
+      "named_cases": [
+        "release_executor::tests::native_repair_patch_keeps_version_seed_and_includes_new_regressions",
+        "release_executor::tests::isolated_agent_repair_verifies_and_promotes_one_patch_for_two_provider_fixtures",
+        "release_executor::tests::an_unsettled_mutation_is_never_replayed_on_restart",
+        "release_executor::tests::version_preparation_rollback_routes_to_repair_and_pins_promoted_patch"
+      ],
+      "observed_passed": [
+        "release_executor::tests::an_unsettled_mutation_is_never_replayed_on_restart",
+        "release_executor::tests::isolated_agent_repair_verifies_and_promotes_one_patch_for_two_provider_fixtures",
+        "release_executor::tests::native_repair_patch_keeps_version_seed_and_includes_new_regressions",
+        "release_executor::tests::version_preparation_rollback_routes_to_repair_and_pins_promoted_patch"
+      ],
+      "missing": []
+    },
+    {
+      "section": 17,
+      "title": "External Outage Detection",
+      "behavior_scope": "Late official-health admission with repository exclusions; secondary signals insufficient",
+      "named_cases": [
+        "release_recovery::tests::deterministic_test_failure_cannot_be_relabelled_as_outage",
+        "release_recovery::tests::official_degradation_needs_repository_exclusion_and_infrastructure_evidence",
+        "release_recovery::tests::community_reports_alone_never_confirm_outage",
+        "release_recovery::tests::inconclusive_source_evidence_cannot_confirm_an_outage",
+        "release_executor::tests::community_input_is_never_requested_by_production_health_builder",
+        "release_executor::tests::read_only_health_checks_do_not_request_source_repair_permissions"
+      ],
+      "observed_passed": [
+        "release_executor::tests::community_input_is_never_requested_by_production_health_builder",
+        "release_executor::tests::read_only_health_checks_do_not_request_source_repair_permissions",
+        "release_recovery::tests::community_reports_alone_never_confirm_outage",
+        "release_recovery::tests::deterministic_test_failure_cannot_be_relabelled_as_outage",
+        "release_recovery::tests::inconclusive_source_evidence_cannot_confirm_an_outage",
+        "release_recovery::tests::official_degradation_needs_repository_exclusion_and_infrastructure_evidence"
+      ],
+      "missing": []
+    },
+    {
+      "section": 18,
+      "title": "External Pause and Resume",
+      "behavior_scope": "Persist same paused epoch and refresh remote evidence before resume",
+      "named_cases": [
+        "release_recovery::tests::official_degradation_pauses_only_from_late_diagnostic_branch",
+        "release_recovery::tests::paused_epoch_reopens_with_exact_identity_and_resumes_through_remote_refresh"
+      ],
+      "observed_passed": [
+        "release_recovery::tests::official_degradation_pauses_only_from_late_diagnostic_branch",
+        "release_recovery::tests::paused_epoch_reopens_with_exact_identity_and_resumes_through_remote_refresh"
+      ],
+      "missing": []
+    },
+    {
+      "section": 19,
+      "title": "Token / Work Budget Watchdog",
+      "behavior_scope": "Six-action stagnation bound, measured CI/model wall time and finite repair segments",
+      "named_cases": [
+        "release_recovery::tests::watchdog_triggers_after_six_stagnant_actions",
+        "release_executor::tests::background_controller_waits_then_publishes_without_continue_prompts",
+        "release_executor::tests::repair_iteration_budget_survives_disabled_host_cap",
+        "release_executor::tests::repair_evidence_watchdog_ignores_streaming_and_repeated_tool_results",
+        "release_executor::tests::repair_evidence_deadline_and_native_verification_are_distinct",
+        "release_executor::tests::repair_registry_stops_repeated_observations_for_each_provider_context",
+        "release_executor::tests::repair_dispatch_budget_survives_restart_without_a_focused_proof"
+      ],
+      "observed_passed": [
+        "release_executor::tests::background_controller_waits_then_publishes_without_continue_prompts",
+        "release_executor::tests::repair_dispatch_budget_survives_restart_without_a_focused_proof",
+        "release_executor::tests::repair_evidence_deadline_and_native_verification_are_distinct",
+        "release_executor::tests::repair_evidence_watchdog_ignores_streaming_and_repeated_tool_results",
+        "release_executor::tests::repair_iteration_budget_survives_disabled_host_cap",
+        "release_executor::tests::repair_registry_stops_repeated_observations_for_each_provider_context",
+        "release_recovery::tests::watchdog_triggers_after_six_stagnant_actions"
+      ],
+      "missing": []
+    },
+    {
+      "section": 20,
+      "title": "Published Release vs Post-Release Main Health",
+      "behavior_scope": "Separate immutable Published release from later main recovery and archived lineage",
+      "named_cases": [
+        "release_recovery::tests::green_release_then_red_closeout_keeps_publication_immutable",
+        "release_recovery::tests::published_release_has_a_distinct_main_epoch_and_archived_history",
+        "release_recovery::tests::published_docs_red_repair_then_other_platform_red_stops_speculation",
+        "release_recovery::tests::completed_version_does_not_claim_a_different_objective_was_released",
+        "release_closeout::tests::closeout_later_main_has_a_distinct_report_without_overwriting_publication",
+        "release_executor::tests::repair_continues_unplanned_segments_for_two_provider_fixtures",
+        "release_executor::tests::repair_terminal_diagnostics_identify_the_safety_stop",
+        "release_executor::tests::repair_initial_provider_retry_is_bounded_and_never_replays_tools"
+      ],
+      "observed_passed": [
+        "release_closeout::tests::closeout_later_main_has_a_distinct_report_without_overwriting_publication",
+        "release_executor::tests::repair_continues_unplanned_segments_for_two_provider_fixtures",
+        "release_executor::tests::repair_initial_provider_retry_is_bounded_and_never_replays_tools",
+        "release_executor::tests::repair_terminal_diagnostics_identify_the_safety_stop",
+        "release_recovery::tests::completed_version_does_not_claim_a_different_objective_was_released",
+        "release_recovery::tests::green_release_then_red_closeout_keeps_publication_immutable",
+        "release_recovery::tests::published_docs_red_repair_then_other_platform_red_stops_speculation",
+        "release_recovery::tests::published_release_has_a_distinct_main_epoch_and_archived_history"
+      ],
+      "missing": []
+    },
+    {
+      "section": 21,
+      "title": "User Experience",
+      "behavior_scope": "Truthful shared state, matrix/diagnosis/budget/pause/cancel presentation",
+      "named_cases": [
+        "release_recovery::tests::status_projection_exposes_product_fields_without_causal_log_content",
+        "release_executor::tests::persisted_cancellation_reaches_a_worker_in_another_host",
+        "release_executor::tests::published_closeout_finishes_report_without_replaying_release_mutations",
+        "release_executor::tests::live_progress_uses_durable_milestones_without_losing_case_counts"
+      ],
+      "observed_passed": [
+        "release_executor::tests::live_progress_uses_durable_milestones_without_losing_case_counts",
+        "release_executor::tests::persisted_cancellation_reaches_a_worker_in_another_host",
+        "release_executor::tests::published_closeout_finishes_report_without_replaying_release_mutations",
+        "release_recovery::tests::status_projection_exposes_product_fields_without_causal_log_content"
+      ],
+      "missing": []
+    },
+    {
+      "section": 22,
+      "title": "Slash Command Integration",
+      "behavior_scope": "Both hosts route release/CI commands to the shared deterministic controller",
+      "named_cases": [
+        "release_executor::tests::production_orchestrator_reaches_publication_only_through_settled_gates",
+        "release_executor::tests::persisted_cancellation_reaches_a_worker_in_another_host",
+        "release_executor::tests::repair_continues_unplanned_segments_for_two_provider_fixtures",
+        "release_executor::tests::repair_terminal_diagnostics_identify_the_safety_stop",
+        "release_executor::tests::repair_initial_provider_retry_is_bounded_and_never_replays_tools",
+        "release_executor::tests::version_preparation_rollback_routes_to_repair_and_pins_promoted_patch"
+      ],
+      "observed_passed": [
+        "release_executor::tests::persisted_cancellation_reaches_a_worker_in_another_host",
+        "release_executor::tests::production_orchestrator_reaches_publication_only_through_settled_gates",
+        "release_executor::tests::repair_continues_unplanned_segments_for_two_provider_fixtures",
+        "release_executor::tests::repair_initial_provider_retry_is_bounded_and_never_replays_tools",
+        "release_executor::tests::repair_terminal_diagnostics_identify_the_safety_stop",
+        "release_executor::tests::version_preparation_rollback_routes_to_repair_and_pins_promoted_patch"
+      ],
+      "missing": []
+    },
+    {
+      "section": 23,
+      "title": "Persistence Model",
+      "behavior_scope": "Atomic redacted durable epochs, exact identity, counters and nonrepeatable effect journal",
+      "named_cases": [
+        "release_recovery::tests::ledger_round_trip_preserves_job_ids",
+        "release_recovery::tests::persisted_strings_are_redacted_at_the_storage_boundary",
+        "release_executor::tests::an_unsettled_mutation_is_never_replayed_on_restart",
+        "release_recovery::tests::cancelled_epoch_resumes_the_same_run_and_job_identity",
+        "release_closeout::tests::closeout_registry_uncertain_write_never_replays",
+        "release_closeout::tests::closeout_report_restart_is_idempotent_and_preserves_user_edits",
+        "release_executor::tests::live_progress_uses_durable_milestones_without_losing_case_counts"
+      ],
+      "observed_passed": [
+        "release_closeout::tests::closeout_registry_uncertain_write_never_replays",
+        "release_closeout::tests::closeout_report_restart_is_idempotent_and_preserves_user_edits",
+        "release_executor::tests::an_unsettled_mutation_is_never_replayed_on_restart",
+        "release_executor::tests::live_progress_uses_durable_milestones_without_losing_case_counts",
+        "release_recovery::tests::cancelled_epoch_resumes_the_same_run_and_job_identity",
+        "release_recovery::tests::ledger_round_trip_preserves_job_ids",
+        "release_recovery::tests::persisted_strings_are_redacted_at_the_storage_boundary"
+      ],
+      "missing": []
+    },
+    {
+      "section": 24,
+      "title": "Failure Evidence Model",
+      "behavior_scope": "Actual causal error, bounded/redacted evidence and owner-action/unknown disposition",
+      "named_cases": [
+        "release_recovery::tests::causal_error_after_large_successful_log_prefix_is_preserved",
+        "release_recovery::tests::cache_warning_is_not_the_cause_of_a_later_compiler_failure",
+        "release_recovery::tests::passing_error_module_tests_cannot_hide_the_real_causal_failure",
+        "release_recovery::tests::github_command_echo_is_not_the_runtime_causal_error",
+        "release_recovery::tests::github_account_execution_restriction_requires_owner_action",
+        "release_recovery::tests::colored_ci_logs_cannot_hide_credentials_or_causal_errors"
+      ],
+      "observed_passed": [
+        "release_recovery::tests::cache_warning_is_not_the_cause_of_a_later_compiler_failure",
+        "release_recovery::tests::causal_error_after_large_successful_log_prefix_is_preserved",
+        "release_recovery::tests::colored_ci_logs_cannot_hide_credentials_or_causal_errors",
+        "release_recovery::tests::github_account_execution_restriction_requires_owner_action",
+        "release_recovery::tests::github_command_echo_is_not_the_runtime_causal_error",
+        "release_recovery::tests::passing_error_module_tests_cannot_hide_the_real_causal_failure"
+      ],
+      "missing": []
+    },
+    {
+      "section": 25,
+      "title": "External Documentation Use",
+      "behavior_scope": "Repository/log/last-green evidence precedes external research and repair",
+      "named_cases": [
+        "release_recovery::tests::last_green_comparison_is_exact_and_immutable",
+        "release_executor::tests::local_failure_retains_the_causal_error_for_bounded_diagnosis",
+        "release_recovery::tests::tentative_classification_cannot_authorize_source_repair"
+      ],
+      "observed_passed": [
+        "release_executor::tests::local_failure_retains_the_causal_error_for_bounded_diagnosis",
+        "release_recovery::tests::last_green_comparison_is_exact_and_immutable",
+        "release_recovery::tests::tentative_classification_cannot_authorize_source_repair"
+      ],
+      "missing": []
+    },
+    {
+      "section": 26,
+      "title": "Security and Permissions",
+      "behavior_scope": "Inherited host authority/firewall, explicit stage scopes and credential-safe evidence",
+      "named_cases": [
+        "release_executor::tests::denied_host_permission_prevents_every_release_side_effect",
+        "release_executor::tests::native_firewall_denial_cannot_be_bypassed_by_a_release_admission",
+        "release_recovery::tests::quoted_credentials_basic_auth_and_signed_urls_are_redacted",
+        "release_executor::tests::repair_worker_cannot_create_unadmitted_release_tags"
+      ],
+      "observed_passed": [
+        "release_executor::tests::denied_host_permission_prevents_every_release_side_effect",
+        "release_executor::tests::native_firewall_denial_cannot_be_bypassed_by_a_release_admission",
+        "release_executor::tests::repair_worker_cannot_create_unadmitted_release_tags",
+        "release_recovery::tests::quoted_credentials_basic_auth_and_signed_urls_are_redacted"
+      ],
+      "missing": []
+    },
+    {
+      "section": 27,
+      "title": "Concurrency",
+      "behavior_scope": "One cross-process owner, serialized saves and stale cancellation-write refusal",
+      "named_cases": [
+        "release_recovery::tests::controller_owner_is_exclusive_across_independent_ledger_handles",
+        "release_recovery::tests::stale_writer_cannot_overwrite_cancelled_checkpoint"
+      ],
+      "observed_passed": [
+        "release_recovery::tests::controller_owner_is_exclusive_across_independent_ledger_handles",
+        "release_recovery::tests::stale_writer_cannot_overwrite_cancelled_checkpoint"
+      ],
+      "missing": []
+    },
+    {
+      "section": 28,
+      "title": "Cancellation",
+      "behavior_scope": "Stop/reap local work, preserve completed effects, do not falsely cancel remote CI",
+      "named_cases": [
+        "release_executor::tests::release_worker_cancel_restart_process_acceptance",
+        "release_executor::tests::persisted_cancellation_reaches_a_worker_in_another_host",
+        "release_recovery::tests::remote_operation_cancellation_is_not_local_user_cancellation",
+        "release_recovery::tests::cancelled_checkpoint_can_be_explicitly_resumed_without_erasing_counters",
+        "release_executor::tests::live_progress_uses_durable_milestones_without_losing_case_counts"
+      ],
+      "observed_passed": [
+        "release_executor::tests::live_progress_uses_durable_milestones_without_losing_case_counts",
+        "release_executor::tests::persisted_cancellation_reaches_a_worker_in_another_host",
+        "release_executor::tests::release_worker_cancel_restart_process_acceptance",
+        "release_recovery::tests::cancelled_checkpoint_can_be_explicitly_resumed_without_erasing_counters",
+        "release_recovery::tests::remote_operation_cancellation_is_not_local_user_cancellation"
+      ],
+      "missing": []
+    },
+    {
+      "section": 29,
+      "title": "Acceptance Criteria",
+      "behavior_scope": "All AC-01 through AC-23 have the separate concrete evidence mapping",
+      "named_cases": [
+        "release_executor::tests::an_unsettled_mutation_is_never_replayed_on_restart",
+        "release_executor::tests::arbitrary_successful_shell_commands_are_not_focused_proof",
+        "release_executor::tests::background_controller_waits_then_publishes_without_continue_prompts",
+        "release_executor::tests::community_input_is_never_requested_by_production_health_builder",
+        "release_executor::tests::denied_host_permission_prevents_every_release_side_effect",
+        "release_executor::tests::focused_test_proof_requires_a_nonzero_executed_pass",
+        "release_executor::tests::isolated_agent_repair_verifies_and_promotes_one_patch_for_two_provider_fixtures",
+        "release_executor::tests::local_failure_retains_the_causal_error_for_bounded_diagnosis",
+        "release_executor::tests::native_firewall_denial_cannot_be_bypassed_by_a_release_admission",
+        "release_executor::tests::native_repair_patch_keeps_version_seed_and_includes_new_regressions",
+        "release_executor::tests::native_version_bump_keeps_all_workspace_dependency_pins_resolvable",
+        "release_executor::tests::native_worker_stops_owner_action_and_uncertain_causes_before_repair_permission",
+        "release_executor::tests::persisted_cancellation_reaches_a_worker_in_another_host",
+        "release_executor::tests::production_orchestrator_reaches_publication_only_through_settled_gates",
+        "release_executor::tests::publication_checksum_content_must_match_both_server_digests",
+        "release_executor::tests::publication_requires_all_fourteen_nonempty_uploaded_assets",
+        "release_executor::tests::read_only_health_checks_do_not_request_source_repair_permissions",
+        "release_executor::tests::registry_bump_updates_version_and_archive_urls",
+        "release_executor::tests::release_read_ports_share_worker_cancellation_before_dispatch",
+        "release_executor::tests::release_worker_cancel_restart_process_acceptance",
+        "release_executor::tests::repair_factory_executes_real_tools_for_two_provider_fixtures",
+        "release_executor::tests::repair_iteration_budget_survives_disabled_host_cap",
+        "release_executor::tests::repair_preserves_provider_owned_hosted_tool_selections",
+        "release_executor::tests::repair_worker_cannot_create_unadmitted_release_tags",
+        "release_recovery::tests::a_new_workflow_run_can_start_at_attempt_one",
+        "release_recovery::tests::a_running_workflow_with_only_terminal_visible_jobs_is_incomplete",
+        "release_recovery::tests::cache_warning_is_not_the_cause_of_a_later_compiler_failure",
+        "release_recovery::tests::cancelled_checkpoint_can_be_explicitly_resumed_without_erasing_counters",
+        "release_recovery::tests::cancelled_epoch_resumes_the_same_run_and_job_identity",
+        "release_recovery::tests::causal_error_after_large_successful_log_prefix_is_preserved",
+        "release_recovery::tests::changed_fingerprint_after_retry_opens_a_new_diagnosis",
+        "release_recovery::tests::colored_ci_logs_cannot_hide_credentials_or_causal_errors",
+        "release_recovery::tests::community_reports_alone_never_confirm_outage",
+        "release_recovery::tests::complete_matrix_collects_first_causal_log_and_classifies_it",
+        "release_recovery::tests::context_and_process_numbers_do_not_change_causal_fingerprints",
+        "release_recovery::tests::controller_owner_is_exclusive_across_independent_ledger_handles",
+        "release_recovery::tests::dependency_errors_and_unrecognized_platform_logs_classify_truthfully",
+        "release_recovery::tests::deterministic_test_failure_cannot_be_relabelled_as_outage",
+        "release_recovery::tests::directives_are_typed_and_back_off_without_model_step_polling",
+        "release_recovery::tests::equivalent_volatile_logs_have_same_fingerprint",
+        "release_recovery::tests::github_account_execution_restriction_requires_owner_action",
+        "release_recovery::tests::github_adapter_uses_exact_attempt_and_main_push_provenance",
+        "release_recovery::tests::github_command_echo_is_not_the_runtime_causal_error",
+        "release_recovery::tests::github_failed_job_retry_requires_exact_admission_scope",
+        "release_recovery::tests::github_remote_parser_accepts_common_forms_and_rejects_endpoint_injection",
+        "release_recovery::tests::green_release_then_red_closeout_keeps_publication_immutable",
+        "release_recovery::tests::identical_failure_on_new_attempt_without_change_hard_blocks_retry",
+        "release_recovery::tests::inconclusive_source_evidence_cannot_confirm_an_outage",
+        "release_recovery::tests::last_green_comparison_is_exact_and_immutable",
+        "release_recovery::tests::last_green_missing_or_skipped_matching_job_preserves_unknown_context",
+        "release_recovery::tests::ledger_round_trip_preserves_job_ids",
+        "release_recovery::tests::missing_required_gate_never_counts_as_complete_matrix",
+        "release_recovery::tests::missing_runner_log_uses_only_owned_failure_annotations",
+        "release_recovery::tests::missing_runs_are_pending_evidence_instead_of_an_executor_error",
+        "release_recovery::tests::native_github_write_ports_cannot_bypass_admission",
+        "release_recovery::tests::official_degradation_needs_repository_exclusion_and_infrastructure_evidence",
+        "release_recovery::tests::official_degradation_pauses_only_from_late_diagnostic_branch",
+        "release_recovery::tests::old_attempt_cannot_satisfy_a_reserved_infrastructure_retry",
+        "release_recovery::tests::pagination_reads_all_jobs_and_refuses_duplicate_page_rows",
+        "release_recovery::tests::partial_matrix_blocks_retry",
+        "release_recovery::tests::passing_error_module_tests_cannot_hide_the_real_causal_failure",
+        "release_recovery::tests::paused_epoch_reopens_with_exact_identity_and_resumes_through_remote_refresh",
+        "release_recovery::tests::persisted_strings_are_redacted_at_the_storage_boundary",
+        "release_recovery::tests::published_cannot_transition_back_to_publishing",
+        "release_recovery::tests::published_docs_red_repair_then_other_platform_red_stops_speculation",
+        "release_recovery::tests::published_release_has_a_distinct_main_epoch_and_archived_history",
+        "release_recovery::tests::quoted_credentials_basic_auth_and_signed_urls_are_redacted",
+        "release_recovery::tests::rejected_repair_event_does_not_partially_mutate_the_record",
+        "release_recovery::tests::remote_operation_cancellation_is_not_local_user_cancellation",
+        "release_recovery::tests::required_skipped_job_never_opens_tag_admission",
+        "release_recovery::tests::secret_canaries_are_redacted",
+        "release_recovery::tests::stale_sha_cannot_advance_candidate",
+        "release_recovery::tests::stale_writer_cannot_overwrite_cancelled_checkpoint",
+        "release_recovery::tests::status_projection_exposes_product_fields_without_causal_log_content",
+        "release_recovery::tests::tag_and_publication_mutations_fail_closed_without_settled_prerequisites",
+        "release_recovery::tests::tentative_classification_cannot_authorize_source_repair",
+        "release_recovery::tests::terminal_epoch_cannot_admit_a_diagnostic_rerun",
+        "release_recovery::tests::two_failed_focused_repairs_exhaust_the_causal_family_budget",
+        "release_recovery::tests::unchanged_commit_is_not_a_verified_source_repair",
+        "release_recovery::tests::verified_repair_is_the_only_path_to_one_full_gate_retry",
+        "release_recovery::tests::watchdog_triggers_after_six_stagnant_actions",
+        "release_executor::tests::version_plan_updates_every_internal_dependency_section_and_not_external_pins",
+        "release_executor::tests::version_plan_write_failure_rolls_back_every_written_file"
+      ],
+      "observed_passed": [
+        "release_executor::tests::an_unsettled_mutation_is_never_replayed_on_restart",
+        "release_executor::tests::arbitrary_successful_shell_commands_are_not_focused_proof",
+        "release_executor::tests::background_controller_waits_then_publishes_without_continue_prompts",
+        "release_executor::tests::community_input_is_never_requested_by_production_health_builder",
+        "release_executor::tests::denied_host_permission_prevents_every_release_side_effect",
+        "release_executor::tests::focused_test_proof_requires_a_nonzero_executed_pass",
+        "release_executor::tests::isolated_agent_repair_verifies_and_promotes_one_patch_for_two_provider_fixtures",
+        "release_executor::tests::local_failure_retains_the_causal_error_for_bounded_diagnosis",
+        "release_executor::tests::native_firewall_denial_cannot_be_bypassed_by_a_release_admission",
+        "release_executor::tests::native_repair_patch_keeps_version_seed_and_includes_new_regressions",
+        "release_executor::tests::native_version_bump_keeps_all_workspace_dependency_pins_resolvable",
+        "release_executor::tests::native_worker_stops_owner_action_and_uncertain_causes_before_repair_permission",
+        "release_executor::tests::persisted_cancellation_reaches_a_worker_in_another_host",
+        "release_executor::tests::production_orchestrator_reaches_publication_only_through_settled_gates",
+        "release_executor::tests::publication_checksum_content_must_match_both_server_digests",
+        "release_executor::tests::publication_requires_all_fourteen_nonempty_uploaded_assets",
+        "release_executor::tests::read_only_health_checks_do_not_request_source_repair_permissions",
+        "release_executor::tests::registry_bump_updates_version_and_archive_urls",
+        "release_executor::tests::release_read_ports_share_worker_cancellation_before_dispatch",
+        "release_executor::tests::release_worker_cancel_restart_process_acceptance",
+        "release_executor::tests::repair_factory_executes_real_tools_for_two_provider_fixtures",
+        "release_executor::tests::repair_iteration_budget_survives_disabled_host_cap",
+        "release_executor::tests::repair_preserves_provider_owned_hosted_tool_selections",
+        "release_executor::tests::repair_worker_cannot_create_unadmitted_release_tags",
+        "release_executor::tests::version_plan_updates_every_internal_dependency_section_and_not_external_pins",
+        "release_executor::tests::version_plan_write_failure_rolls_back_every_written_file",
+        "release_recovery::tests::a_new_workflow_run_can_start_at_attempt_one",
+        "release_recovery::tests::a_running_workflow_with_only_terminal_visible_jobs_is_incomplete",
+        "release_recovery::tests::cache_warning_is_not_the_cause_of_a_later_compiler_failure",
+        "release_recovery::tests::cancelled_checkpoint_can_be_explicitly_resumed_without_erasing_counters",
+        "release_recovery::tests::cancelled_epoch_resumes_the_same_run_and_job_identity",
+        "release_recovery::tests::causal_error_after_large_successful_log_prefix_is_preserved",
+        "release_recovery::tests::changed_fingerprint_after_retry_opens_a_new_diagnosis",
+        "release_recovery::tests::colored_ci_logs_cannot_hide_credentials_or_causal_errors",
+        "release_recovery::tests::community_reports_alone_never_confirm_outage",
+        "release_recovery::tests::complete_matrix_collects_first_causal_log_and_classifies_it",
+        "release_recovery::tests::context_and_process_numbers_do_not_change_causal_fingerprints",
+        "release_recovery::tests::controller_owner_is_exclusive_across_independent_ledger_handles",
+        "release_recovery::tests::dependency_errors_and_unrecognized_platform_logs_classify_truthfully",
+        "release_recovery::tests::deterministic_test_failure_cannot_be_relabelled_as_outage",
+        "release_recovery::tests::directives_are_typed_and_back_off_without_model_step_polling",
+        "release_recovery::tests::equivalent_volatile_logs_have_same_fingerprint",
+        "release_recovery::tests::github_account_execution_restriction_requires_owner_action",
+        "release_recovery::tests::github_adapter_uses_exact_attempt_and_main_push_provenance",
+        "release_recovery::tests::github_command_echo_is_not_the_runtime_causal_error",
+        "release_recovery::tests::github_failed_job_retry_requires_exact_admission_scope",
+        "release_recovery::tests::github_remote_parser_accepts_common_forms_and_rejects_endpoint_injection",
+        "release_recovery::tests::green_release_then_red_closeout_keeps_publication_immutable",
+        "release_recovery::tests::identical_failure_on_new_attempt_without_change_hard_blocks_retry",
+        "release_recovery::tests::inconclusive_source_evidence_cannot_confirm_an_outage",
+        "release_recovery::tests::last_green_comparison_is_exact_and_immutable",
+        "release_recovery::tests::last_green_missing_or_skipped_matching_job_preserves_unknown_context",
+        "release_recovery::tests::ledger_round_trip_preserves_job_ids",
+        "release_recovery::tests::missing_required_gate_never_counts_as_complete_matrix",
+        "release_recovery::tests::missing_runner_log_uses_only_owned_failure_annotations",
+        "release_recovery::tests::missing_runs_are_pending_evidence_instead_of_an_executor_error",
+        "release_recovery::tests::native_github_write_ports_cannot_bypass_admission",
+        "release_recovery::tests::official_degradation_needs_repository_exclusion_and_infrastructure_evidence",
+        "release_recovery::tests::official_degradation_pauses_only_from_late_diagnostic_branch",
+        "release_recovery::tests::old_attempt_cannot_satisfy_a_reserved_infrastructure_retry",
+        "release_recovery::tests::pagination_reads_all_jobs_and_refuses_duplicate_page_rows",
+        "release_recovery::tests::partial_matrix_blocks_retry",
+        "release_recovery::tests::passing_error_module_tests_cannot_hide_the_real_causal_failure",
+        "release_recovery::tests::paused_epoch_reopens_with_exact_identity_and_resumes_through_remote_refresh",
+        "release_recovery::tests::persisted_strings_are_redacted_at_the_storage_boundary",
+        "release_recovery::tests::published_cannot_transition_back_to_publishing",
+        "release_recovery::tests::published_docs_red_repair_then_other_platform_red_stops_speculation",
+        "release_recovery::tests::published_release_has_a_distinct_main_epoch_and_archived_history",
+        "release_recovery::tests::quoted_credentials_basic_auth_and_signed_urls_are_redacted",
+        "release_recovery::tests::rejected_repair_event_does_not_partially_mutate_the_record",
+        "release_recovery::tests::remote_operation_cancellation_is_not_local_user_cancellation",
+        "release_recovery::tests::required_skipped_job_never_opens_tag_admission",
+        "release_recovery::tests::secret_canaries_are_redacted",
+        "release_recovery::tests::stale_sha_cannot_advance_candidate",
+        "release_recovery::tests::stale_writer_cannot_overwrite_cancelled_checkpoint",
+        "release_recovery::tests::status_projection_exposes_product_fields_without_causal_log_content",
+        "release_recovery::tests::tag_and_publication_mutations_fail_closed_without_settled_prerequisites",
+        "release_recovery::tests::tentative_classification_cannot_authorize_source_repair",
+        "release_recovery::tests::terminal_epoch_cannot_admit_a_diagnostic_rerun",
+        "release_recovery::tests::two_failed_focused_repairs_exhaust_the_causal_family_budget",
+        "release_recovery::tests::unchanged_commit_is_not_a_verified_source_repair",
+        "release_recovery::tests::verified_repair_is_the_only_path_to_one_full_gate_retry",
+        "release_recovery::tests::watchdog_triggers_after_six_stagnant_actions"
+      ],
+      "missing": []
+    },
+    {
+      "section": 30,
+      "title": "Test Strategy",
+      "behavior_scope": "Pure/adapter/parser/retry/outage fixtures, native process restart and controlled real GitHub",
+      "named_cases": [
+        "release_recovery::tests::rejected_repair_event_does_not_partially_mutate_the_record",
+        "release_recovery::tests::github_adapter_uses_exact_attempt_and_main_push_provenance",
+        "release_recovery::tests::complete_matrix_collects_first_causal_log_and_classifies_it",
+        "release_recovery::tests::verified_repair_is_the_only_path_to_one_full_gate_retry",
+        "release_recovery::tests::community_reports_alone_never_confirm_outage",
+        "release_executor::tests::release_worker_cancel_restart_process_acceptance"
+      ],
+      "observed_passed": [
+        "release_executor::tests::release_worker_cancel_restart_process_acceptance",
+        "release_recovery::tests::community_reports_alone_never_confirm_outage",
+        "release_recovery::tests::complete_matrix_collects_first_causal_log_and_classifies_it",
+        "release_recovery::tests::github_adapter_uses_exact_attempt_and_main_push_provenance",
+        "release_recovery::tests::rejected_repair_event_does_not_partially_mutate_the_record",
+        "release_recovery::tests::verified_repair_is_the_only_path_to_one_full_gate_retry"
+      ],
+      "missing": []
+    },
+    {
+      "section": 31,
+      "title": "Implementation Plan",
+      "behavior_scope": "PR1\u2013PR7 implementation: domain/persistence, adapter, admission, stages, health, hosts and acceptance",
+      "named_cases": [
+        "release_executor::tests::an_unsettled_mutation_is_never_replayed_on_restart",
+        "release_executor::tests::arbitrary_successful_shell_commands_are_not_focused_proof",
+        "release_executor::tests::background_controller_waits_then_publishes_without_continue_prompts",
+        "release_executor::tests::community_input_is_never_requested_by_production_health_builder",
+        "release_executor::tests::denied_host_permission_prevents_every_release_side_effect",
+        "release_executor::tests::focused_test_proof_requires_a_nonzero_executed_pass",
+        "release_executor::tests::isolated_agent_repair_verifies_and_promotes_one_patch_for_two_provider_fixtures",
+        "release_executor::tests::local_failure_retains_the_causal_error_for_bounded_diagnosis",
+        "release_executor::tests::native_firewall_denial_cannot_be_bypassed_by_a_release_admission",
+        "release_executor::tests::native_repair_patch_keeps_version_seed_and_includes_new_regressions",
+        "release_executor::tests::native_version_bump_keeps_all_workspace_dependency_pins_resolvable",
+        "release_executor::tests::native_worker_stops_owner_action_and_uncertain_causes_before_repair_permission",
+        "release_executor::tests::persisted_cancellation_reaches_a_worker_in_another_host",
+        "release_executor::tests::production_orchestrator_reaches_publication_only_through_settled_gates",
+        "release_executor::tests::publication_checksum_content_must_match_both_server_digests",
+        "release_executor::tests::publication_requires_all_fourteen_nonempty_uploaded_assets",
+        "release_executor::tests::read_only_health_checks_do_not_request_source_repair_permissions",
+        "release_executor::tests::registry_bump_updates_version_and_archive_urls",
+        "release_executor::tests::release_read_ports_share_worker_cancellation_before_dispatch",
+        "release_executor::tests::release_worker_cancel_restart_process_acceptance",
+        "release_executor::tests::repair_factory_executes_real_tools_for_two_provider_fixtures",
+        "release_executor::tests::repair_iteration_budget_survives_disabled_host_cap",
+        "release_executor::tests::repair_preserves_provider_owned_hosted_tool_selections",
+        "release_executor::tests::repair_worker_cannot_create_unadmitted_release_tags",
+        "release_recovery::tests::a_new_workflow_run_can_start_at_attempt_one",
+        "release_recovery::tests::a_running_workflow_with_only_terminal_visible_jobs_is_incomplete",
+        "release_recovery::tests::cache_warning_is_not_the_cause_of_a_later_compiler_failure",
+        "release_recovery::tests::cancelled_checkpoint_can_be_explicitly_resumed_without_erasing_counters",
+        "release_recovery::tests::cancelled_epoch_resumes_the_same_run_and_job_identity",
+        "release_recovery::tests::causal_error_after_large_successful_log_prefix_is_preserved",
+        "release_recovery::tests::changed_fingerprint_after_retry_opens_a_new_diagnosis",
+        "release_recovery::tests::colored_ci_logs_cannot_hide_credentials_or_causal_errors",
+        "release_recovery::tests::community_reports_alone_never_confirm_outage",
+        "release_recovery::tests::complete_matrix_collects_first_causal_log_and_classifies_it",
+        "release_recovery::tests::context_and_process_numbers_do_not_change_causal_fingerprints",
+        "release_recovery::tests::controller_owner_is_exclusive_across_independent_ledger_handles",
+        "release_recovery::tests::dependency_errors_and_unrecognized_platform_logs_classify_truthfully",
+        "release_recovery::tests::deterministic_test_failure_cannot_be_relabelled_as_outage",
+        "release_recovery::tests::directives_are_typed_and_back_off_without_model_step_polling",
+        "release_recovery::tests::equivalent_volatile_logs_have_same_fingerprint",
+        "release_recovery::tests::github_account_execution_restriction_requires_owner_action",
+        "release_recovery::tests::github_adapter_uses_exact_attempt_and_main_push_provenance",
+        "release_recovery::tests::github_command_echo_is_not_the_runtime_causal_error",
+        "release_recovery::tests::github_failed_job_retry_requires_exact_admission_scope",
+        "release_recovery::tests::github_remote_parser_accepts_common_forms_and_rejects_endpoint_injection",
+        "release_recovery::tests::green_release_then_red_closeout_keeps_publication_immutable",
+        "release_recovery::tests::identical_failure_on_new_attempt_without_change_hard_blocks_retry",
+        "release_recovery::tests::inconclusive_source_evidence_cannot_confirm_an_outage",
+        "release_recovery::tests::last_green_comparison_is_exact_and_immutable",
+        "release_recovery::tests::last_green_missing_or_skipped_matching_job_preserves_unknown_context",
+        "release_recovery::tests::ledger_round_trip_preserves_job_ids",
+        "release_recovery::tests::missing_required_gate_never_counts_as_complete_matrix",
+        "release_recovery::tests::missing_runner_log_uses_only_owned_failure_annotations",
+        "release_recovery::tests::missing_runs_are_pending_evidence_instead_of_an_executor_error",
+        "release_recovery::tests::native_github_write_ports_cannot_bypass_admission",
+        "release_recovery::tests::official_degradation_needs_repository_exclusion_and_infrastructure_evidence",
+        "release_recovery::tests::official_degradation_pauses_only_from_late_diagnostic_branch",
+        "release_recovery::tests::old_attempt_cannot_satisfy_a_reserved_infrastructure_retry",
+        "release_recovery::tests::pagination_reads_all_jobs_and_refuses_duplicate_page_rows",
+        "release_recovery::tests::partial_matrix_blocks_retry",
+        "release_recovery::tests::passing_error_module_tests_cannot_hide_the_real_causal_failure",
+        "release_recovery::tests::paused_epoch_reopens_with_exact_identity_and_resumes_through_remote_refresh",
+        "release_recovery::tests::persisted_strings_are_redacted_at_the_storage_boundary",
+        "release_recovery::tests::published_cannot_transition_back_to_publishing",
+        "release_recovery::tests::published_docs_red_repair_then_other_platform_red_stops_speculation",
+        "release_recovery::tests::published_release_has_a_distinct_main_epoch_and_archived_history",
+        "release_recovery::tests::quoted_credentials_basic_auth_and_signed_urls_are_redacted",
+        "release_recovery::tests::rejected_repair_event_does_not_partially_mutate_the_record",
+        "release_recovery::tests::remote_operation_cancellation_is_not_local_user_cancellation",
+        "release_recovery::tests::required_skipped_job_never_opens_tag_admission",
+        "release_recovery::tests::secret_canaries_are_redacted",
+        "release_recovery::tests::stale_sha_cannot_advance_candidate",
+        "release_recovery::tests::stale_writer_cannot_overwrite_cancelled_checkpoint",
+        "release_recovery::tests::status_projection_exposes_product_fields_without_causal_log_content",
+        "release_recovery::tests::tag_and_publication_mutations_fail_closed_without_settled_prerequisites",
+        "release_recovery::tests::tentative_classification_cannot_authorize_source_repair",
+        "release_recovery::tests::terminal_epoch_cannot_admit_a_diagnostic_rerun",
+        "release_recovery::tests::two_failed_focused_repairs_exhaust_the_causal_family_budget",
+        "release_recovery::tests::unchanged_commit_is_not_a_verified_source_repair",
+        "release_recovery::tests::verified_repair_is_the_only_path_to_one_full_gate_retry",
+        "release_recovery::tests::watchdog_triggers_after_six_stagnant_actions",
+        "release_executor::tests::version_plan_updates_every_internal_dependency_section_and_not_external_pins",
+        "release_executor::tests::version_plan_write_failure_rolls_back_every_written_file"
+      ],
+      "observed_passed": [
+        "release_executor::tests::an_unsettled_mutation_is_never_replayed_on_restart",
+        "release_executor::tests::arbitrary_successful_shell_commands_are_not_focused_proof",
+        "release_executor::tests::background_controller_waits_then_publishes_without_continue_prompts",
+        "release_executor::tests::community_input_is_never_requested_by_production_health_builder",
+        "release_executor::tests::denied_host_permission_prevents_every_release_side_effect",
+        "release_executor::tests::focused_test_proof_requires_a_nonzero_executed_pass",
+        "release_executor::tests::isolated_agent_repair_verifies_and_promotes_one_patch_for_two_provider_fixtures",
+        "release_executor::tests::local_failure_retains_the_causal_error_for_bounded_diagnosis",
+        "release_executor::tests::native_firewall_denial_cannot_be_bypassed_by_a_release_admission",
+        "release_executor::tests::native_repair_patch_keeps_version_seed_and_includes_new_regressions",
+        "release_executor::tests::native_version_bump_keeps_all_workspace_dependency_pins_resolvable",
+        "release_executor::tests::native_worker_stops_owner_action_and_uncertain_causes_before_repair_permission",
+        "release_executor::tests::persisted_cancellation_reaches_a_worker_in_another_host",
+        "release_executor::tests::production_orchestrator_reaches_publication_only_through_settled_gates",
+        "release_executor::tests::publication_checksum_content_must_match_both_server_digests",
+        "release_executor::tests::publication_requires_all_fourteen_nonempty_uploaded_assets",
+        "release_executor::tests::read_only_health_checks_do_not_request_source_repair_permissions",
+        "release_executor::tests::registry_bump_updates_version_and_archive_urls",
+        "release_executor::tests::release_read_ports_share_worker_cancellation_before_dispatch",
+        "release_executor::tests::release_worker_cancel_restart_process_acceptance",
+        "release_executor::tests::repair_factory_executes_real_tools_for_two_provider_fixtures",
+        "release_executor::tests::repair_iteration_budget_survives_disabled_host_cap",
+        "release_executor::tests::repair_preserves_provider_owned_hosted_tool_selections",
+        "release_executor::tests::repair_worker_cannot_create_unadmitted_release_tags",
+        "release_executor::tests::version_plan_updates_every_internal_dependency_section_and_not_external_pins",
+        "release_executor::tests::version_plan_write_failure_rolls_back_every_written_file",
+        "release_recovery::tests::a_new_workflow_run_can_start_at_attempt_one",
+        "release_recovery::tests::a_running_workflow_with_only_terminal_visible_jobs_is_incomplete",
+        "release_recovery::tests::cache_warning_is_not_the_cause_of_a_later_compiler_failure",
+        "release_recovery::tests::cancelled_checkpoint_can_be_explicitly_resumed_without_erasing_counters",
+        "release_recovery::tests::cancelled_epoch_resumes_the_same_run_and_job_identity",
+        "release_recovery::tests::causal_error_after_large_successful_log_prefix_is_preserved",
+        "release_recovery::tests::changed_fingerprint_after_retry_opens_a_new_diagnosis",
+        "release_recovery::tests::colored_ci_logs_cannot_hide_credentials_or_causal_errors",
+        "release_recovery::tests::community_reports_alone_never_confirm_outage",
+        "release_recovery::tests::complete_matrix_collects_first_causal_log_and_classifies_it",
+        "release_recovery::tests::context_and_process_numbers_do_not_change_causal_fingerprints",
+        "release_recovery::tests::controller_owner_is_exclusive_across_independent_ledger_handles",
+        "release_recovery::tests::dependency_errors_and_unrecognized_platform_logs_classify_truthfully",
+        "release_recovery::tests::deterministic_test_failure_cannot_be_relabelled_as_outage",
+        "release_recovery::tests::directives_are_typed_and_back_off_without_model_step_polling",
+        "release_recovery::tests::equivalent_volatile_logs_have_same_fingerprint",
+        "release_recovery::tests::github_account_execution_restriction_requires_owner_action",
+        "release_recovery::tests::github_adapter_uses_exact_attempt_and_main_push_provenance",
+        "release_recovery::tests::github_command_echo_is_not_the_runtime_causal_error",
+        "release_recovery::tests::github_failed_job_retry_requires_exact_admission_scope",
+        "release_recovery::tests::github_remote_parser_accepts_common_forms_and_rejects_endpoint_injection",
+        "release_recovery::tests::green_release_then_red_closeout_keeps_publication_immutable",
+        "release_recovery::tests::identical_failure_on_new_attempt_without_change_hard_blocks_retry",
+        "release_recovery::tests::inconclusive_source_evidence_cannot_confirm_an_outage",
+        "release_recovery::tests::last_green_comparison_is_exact_and_immutable",
+        "release_recovery::tests::last_green_missing_or_skipped_matching_job_preserves_unknown_context",
+        "release_recovery::tests::ledger_round_trip_preserves_job_ids",
+        "release_recovery::tests::missing_required_gate_never_counts_as_complete_matrix",
+        "release_recovery::tests::missing_runner_log_uses_only_owned_failure_annotations",
+        "release_recovery::tests::missing_runs_are_pending_evidence_instead_of_an_executor_error",
+        "release_recovery::tests::native_github_write_ports_cannot_bypass_admission",
+        "release_recovery::tests::official_degradation_needs_repository_exclusion_and_infrastructure_evidence",
+        "release_recovery::tests::official_degradation_pauses_only_from_late_diagnostic_branch",
+        "release_recovery::tests::old_attempt_cannot_satisfy_a_reserved_infrastructure_retry",
+        "release_recovery::tests::pagination_reads_all_jobs_and_refuses_duplicate_page_rows",
+        "release_recovery::tests::partial_matrix_blocks_retry",
+        "release_recovery::tests::passing_error_module_tests_cannot_hide_the_real_causal_failure",
+        "release_recovery::tests::paused_epoch_reopens_with_exact_identity_and_resumes_through_remote_refresh",
+        "release_recovery::tests::persisted_strings_are_redacted_at_the_storage_boundary",
+        "release_recovery::tests::published_cannot_transition_back_to_publishing",
+        "release_recovery::tests::published_docs_red_repair_then_other_platform_red_stops_speculation",
+        "release_recovery::tests::published_release_has_a_distinct_main_epoch_and_archived_history",
+        "release_recovery::tests::quoted_credentials_basic_auth_and_signed_urls_are_redacted",
+        "release_recovery::tests::rejected_repair_event_does_not_partially_mutate_the_record",
+        "release_recovery::tests::remote_operation_cancellation_is_not_local_user_cancellation",
+        "release_recovery::tests::required_skipped_job_never_opens_tag_admission",
+        "release_recovery::tests::secret_canaries_are_redacted",
+        "release_recovery::tests::stale_sha_cannot_advance_candidate",
+        "release_recovery::tests::stale_writer_cannot_overwrite_cancelled_checkpoint",
+        "release_recovery::tests::status_projection_exposes_product_fields_without_causal_log_content",
+        "release_recovery::tests::tag_and_publication_mutations_fail_closed_without_settled_prerequisites",
+        "release_recovery::tests::tentative_classification_cannot_authorize_source_repair",
+        "release_recovery::tests::terminal_epoch_cannot_admit_a_diagnostic_rerun",
+        "release_recovery::tests::two_failed_focused_repairs_exhaust_the_causal_family_budget",
+        "release_recovery::tests::unchanged_commit_is_not_a_verified_source_repair",
+        "release_recovery::tests::verified_repair_is_the_only_path_to_one_full_gate_retry",
+        "release_recovery::tests::watchdog_triggers_after_six_stagnant_actions"
+      ],
+      "missing": []
+    },
+    {
+      "section": 32,
+      "title": "Release Gate for RRC Itself",
+      "behavior_scope": "Actual final-source native/current full exact-commit/producing tag and assets are mandatory",
+      "named_cases": [
+        "release_executor::tests::production_orchestrator_reaches_publication_only_through_settled_gates",
+        "release_executor::tests::publication_requires_all_fourteen_nonempty_uploaded_assets",
+        "release_executor::tests::publication_checksum_content_must_match_both_server_digests",
+        "release_recovery::tests::tag_and_publication_mutations_fail_closed_without_settled_prerequisites",
+        "release_executor::tests::published_release_keeps_worker_until_post_release_closeout"
+      ],
+      "observed_passed": [
+        "release_executor::tests::production_orchestrator_reaches_publication_only_through_settled_gates",
+        "release_executor::tests::publication_checksum_content_must_match_both_server_digests",
+        "release_executor::tests::publication_requires_all_fourteen_nonempty_uploaded_assets",
+        "release_executor::tests::published_release_keeps_worker_until_post_release_closeout",
+        "release_recovery::tests::tag_and_publication_mutations_fail_closed_without_settled_prerequisites"
+      ],
+      "missing": []
+    },
+    {
+      "section": 33,
+      "title": "Metrics",
+      "behavior_scope": "Measured CI versus repair wall time; epoch/retry/pause/escalation/repeated-cause counters",
+      "named_cases": [
+        "release_executor::tests::background_controller_waits_then_publishes_without_continue_prompts",
+        "release_recovery::tests::published_release_has_a_distinct_main_epoch_and_archived_history",
+        "release_recovery::tests::published_docs_red_repair_then_other_platform_red_stops_speculation"
+      ],
+      "observed_passed": [
+        "release_executor::tests::background_controller_waits_then_publishes_without_continue_prompts",
+        "release_recovery::tests::published_docs_red_repair_then_other_platform_red_stops_speculation",
+        "release_recovery::tests::published_release_has_a_distinct_main_epoch_and_archived_history"
+      ],
+      "missing": []
+    },
+    {
+      "section": 34,
+      "title": "Source / Research Basis",
+      "behavior_scope": "Owning source, primary GitHub API/status documents and inspected real artifacts",
+      "named_cases": [
+        "release_recovery::tests::github_adapter_uses_exact_attempt_and_main_push_provenance",
+        "release_executor::tests::community_input_is_never_requested_by_production_health_builder"
+      ],
+      "observed_passed": [
+        "release_executor::tests::community_input_is_never_requested_by_production_health_builder",
+        "release_recovery::tests::github_adapter_uses_exact_attempt_and_main_push_provenance"
+      ],
+      "missing": []
+    },
+    {
+      "section": 35,
+      "title": "Binding Product Decisions",
+      "behavior_scope": "Binding decisions enforced by every admission/unknown/publication/budget boundary",
+      "named_cases": [
+        "release_recovery::tests::partial_matrix_blocks_retry",
+        "release_recovery::tests::identical_failure_on_new_attempt_without_change_hard_blocks_retry",
+        "release_recovery::tests::community_reports_alone_never_confirm_outage",
+        "release_recovery::tests::green_release_then_red_closeout_keeps_publication_immutable",
+        "release_recovery::tests::tentative_classification_cannot_authorize_source_repair"
+      ],
+      "observed_passed": [
+        "release_recovery::tests::community_reports_alone_never_confirm_outage",
+        "release_recovery::tests::green_release_then_red_closeout_keeps_publication_immutable",
+        "release_recovery::tests::identical_failure_on_new_attempt_without_change_hard_blocks_retry",
+        "release_recovery::tests::partial_matrix_blocks_retry",
+        "release_recovery::tests::tentative_classification_cannot_authorize_source_repair"
+      ],
+      "missing": []
+    },
+    {
+      "section": 36,
+      "title": "Final Product Definition",
+      "behavior_scope": "Prepare/verify/exact CI/publish or diagnose/prove/one retry/stop, and justified external pause",
+      "named_cases": [
+        "release_executor::tests::production_orchestrator_reaches_publication_only_through_settled_gates",
+        "release_executor::tests::isolated_agent_repair_verifies_and_promotes_one_patch_for_two_provider_fixtures",
+        "release_recovery::tests::verified_repair_is_the_only_path_to_one_full_gate_retry",
+        "release_recovery::tests::official_degradation_needs_repository_exclusion_and_infrastructure_evidence"
+      ],
+      "observed_passed": [
+        "release_executor::tests::isolated_agent_repair_verifies_and_promotes_one_patch_for_two_provider_fixtures",
+        "release_executor::tests::production_orchestrator_reaches_publication_only_through_settled_gates",
+        "release_recovery::tests::official_degradation_needs_repository_exclusion_and_infrastructure_evidence",
+        "release_recovery::tests::verified_repair_is_the_only_path_to_one_full_gate_retry"
+      ],
+      "missing": []
+    }
+  ],
+  "acceptance_criteria": [
+    {
+      "criterion": "AC-01",
+      "named_cases": [
+        "release_recovery::tests::partial_matrix_blocks_retry"
+      ],
+      "observed_passed": [
+        "release_recovery::tests::partial_matrix_blocks_retry"
+      ],
+      "missing": []
+    },
+    {
+      "criterion": "AC-02",
+      "named_cases": [
+        "release_recovery::tests::complete_matrix_collects_first_causal_log_and_classifies_it",
+        "release_recovery::tests::passing_error_module_tests_cannot_hide_the_real_causal_failure"
+      ],
+      "observed_passed": [
+        "release_recovery::tests::complete_matrix_collects_first_causal_log_and_classifies_it",
+        "release_recovery::tests::passing_error_module_tests_cannot_hide_the_real_causal_failure"
+      ],
+      "missing": []
+    },
+    {
+      "criterion": "AC-03",
+      "named_cases": [
+        "release_recovery::tests::identical_failure_on_new_attempt_without_change_hard_blocks_retry"
+      ],
+      "observed_passed": [
+        "release_recovery::tests::identical_failure_on_new_attempt_without_change_hard_blocks_retry"
+      ],
+      "missing": []
+    },
+    {
+      "criterion": "AC-04",
+      "named_cases": [
+        "release_recovery::tests::verified_repair_is_the_only_path_to_one_full_gate_retry",
+        "release_executor::tests::focused_test_proof_requires_a_nonzero_executed_pass"
+      ],
+      "observed_passed": [
+        "release_executor::tests::focused_test_proof_requires_a_nonzero_executed_pass",
+        "release_recovery::tests::verified_repair_is_the_only_path_to_one_full_gate_retry"
+      ],
+      "missing": []
+    },
+    {
+      "criterion": "AC-05",
+      "named_cases": [
+        "release_executor::tests::isolated_agent_repair_verifies_and_promotes_one_patch_for_two_provider_fixtures"
+      ],
+      "observed_passed": [
+        "release_executor::tests::isolated_agent_repair_verifies_and_promotes_one_patch_for_two_provider_fixtures"
+      ],
+      "missing": []
+    },
+    {
+      "criterion": "AC-06",
+      "named_cases": [
+        "release_recovery::tests::two_failed_focused_repairs_exhaust_the_causal_family_budget",
+        "release_recovery::tests::terminal_epoch_cannot_admit_a_diagnostic_rerun"
+      ],
+      "observed_passed": [
+        "release_recovery::tests::terminal_epoch_cannot_admit_a_diagnostic_rerun",
+        "release_recovery::tests::two_failed_focused_repairs_exhaust_the_causal_family_budget"
+      ],
+      "missing": []
+    },
+    {
+      "criterion": "AC-07",
+      "named_cases": [
+        "release_recovery::tests::changed_fingerprint_after_retry_opens_a_new_diagnosis"
+      ],
+      "observed_passed": [
+        "release_recovery::tests::changed_fingerprint_after_retry_opens_a_new_diagnosis"
+      ],
+      "missing": []
+    },
+    {
+      "criterion": "AC-08",
+      "named_cases": [
+        "release_recovery::tests::last_green_comparison_is_exact_and_immutable",
+        "release_recovery::tests::last_green_missing_or_skipped_matching_job_preserves_unknown_context"
+      ],
+      "observed_passed": [
+        "release_recovery::tests::last_green_comparison_is_exact_and_immutable",
+        "release_recovery::tests::last_green_missing_or_skipped_matching_job_preserves_unknown_context"
+      ],
+      "missing": []
+    },
+    {
+      "criterion": "AC-09",
+      "named_cases": [
+        "release_recovery::tests::deterministic_test_failure_cannot_be_relabelled_as_outage"
+      ],
+      "observed_passed": [
+        "release_recovery::tests::deterministic_test_failure_cannot_be_relabelled_as_outage"
+      ],
+      "missing": []
+    },
+    {
+      "criterion": "AC-10",
+      "named_cases": [
+        "release_recovery::tests::official_degradation_needs_repository_exclusion_and_infrastructure_evidence",
+        "release_recovery::tests::official_degradation_pauses_only_from_late_diagnostic_branch"
+      ],
+      "observed_passed": [
+        "release_recovery::tests::official_degradation_needs_repository_exclusion_and_infrastructure_evidence",
+        "release_recovery::tests::official_degradation_pauses_only_from_late_diagnostic_branch"
+      ],
+      "missing": []
+    },
+    {
+      "criterion": "AC-11",
+      "named_cases": [
+        "release_recovery::tests::community_reports_alone_never_confirm_outage"
+      ],
+      "observed_passed": [
+        "release_recovery::tests::community_reports_alone_never_confirm_outage"
+      ],
+      "missing": []
+    },
+    {
+      "criterion": "AC-12",
+      "named_cases": [
+        "release_recovery::tests::inconclusive_source_evidence_cannot_confirm_an_outage"
+      ],
+      "observed_passed": [
+        "release_recovery::tests::inconclusive_source_evidence_cannot_confirm_an_outage"
+      ],
+      "missing": []
+    },
+    {
+      "criterion": "AC-13",
+      "named_cases": [
+        "release_recovery::tests::paused_epoch_reopens_with_exact_identity_and_resumes_through_remote_refresh"
+      ],
+      "observed_passed": [
+        "release_recovery::tests::paused_epoch_reopens_with_exact_identity_and_resumes_through_remote_refresh"
+      ],
+      "missing": []
+    },
+    {
+      "criterion": "AC-14",
+      "named_cases": [
+        "release_recovery::tests::green_release_then_red_closeout_keeps_publication_immutable",
+        "release_recovery::tests::published_release_has_a_distinct_main_epoch_and_archived_history"
+      ],
+      "observed_passed": [
+        "release_recovery::tests::green_release_then_red_closeout_keeps_publication_immutable",
+        "release_recovery::tests::published_release_has_a_distinct_main_epoch_and_archived_history"
+      ],
+      "missing": []
+    },
+    {
+      "criterion": "AC-15",
+      "named_cases": [
+        "release_recovery::tests::status_projection_exposes_product_fields_without_causal_log_content"
+      ],
+      "observed_passed": [
+        "release_recovery::tests::status_projection_exposes_product_fields_without_causal_log_content"
+      ],
+      "missing": []
+    },
+    {
+      "criterion": "AC-16",
+      "named_cases": [
+        "release_executor::tests::repair_factory_executes_real_tools_for_two_provider_fixtures",
+        "release_executor::tests::isolated_agent_repair_verifies_and_promotes_one_patch_for_two_provider_fixtures"
+      ],
+      "observed_passed": [
+        "release_executor::tests::isolated_agent_repair_verifies_and_promotes_one_patch_for_two_provider_fixtures",
+        "release_executor::tests::repair_factory_executes_real_tools_for_two_provider_fixtures"
+      ],
+      "missing": []
+    },
+    {
+      "criterion": "AC-17",
+      "named_cases": [
+        "release_executor::tests::persisted_cancellation_reaches_a_worker_in_another_host"
+      ],
+      "observed_passed": [
+        "release_executor::tests::persisted_cancellation_reaches_a_worker_in_another_host"
+      ],
+      "missing": []
+    },
+    {
+      "criterion": "AC-18",
+      "named_cases": [
+        "release_recovery::tests::stale_sha_cannot_advance_candidate",
+        "release_recovery::tests::old_attempt_cannot_satisfy_a_reserved_infrastructure_retry"
+      ],
+      "observed_passed": [
+        "release_recovery::tests::old_attempt_cannot_satisfy_a_reserved_infrastructure_retry",
+        "release_recovery::tests::stale_sha_cannot_advance_candidate"
+      ],
+      "missing": []
+    },
+    {
+      "criterion": "AC-19",
+      "named_cases": [
+        "release_recovery::tests::secret_canaries_are_redacted",
+        "release_recovery::tests::persisted_strings_are_redacted_at_the_storage_boundary",
+        "release_recovery::tests::missing_runner_log_uses_only_owned_failure_annotations"
+      ],
+      "observed_passed": [
+        "release_recovery::tests::missing_runner_log_uses_only_owned_failure_annotations",
+        "release_recovery::tests::persisted_strings_are_redacted_at_the_storage_boundary",
+        "release_recovery::tests::secret_canaries_are_redacted"
+      ],
+      "missing": []
+    },
+    {
+      "criterion": "AC-20",
+      "named_cases": [
+        "release_executor::tests::release_worker_cancel_restart_process_acceptance",
+        "release_recovery::tests::cancelled_epoch_resumes_the_same_run_and_job_identity",
+        "release_executor::tests::live_progress_uses_durable_milestones_without_losing_case_counts"
+      ],
+      "observed_passed": [
+        "release_executor::tests::live_progress_uses_durable_milestones_without_losing_case_counts",
+        "release_executor::tests::release_worker_cancel_restart_process_acceptance",
+        "release_recovery::tests::cancelled_epoch_resumes_the_same_run_and_job_identity"
+      ],
+      "missing": []
+    },
+    {
+      "criterion": "AC-21",
+      "named_cases": [
+        "release_executor::tests::release_worker_cancel_restart_process_acceptance",
+        "release_executor::tests::persisted_cancellation_reaches_a_worker_in_another_host",
+        "release_recovery::tests::remote_operation_cancellation_is_not_local_user_cancellation"
+      ],
+      "observed_passed": [
+        "release_executor::tests::persisted_cancellation_reaches_a_worker_in_another_host",
+        "release_executor::tests::release_worker_cancel_restart_process_acceptance",
+        "release_recovery::tests::remote_operation_cancellation_is_not_local_user_cancellation"
+      ],
+      "missing": []
+    },
+    {
+      "criterion": "AC-22",
+      "named_cases": [
+        "release_recovery::tests::watchdog_triggers_after_six_stagnant_actions",
+        "release_executor::tests::background_controller_waits_then_publishes_without_continue_prompts",
+        "release_executor::tests::live_progress_uses_durable_milestones_without_losing_case_counts",
+        "release_executor::tests::repair_continues_unplanned_segments_for_two_provider_fixtures",
+        "release_executor::tests::repair_terminal_diagnostics_identify_the_safety_stop",
+        "release_executor::tests::repair_initial_provider_retry_is_bounded_and_never_replays_tools"
+      ],
+      "observed_passed": [
+        "release_executor::tests::background_controller_waits_then_publishes_without_continue_prompts",
+        "release_executor::tests::live_progress_uses_durable_milestones_without_losing_case_counts",
+        "release_executor::tests::repair_continues_unplanned_segments_for_two_provider_fixtures",
+        "release_executor::tests::repair_initial_provider_retry_is_bounded_and_never_replays_tools",
+        "release_executor::tests::repair_terminal_diagnostics_identify_the_safety_stop",
+        "release_recovery::tests::watchdog_triggers_after_six_stagnant_actions"
+      ],
+      "missing": []
+    },
+    {
+      "criterion": "AC-23",
+      "named_cases": [
+        "release_recovery::tests::published_docs_red_repair_then_other_platform_red_stops_speculation"
+      ],
+      "observed_passed": [
+        "release_recovery::tests::published_docs_red_repair_then_other_platform_red_stops_speculation"
+      ],
+      "missing": []
+    }
+  ],
+  "source_commit": "4426004d59882ef680c7ce388b4151360d893e4e",
+  "workflow": 37759889285,
+  "job": 113253459865,
+  "canonical_log_sha256": "a9c3326ba43f6e8a90ef6cbddc611e92f3310e648e2d02fca5cade644aff05ef",
+  "required_unique_cases": 108,
+  "observed_required_passed": 108,
+  "exact_acceptance_cases": [
+    "acceptance::tests::automatic_enrollment_rejects_missing_external_and_forged_scope_without_saving",
+    "acceptance::tests::automatic_enrollment_remembers_prd_and_requires_real_evidence_in_the_same_turn",
+    "acceptance::tests::automatic_scope_review_refusal_and_cancellation_do_not_remember_a_path",
+    "acceptance::tests::cancelled_and_exhausted_turns_publish_incomplete_history",
+    "acceptance::tests::delegated_finish_and_empty_deleted_or_replaced_plans_cannot_certify_parent",
+    "acceptance::tests::explicit_scope_revision_and_resume_preserve_history_but_never_import_verification",
+    "acceptance::tests::independent_reexamination_resolves_spurious_finding_without_forged_override",
+    "acceptance::tests::native_agent_cannot_stop_early_then_repairs_and_earns_real_evidence",
+    "acceptance::tests::project_rules_are_frozen_and_runtime_configuration_is_snapshotted",
+    "acceptance::tests::publication_rechecks_live_source_after_snapshot_review",
+    "acceptance::tests::reviewer_unavailable_or_without_source_inspection_cannot_approve",
+    "acceptance::tests::saved_activation_restores_unverified_scope_and_cannot_disable_an_active_contract",
+    "acceptance::tests::verification_never_bypasses_shell_permission_or_command_firewall",
+    "acceptance::tests::wrong_platform_and_verification_timeout_fail_closed",
+    "acceptance_host::tests::acceptance_native_settings_show_scope_and_save_cancel",
+    "acp_completed_release_delivers_final_receipt_without_provider_or_new_release",
+    "acp_conflicting_published_target_returns_clarification_without_observing_old_worker",
+    "acp_natural_release_inherits_session_permission_and_governor",
+    "acp_process_release_status_uses_governor_for_every_cargo_path",
+    "cached_binary_outside_workspace_refuses_build_directory_fallback",
+    "cached_binary_uses_each_invoking_workspace_and_fixture_corpus",
+    "changed_source_contract_checks_platform_or_test_invalidates",
+    "commands::tests::release_routes_to_the_controller_instead_of_a_model_workflow",
+    "controlled_cargo_metadata_emits_valid_json",
+    "duplicate_unknown_and_wrong_command_receipts_refuse",
+    "every_required_host_needs_its_own_evidence",
+    "fixture::tests::invocation_fixture_roots_do_not_follow_cached_build_paths",
+    "host_resources::native_backend::tests::native_capacity_and_owned_process_observation_is_real",
+    "host_resources::native_backend::tests::native_observation_cancellation_interrupts_a_stalled_job_probe",
+    "host_resources::native_backend::tests::native_owned_descendants_are_observed_and_reaped",
+    "host_resources::native_backend::tests::native_tree_counts_descendants_excludes_siblings_and_refuses_cycles",
+    "host_resources::native_backend::tests::windows_job_observations_reject_missing_malformed_and_inconsistent_values",
+    "host_resources::tests::cgroup_v2_discovery_uses_the_strictest_ancestor_limit_and_its_usage",
+    "host_resources::tests::expensive_slot_release_unlocks_inherited_file_description",
+    "host_resources::tests::reported_normal_threshold_includes_swap_and_owned_tree_burst_margins",
+    "host_resources::tests::swap_growth_window_preserves_sustained_pressure_and_critical_signals",
+    "host_resources::tests::swap_growth_window_rejects_subsecond_rate_amplification",
+    "host_resources::tests::windows_job_bounds_preserve_physical_capacity_and_refuse_unsafe_admission",
+    "host_resources_constrained_tests::constrained_disk_acceptance_preserves_target_cache_and_withholds_gate",
+    "host_resources_constrained_tests::constrained_memory_acceptance_withholds_expensive_cargo_before_spawn",
+    "http_error::retry_tests::transient_retry_respects_server_delay_and_refuses_malformed_headers",
+    "http_error_tests::transient_http_rejections_admit_only_before_output_retry_in_both_modes",
+    "native_acceptance_controls_persist_only_explicit_activation",
+    "native_release_admission_does_not_wait_for_account_model_discovery",
+    "omitted_source_and_removed_scenario_checks_refuse",
+    "release_closeout::tests::closeout_later_main_has_a_distinct_report_without_overwriting_publication",
+    "release_closeout::tests::closeout_registry_preserves_concurrent_edit_and_rejects_false_write_receipt",
+    "release_closeout::tests::closeout_registry_uncertain_write_never_replays",
+    "release_closeout::tests::closeout_report_restart_is_idempotent_and_preserves_user_edits",
+    "release_executor::tests::an_unsettled_mutation_is_never_replayed_on_restart",
+    "release_executor::tests::arbitrary_successful_shell_commands_are_not_focused_proof",
+    "release_executor::tests::background_controller_waits_then_publishes_without_continue_prompts",
+    "release_executor::tests::denied_host_permission_prevents_every_release_side_effect",
+    "release_executor::tests::focused_proof_identifies_rust_panic_with_numeric_thread_id",
+    "release_executor::tests::focused_test_proof_requires_a_nonzero_executed_pass",
+    "release_executor::tests::isolated_agent_repair_verifies_and_promotes_one_patch_for_two_provider_fixtures",
+    "release_executor::tests::live_progress_uses_durable_milestones_without_losing_case_counts",
+    "release_executor::tests::local_failure_receipt_preserves_late_stdout_cause_and_redacts_secrets",
+    "release_executor::tests::local_failure_retains_the_causal_error_for_bounded_diagnosis",
+    "release_executor::tests::native_firewall_denial_cannot_be_bypassed_by_a_release_admission",
+    "release_executor::tests::native_repair_patch_keeps_version_seed_and_includes_new_regressions",
+    "release_executor::tests::native_version_bump_keeps_all_workspace_dependency_pins_resolvable",
+    "release_executor::tests::native_worker_stops_owner_action_and_uncertain_causes_before_repair_permission",
+    "release_executor::tests::persisted_cancellation_reaches_a_worker_in_another_host",
+    "release_executor::tests::production_orchestrator_reaches_publication_only_through_settled_gates",
+    "release_executor::tests::publication_checksum_content_must_match_both_server_digests",
+    "release_executor::tests::publication_read_recovery_never_retries_cancellation_denials_or_invalid_evidence",
+    "release_executor::tests::publication_read_timeout_continues_same_candidate_without_another_tag",
+    "release_executor::tests::publication_read_watchdog_recovery_is_persisted_and_bounded",
+    "release_executor::tests::publication_requires_all_fourteen_nonempty_uploaded_assets",
+    "release_executor::tests::publication_watch_budget_survives_reload_and_read_recovery",
+    "release_executor::tests::published_closeout_finishes_report_without_replaying_release_mutations",
+    "release_executor::tests::published_release_keeps_worker_until_post_release_closeout",
+    "release_executor::tests::read_only_health_checks_do_not_request_source_repair_permissions",
+    "release_executor::tests::release_read_ports_share_worker_cancellation_before_dispatch",
+    "release_executor::tests::release_worker_cancel_restart_process_acceptance",
+    "release_executor::tests::remote_poll_wait_is_responsive_to_cancellation",
+    "release_executor::tests::repair_cargo_requires_governor_and_rejects_policy_overrides",
+    "release_executor::tests::repair_cargo_uses_managed_cache_and_bounded_environment",
+    "release_executor::tests::repair_command_signal_watcher_settles_on_unwind",
+    "release_executor::tests::repair_continues_unplanned_segments_for_two_provider_fixtures",
+    "release_executor::tests::repair_dispatch_budget_survives_restart_without_a_focused_proof",
+    "release_executor::tests::repair_evidence_deadline_and_native_verification_are_distinct",
+    "release_executor::tests::repair_evidence_watchdog_ignores_streaming_and_repeated_tool_results",
+    "release_executor::tests::repair_factory_executes_real_tools_for_two_provider_fixtures",
+    "release_executor::tests::repair_initial_provider_retry_is_bounded_and_never_replays_tools",
+    "release_executor::tests::repair_iteration_budget_survives_disabled_host_cap",
+    "release_executor::tests::repair_preserves_provider_owned_hosted_tool_selections",
+    "release_executor::tests::repair_registry_stops_repeated_observations_for_each_provider_context",
+    "release_executor::tests::repair_terminal_diagnostics_identify_the_safety_stop",
+    "release_executor::tests::repair_worker_cannot_create_unadmitted_release_tags",
+    "release_executor::tests::resource_governor_defer_keeps_local_epoch_resumable_without_source_failure",
+    "release_executor::tests::trusted_acceptance_output_updates_only_the_active_acceptance_subtask",
+    "release_executor::tests::version_preparation_rollback_routes_to_repair_and_pins_promoted_patch",
+    "release_executor::tests::worker_keeps_matrix_and_classification_states_controller_owned",
+    "release_progress_tests::persisted_hierarchy_uses_typed_gate_and_job_states_without_percentages",
+    "release_recovery::tests::a_long_running_platform_matrix_is_not_active_repair_stagnation",
+    "release_recovery::tests::cancelled_checkpoint_can_be_explicitly_resumed_without_erasing_counters",
+    "release_recovery::tests::canonical_objective_supersedes_historical_active_prerelease_without_clarification",
+    "release_recovery::tests::colored_ci_logs_cannot_hide_credentials_or_causal_errors",
+    "release_recovery::tests::completed_version_does_not_claim_a_different_objective_was_released",
+    "release_recovery::tests::controller_owner_is_exclusive_across_independent_ledger_handles",
+    "release_recovery::tests::dependency_errors_and_unrecognized_platform_logs_classify_truthfully",
+    "release_recovery::tests::different_release_target_with_pushed_candidate_requires_clarification",
+    "release_recovery::tests::directives_are_typed_and_back_off_without_model_step_polling",
+    "release_recovery::tests::github_account_execution_restriction_requires_owner_action",
+    "release_recovery::tests::github_adapter_uses_exact_attempt_and_main_push_provenance",
+    "release_recovery::tests::github_command_echo_is_not_the_runtime_causal_error",
+    "release_recovery::tests::github_failed_job_retry_requires_exact_admission_scope",
+    "release_recovery::tests::green_release_then_red_closeout_keeps_publication_immutable",
+    "release_recovery::tests::last_green_missing_or_skipped_matching_job_preserves_unknown_context",
+    "release_recovery::tests::matching_published_release_resumes_closeout_without_new_epoch_or_tag",
+    "release_recovery::tests::missing_initial_workflow_runs_remain_an_active_matrix_wait",
+    "release_recovery::tests::missing_runner_log_uses_only_owned_failure_annotations",
+    "release_recovery::tests::missing_runs_cannot_reuse_a_stale_running_matrix_to_avoid_timeout",
+    "release_recovery::tests::obsolete_diagnosing_epoch_is_preserved_and_newer_candidate_is_admitted",
+    "release_recovery::tests::old_attempt_cannot_satisfy_a_reserved_infrastructure_retry",
+    "release_recovery::tests::partial_matrix_blocks_retry",
+    "release_recovery::tests::passing_error_module_tests_cannot_hide_the_real_causal_failure",
+    "release_recovery::tests::paused_epoch_reopens_with_exact_identity_and_resumes_through_remote_refresh",
+    "release_recovery::tests::published_docs_red_repair_then_other_platform_red_stops_speculation",
+    "release_recovery::tests::published_release_has_a_distinct_main_epoch_and_archived_history",
+    "release_recovery::tests::python_fixture_classification_preserves_owner_action_and_uncertainty",
+    "release_recovery::tests::quoted_credentials_basic_auth_and_signed_urls_are_redacted",
+    "release_recovery::tests::rejected_repair_event_does_not_partially_mutate_the_record",
+    "release_recovery::tests::remote_operation_cancellation_is_not_local_user_cancellation",
+    "release_recovery::tests::repeated_incomplete_matrix_refreshes_do_not_spend_repair_watchdog_actions",
+    "release_recovery::tests::required_skipped_job_never_opens_tag_admission",
+    "release_recovery::tests::same_recoverable_epoch_resumes_from_natural_language_without_manual_command",
+    "release_recovery::tests::same_tagged_publication_request_resumes_without_replacing_epoch",
+    "release_recovery::tests::settled_dependency_download_precedes_downstream_missing_binary_panic",
+    "release_recovery::tests::settled_package_index_timeout_retains_observed_setup_context",
+    "release_recovery::tests::settled_python_fixture_exceptions_admit_source_diagnosis",
+    "release_recovery::tests::settled_windows_metadata_cannot_hide_version_assertion",
+    "release_recovery::tests::stale_writer_cannot_overwrite_cancelled_checkpoint",
+    "release_recovery::tests::terminal_cancelled_runner_job_uses_owned_failure_annotations",
+    "release_recovery::tests::tui_natural_release_retains_registered_controller_through_local_gate_progress",
+    "release_recovery::tests::unrelated_active_release_asks_one_human_clarification_without_mutation",
+    "release_recovery::tests::verified_repair_batch_records_every_failure_family_before_retry",
+    "release_recovery::tests::verified_repair_is_the_only_path_to_one_full_gate_retry",
+    "role_ceiling_bounds_planned_continuation",
+    "rrc_child_output_is_captured_sanitized_and_confined_in_a_real_pty",
+    "tests::acceptance_event_cannot_be_overridden_by_completed_plan",
+    "tests::native_release_controls_bypass_pending_account_discovery",
+    "tests::release_final_receipt_is_not_suppressed_by_last_active_milestone",
+    "tests::xai_controls_reach_generic_turn_configuration",
+    "ui::tests::registered_release_task_replaces_ready_and_no_active_tasks",
+    "unit_tests_cannot_substitute_for_native_tests",
+    "vro::react::tests::acceptance_parent_controls_reach_react_tools"
+  ],
+  "exact_acceptance_count": 149,
+  "missing": [],
+  "native_five_target": {
+    "source_commit": "4426004d59882ef680c7ce388b4151360d893e4e",
+    "workflow_run": 37759889363,
+    "platforms": {
+      "linux-x86_64": {
+        "sha256": "3b54b98e3f81e5970b43aec5dd1dbe0059f1a394bf89421e5f55504c0e3e701c",
+        "exact_acceptance_count": 149,
+        "prd_required_cases_passed": 108,
+        "missing": [],
+        "welcome_cases": 4,
+        "rrc_process_cases": 4,
+        "native_resource_observation_passed": true,
+        "constrained_windows_job_passed": false
+      },
+      "linux-arm64": {
+        "sha256": "9f1eb20f615a57275b9e66e250767a64e936067532755c50b169187e96ae4112",
+        "exact_acceptance_count": 149,
+        "prd_required_cases_passed": 108,
+        "missing": [],
+        "welcome_cases": 4,
+        "rrc_process_cases": 4,
+        "native_resource_observation_passed": true,
+        "constrained_windows_job_passed": false
+      },
+      "macos-intel": {
+        "sha256": "41d8e9f569771b997bc7b92dffda5074eade9631ff003668bc5db39dd62f9115",
+        "exact_acceptance_count": 140,
+        "prd_required_cases_passed": 108,
+        "missing": [],
+        "welcome_cases": 4,
+        "rrc_process_cases": 4,
+        "native_resource_observation_passed": true,
+        "constrained_windows_job_passed": false
+      },
+      "macos-apple-silicon": {
+        "sha256": "0631a6a3ce6db0a3a1323a215f41bf8d0d2c2ce655e449985d36c5954850cf91",
+        "exact_acceptance_count": 140,
+        "prd_required_cases_passed": 108,
+        "missing": [],
+        "welcome_cases": 4,
+        "rrc_process_cases": 4,
+        "native_resource_observation_passed": true,
+        "constrained_windows_job_passed": false
+      },
+      "windows-x86_64": {
+        "sha256": "87ee2e30b37eb05483f823d752575514fafbc21498dce73a43711a9febb9d775",
+        "exact_acceptance_count": 138,
+        "prd_required_cases_passed": 108,
+        "missing": [],
+        "welcome_cases": 4,
+        "rrc_process_cases": 4,
+        "native_resource_observation_passed": true,
+        "constrained_windows_job_passed": true
+      }
+    }
+  },
+  "original_windows_device": "Not observed on the original Windows 10 laptop in this work unit; Windows 2025 native checks passed.",
+  "source_base_commit": "960fe620d5f5a2f9071b76379bf64b9644fccd77",
+  "binding_mapped_unique_cases": 100,
+  "additional_recovery_cases": [
+    "release_executor::tests::publication_read_recovery_never_retries_cancellation_denials_or_invalid_evidence",
+    "release_executor::tests::publication_read_timeout_continues_same_candidate_without_another_tag",
+    "release_executor::tests::publication_read_watchdog_recovery_is_persisted_and_bounded",
+    "release_executor::tests::publication_watch_budget_survives_reload_and_read_recovery",
+    "release_recovery::tests::same_tagged_publication_request_resumes_without_replacing_epoch",
+    "release_recovery::tests::settled_dependency_download_precedes_downstream_missing_binary_panic",
+    "release_recovery::tests::settled_package_index_timeout_retains_observed_setup_context",
+    "release_recovery::tests::settled_windows_metadata_cannot_hide_version_assertion"
+  ],
+  "observer_correction": "Initial observer asserted 108 mapped cases; there are 100 mapped cases plus 8 additional required recovery cases. All 108 are observed green.",
+  "canonical_observer_correction": "The first observer searched exact acceptance markers only. Thirty-seven mapped PRD cases are observed as workspace unit test results; both current receipt forms are now checked."
+}

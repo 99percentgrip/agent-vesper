@@ -26,6 +26,7 @@ vesper-provider = { path = "../vesper-provider", version = "=0.24.10" }
 vesper-security = { path = "../vesper-security", version = "=0.24.10" }
 
 [dev-dependencies]
+uuid.workspace = true
 tempfile.workspace = true
 tokio = { workspace = true, features = ["io-util", "net", "test-util"] }
 
