@@ -1,10 +1,8 @@
 #!/usr/bin/env python3
-"""Linux/macOS native Settings smoke test; stdlib only, isolated state, no prompts."""
-import fcntl
+"""Native Settings fixture: POSIX PTY or pinned Windows ConPTY, private state."""
 import json
 import os
 from pathlib import Path
-import pty
 import re
 import select
 import signal
@@ -12,17 +10,56 @@ import struct
 import subprocess
 import sys
 import tempfile
-import termios
 import time
+import codecs
+
+if os.name != "nt":
+    import fcntl
+    import pty
+    import termios
+
+
+class WindowsChild:
+    """ConPTY child with the bounded subset of Popen used by these fixtures."""
+    def __init__(self, binary, root, env):
+        from winpty import PtyProcess
+        self.terminal = PtyProcess.spawn([binary], cwd=str(root), env=env,
+                                         dimensions=(40, 120), backend="0")
+        self.pid = self.terminal.pid
+        self.returncode = None
+
+    def poll(self):
+        if not self.terminal.pty.isalive():
+            self.returncode = self.terminal.pty.get_exitstatus()
+        return self.returncode
+
+    def wait(self, timeout):
+        deadline = time.monotonic() + timeout
+        while self.poll() is None and time.monotonic() < deadline:
+            time.sleep(.02)
+        if self.poll() is None:
+            raise subprocess.TimeoutExpired("ConPTY child", timeout)
+        return self.returncode
+
+    def close(self):
+        if self.poll() is None:
+            subprocess.run(["taskkill", "/PID", str(self.pid), "/T", "/F"],
+                           check=True, capture_output=True, timeout=10)
+            self.wait(10)
+        self.terminal.pty.cancel_io()
+        self.terminal.fileobj.close()
+        self.terminal._server.close()
+        self.terminal._thread.join(timeout=5)
+        assert not self.terminal._thread.is_alive(), "ConPTY reader did not settle"
+        self.terminal.closed = True
 
 class Host:
     def __init__(self, binary, root, extra_env=None):
-        self.master, slave = pty.openpty()
-        fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack('HHHH', 40, 120, 0, 0))
         self.screen = [[' '] * 120 for _ in range(40)]
         self.x = self.y = 0
         self.pending = ''
         self.raw = ''
+        self.decoder = codecs.getincrementaldecoder('utf-8')(errors='replace')
         home = root / 'home'
         home.mkdir(exist_ok=True)
         env = dict(PATH=os.environ['PATH'], HOME=str(home), USERPROFILE=str(home),
@@ -34,11 +71,32 @@ class Host:
                    AGENT_VESPER_LMSTUDIO_ROOT=str(root/'lmstudio'),
                    AGENT_VESPER_GLOBAL_MEMORY_ROOT=str(root/'global-memory'),
                    AGENT_VESPER_GLOBAL_COGNITION_ROOT=str(root/'global-cognition'))
+        if os.name == "nt":
+            # OS console/process initialization needs these; no user settings or
+            # credentials are inherited. Scratch directories remain private.
+            for name in ("SystemRoot", "WINDIR", "COMSPEC"):
+                if name in os.environ:
+                    env[name] = os.environ[name]
+            scratch = root / "tmp"
+            scratch.mkdir(exist_ok=True)
+            env.update(TEMP=str(scratch), TMP=str(scratch),
+                       APPDATA=str(root / "config"), LOCALAPPDATA=str(root / "data"))
         if extra_env:
             env.update(extra_env)
-        self.child = subprocess.Popen([binary], cwd=root, env=env, stdin=slave,
-                                      stdout=slave, stderr=slave, start_new_session=True)
-        os.close(slave)
+        if os.name == "nt":
+            self.child = WindowsChild(binary, root, env)
+            self.master = self.child.terminal.fileobj
+        else:
+            self.master, slave = pty.openpty()
+            fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack('HHHH', 40, 120, 0, 0))
+            self.child = subprocess.Popen([binary], cwd=root, env=env, stdin=slave,
+                                          stdout=slave, stderr=slave, start_new_session=True)
+            os.close(slave)
+    def write(self, data):
+        if os.name == "nt":
+            self.child.terminal.write(data.decode('utf-8'))
+        else:
+            os.write(self.master, data)
     def feed(self, text):
         self.pending += text
         while self.pending:
@@ -63,7 +121,7 @@ class Host:
                 elif final == 'J' and params in ('2','3'): self.screen = [[' ']*120 for _ in range(40)]
                 elif final == 'K':
                     for x in range(self.x,120): self.screen[self.y][x]=' '
-                elif final == 'n' and params == '6': os.write(self.master, b'\x1b[1;1R')
+                elif final == 'n' and params == '6': self.write(b'\x1b[1;1R')
                 continue
             c, self.pending = self.pending[0], self.pending[1:]
             if c == '\x1b':
@@ -82,10 +140,10 @@ class Host:
         while time.monotonic()<deadline:
             ready,_,_ = select.select([self.master],[],[],max(0,deadline-time.monotonic()))
             if ready:
-                try: data=os.read(self.master,65536)
+                try: data=self.master.recv(65536) if os.name == "nt" else os.read(self.master,65536)
                 except OSError: break
                 if not data: break
-                text=data.decode('utf-8',errors='replace')
+                text=self.decoder.decode(data)
                 self.raw+=text
                 self.feed(text)
     def wait(self, label, timeout=20):
@@ -96,9 +154,26 @@ class Host:
             if self.child.poll() is not None: break
         raise AssertionError(f'Missing {label!r}; exit={self.child.poll()}\n{self.text()}\nraw tail: {self.raw[-1200:]!r}')
     def key(self, value):
-        os.write(self.master,value.encode())
+        self.write(value.encode())
         self.pump()
+    def choose(self, label):
+        self.wait(label)
+        for _ in range(30):
+            target = next((y for y, row in enumerate(self.screen)
+                           if label in ''.join(row) and ''.join(row).strip().startswith('│')), None)
+            focus = next((y for y, row in enumerate(self.screen)
+                          if '›' in ''.join(row) and '│' in ''.join(row)), None)
+            assert target is not None and focus is not None, self.text()
+            if target == focus:
+                self.key('\r')
+                return
+            self.key('\x1b[B' if target > focus else '\x1b[A')
+        raise AssertionError(f'Could not select {label!r}\n{self.text()}')
     def click(self, label):
+        if os.name == "nt":
+            # ConPTY fixtures drive native key events; POSIX retains mouse proof.
+            self.choose(label)
+            return
         self.wait(label)
         for y,row in enumerate(self.screen):
             line=''.join(row)
@@ -108,10 +183,13 @@ class Host:
                 return
         raise AssertionError(label)
     def close(self):
-        if self.child.poll() is None:
-            os.killpg(self.child.pid,signal.SIGTERM)
-            self.child.wait(timeout=10)
-        os.close(self.master)
+        if os.name == "nt":
+            self.child.close()
+        else:
+            if self.child.poll() is None:
+                os.killpg(self.child.pid,signal.SIGTERM)
+                self.child.wait(timeout=10)
+            os.close(self.master)
 
 
 def run(binary):

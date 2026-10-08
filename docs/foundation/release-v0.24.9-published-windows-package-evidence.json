@@ -1,0 +1,45 @@
+{
+  "version": "0.24.9",
+  "source_commit": "82b5e4183fa74e012ee4c3f36b7a9715d22d02b8",
+  "archive_sha256": "5793fbb6ff05dfafb966b0bfd7bde757cc6cc576c500761964bf536d95bac3fd",
+  "checksum_verified": true,
+  "method": "Read-only extraction and bounded normal/delay PE import inspection; binaries not run or installed.",
+  "imports": {
+    "agent-vesper-acp.exe": [
+      "advapi32.dll",
+      "api-ms-win-core-synch-l1-2-0.dll",
+      "bcrypt.dll",
+      "bcryptprimitives.dll",
+      "crypt32.dll",
+      "kernel32.dll",
+      "ntdll.dll",
+      "ws2_32.dll"
+    ],
+    "agent-vesper-tui.exe": [
+      "advapi32.dll",
+      "api-ms-win-core-synch-l1-2-0.dll",
+      "bcrypt.dll",
+      "bcryptprimitives.dll",
+      "crypt32.dll",
+      "kernel32.dll",
+      "ntdll.dll",
+      "USER32.dll",
+      "ws2_32.dll"
+    ],
+    "vesper-web-fetch.exe": [
+      "api-ms-win-core-synch-l1-2-0.dll",
+      "bcryptprimitives.dll",
+      "crypt32.dll",
+      "kernel32.dll",
+      "ntdll.dll",
+      "ws2_32.dll"
+    ],
+    "sandbox_init.exe": [
+      "api-ms-win-core-synch-l1-2-0.dll",
+      "KERNEL32.dll",
+      "ntdll.dll"
+    ]
+  },
+  "external_vc_crt_imports": [],
+  "laptop_execution": "unexecuted"
+}

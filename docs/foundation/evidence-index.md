@@ -1,10 +1,12 @@
 # Foundation Evidence Index
 
-- [RRC settled-CI causal diagnosis repair](2026-10-08-rrc-ci-causal-diagnosis-repair.md) — complete failed v0.24.9 matrix, three reproduced diagnosis defects, CLI stream correction and bounded HTTPS dependency setup; fresh native/hosted release proof pending.
+- [Native first launch and RRC verification workspace repair](2026-10-08-native-first-launch-and-rrc-workspace-repair.md) — signed-out landing/provider setup, cached old-worktree verification reproduction, runtime source/fixture roots and mandatory five-native-platform process acceptance.
 
-- [Windows missing runtime package repair](2026-10-08-windows-missing-runtime-package-repair.md) — user-reported 0xC0000135; published package depends on unbundled VCRUNTIME140; static CRT and real-package gate added, hosted proof pending.
+- [RRC settled-CI causal diagnosis repair](2026-10-08-rrc-ci-causal-diagnosis-repair.md) — complete failed v0.24.9 matrix, three reproduced diagnosis defects, CLI stream correction and bounded HTTPS dependency setup; integrated v0.24.9 native/hosted proof is recorded in its closeout.
 
-- [RRC publication observation recovery](2026-10-07-rrc-publication-observation-recovery.md) — persisted bounded read recovery, cumulative watch deadline and unchanged tagged-epoch admission; current-source release pending.
+- [Windows missing runtime package repair](2026-10-08-windows-missing-runtime-package-repair.md) — user-reported 0xC0000135; published package depends on unbundled VCRUNTIME140; static CRT and real-package gate passed for v0.24.9; fresh signed-out UI is covered by the newer first-launch repair.
+
+- [RRC publication observation recovery](2026-10-07-rrc-publication-observation-recovery.md) — persisted bounded read recovery, cumulative watch deadline and unchanged tagged-epoch admission; shipped and natively closed out in v0.24.9.
 - [Release v0.24.8 closeout](release-v0.24.8-closeout.md) — eight local gates, all twelve prerequisite jobs, producing workflow/assets and existing Registry PR delivery; live read timeout retained.
 
 - [RRC native cancellation keybinding repair](2026-10-07-rrc-native-cancellation-keybinding-repair.md) — configured Cancel reaches RRC and pending approvals; foreground/voice priority and truthful cleanup preserved.
@@ -2191,3 +2193,7 @@ v0.21.6 release notes own the final run links, image IDs and local-install recei
 - [Release v0.24.7 closeout](release-v0.24.7-closeout.md) — native publication, main-health, registry and completion receipts.
 
 - [RRC released-source reverification](2026-10-06-rrc-autonomy-and-prd-audit.md#requested-reverification-2026-10-07) — all 100 named requirement cases observed passed, fresh 375-test harness and 127-case acceptance receipts, no newly confirmed implementation gap.
+
+- [Release v0.24.9 closeout](release-v0.24.9-closeout.md) — native publication, main-health, registry and completion receipts.
+
+- [Final v0.24.9 PRD evidence reconciliation](release-v0.24.9-closeout.md#requested-prd-evidence-reconciliation) — all 36 binding sections/23 criteria and 108 unique named cases matched to actual passes in exact-source canonical CI; raw log and trace retained; live-model/device boundaries explicit.

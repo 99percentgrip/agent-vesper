@@ -14,7 +14,7 @@ business logic.
 
 - `src/landing.rs` owns the responsive theme-aware character-art welcome screen and
   pure navigation/layout; `src/landing_host.rs` owns its terminal event loop.
-  Fresh interactive sessions show it after required authentication; explicit
+  Fresh interactive sessions show it before authentication and account discovery; explicit
   `--resume` skips it. Start coding enters the conversation; Settings opens the
   centered theme-aware settings menu. Keyboard and mouse use the same menu layout.
   Mascot rows use one fixed-width mirrored canvas; never center each row separately.
@@ -56,8 +56,8 @@ business logic.
   Down from the provider reaches its own action; moving to another provider does
   not retarget the previous action. M on the provider or its action opens the
   same descriptor-driven panel. It does not change the active provider or the
-  Save draft. `/auth` and startup sign-in use
-  that same panel. Authentication commits immediately and is not undone by Discard.
+  Save draft. Explicit `/auth` uses that same panel; startup never intercepts
+  the welcome screen to demand a credential. Authentication commits immediately and is not undone by Discard.
   Mouse hit-testing uses the renderer's geometry. Start coding alone enters chat
   from the welcome screen; `/settings` returns to its existing conversation.
   `src/update_host.rs` installs only after a separate release/version confirmation,
@@ -131,7 +131,7 @@ business logic.
 - `src/plan_mode.rs` — pure 4-phase Plan Mode state machine
   (NORMAL → PLANNING → REVIEW → EXECUTING) mirroring the Python oracle's
   `PLAN_MODE_PROMPT`.
-- `src/auth_hub.rs` — pure provider-driven authentication startup state machine and
+- `src/auth_hub.rs` — pure provider-driven authentication panel state and
   responsive masked Ratatui renderer. It may expose only authentication
   descriptors registered by production provider adapters.
 - `src/lmstudio_hub.rs` — pure LM Studio provider settings state machine +
@@ -456,8 +456,10 @@ business logic.
 - `src/main.rs` — binary entry point; crossterm raw-mode + alternate-screen
   lifecycle and the interactive event loop. Delegates every transition to
   `dispatch::dispatch` so it owns no Plan Mode discipline itself. Owns the
-  startup credential interception route and performs native credential-store
-  calls on Tokio blocking threads before entering the conversation loop. Owns the
+  explicit authentication route and performs native credential-store
+  calls on Tokio blocking threads. Native release admission bypasses pending
+  account discovery through the shared conservative release-intent classifier;
+  ordinary provider prompts and pending pasted content still wait for validation. Owns the
   credential-free `RuntimeSupervisor` and drains `SessionState.pending_reasoning`
   into the runtime `UpdateSessionReasoning` command after each dispatch (ADR 0009).
   Owns the skill-store global read layer wiring: `MemoryStores::open_default`
@@ -735,7 +737,8 @@ business logic.
   so a startup burst is not serialized one event per frame. Completion replaces
   the account model policy; failure updates status and stays interactive.
   Provider prompts are not dispatched until the account check and discovery
-  settle. Authentication screens and model validation are unchanged.
+  settle. Authentication is explicit; missing credentials leave native controls usable.
+  Model entitlement validation remains fail-closed.
 
 - MCP discovery, browser presets and deferred calls retain one conversation
   owner through direct/VRO/ReAct registries built by `build_hosted_registry`.
@@ -992,11 +995,12 @@ business logic.
   excluded from JSONL events.
 - Provider selection first uses the saved preference under `AGENT_VESPER_HOME`
   (default `.agent-vesper`), then `AGENT_VESPER_PROVIDER`, then `zai`.
-- Missing or locally malformed required credentials route to the Agent
-  Vesper Authentication screen before the main loop. Environment credentials retain precedence; new
-  stored credentials use the OS credential manager with the documented
-  owner-only Unix vault fallback. No live provider call is made by startup
-  validation.
+- Missing credentials never intercept the native landing screen. Provider setup
+  is the first Settings category, including when adapter controls exceed one
+  viewport. Authentication is explicit through Settings or `/auth`; cancelling
+  Settings authentication returns to its caller. Environment credentials retain
+  precedence and storage remains adapter-owned. No credential absence grants
+  model entitlement or permits unauthenticated provider dispatch.
 - Auth is provider-routed: the `AuthProvider` is projected from each
   provider's advertised `ProviderFactory::descriptor()` (env var via
   `secret_reference_fields[0]`, `key_url`) through the registry and

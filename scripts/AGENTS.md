@@ -4,8 +4,7 @@
 
 Own the cross-platform installers and uninstallers that download one verified
 release archive, install or remove both `agent-vesper-acp` and
-`agent-vesper-tui` on the user's PATH, and produce the same first-run UX as the
-original Python `native-glm-acp` installer. Also owns the ACP Registry PR
+`agent-vesper-tui` on the user's PATH, and produce provider-neutral native first-run guidance. Also owns the ACP Registry PR
 submission payload used to sync the published `agent-vesper` registry entry
 with each release. The read-only release prerequisite helper also lives here.
 
@@ -76,7 +75,8 @@ with each release. The read-only release prerequisite helper also lives here.
   directs Zed users to register the installed launcher with `type: custom`;
   it must not imply that the agent is already discoverable from the registry.
 - Credentials are not stored by the installer. First-run guidance leads with
-  the TUI's Agent Vesper Authentication screen and also documents `agent-vesper-acp --setup` and
+  the TUI welcome screen and Settings → Providers for adapter-owned sign-in.
+  It also documents optional selected-provider `agent-vesper-acp --setup` and
   the optional `ZAI_API_KEY` environment override.
 - Uninstallers never remove provider credentials. OS-keyring entries and the
   private-vault fallback are outside the installer-owned artifact set.

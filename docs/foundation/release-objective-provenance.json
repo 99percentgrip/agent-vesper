@@ -1,11 +1,13 @@
 {
   "version": 1,
-  "objective_id": "rrc-publication-and-windows-portable-package-20261008",
-  "objective_label": "Integrated RRC publication recovery and Windows runtime-independent package repair",
-  "variant_label": "Integrated native publication, Windows package and settled-CI causal diagnosis repair",
-  "variant_id": "rrc-windows-package-causal-diagnosis-integrated-20261008",
+  "objective_id": "native-first-launch-and-cross-platform-rrc-20261008",
+  "objective_label": "Native signed-out first launch and cross-platform RRC source repair",
+  "variant_label": "Locally verified source candidate; exact native CI and publication pending",
+  "variant_id": "native-first-launch-and-rrc-integrated-20261008",
   "canonical_release_source": true,
   "supersedes": [
+    "rrc-publication-and-windows-portable-package-20261008",
+    "rrc-windows-package-causal-diagnosis-integrated-20261008",
     "rrc-publication-windows-package-integrated-20261008",
     "rrc-publication-observation-recovery-20261007",
     "rrc-publication-recovery-integrated-20261007",
@@ -15,11 +17,9 @@
     "windows-ps51-installer-hosted-20261007",
     "rrc-autonomy-prd-audit-20261006"
   ],
-  "completed_at": "2026-10-07T19:59:50.572422+00:00",
+  "completed_at": "2026-10-08T06:14:15.067249+00:00",
   "evidence_reports": [
-    "docs/foundation/2026-10-08-rrc-ci-causal-diagnosis-repair.md",
-    "docs/foundation/2026-10-08-windows-missing-runtime-package-repair.md",
-    "docs/foundation/2026-10-07-rrc-publication-observation-recovery.md",
-    "docs/foundation/release-v0.24.8-closeout.md"
+    "docs/foundation/2026-10-08-native-first-launch-and-rrc-workspace-repair.md",
+    "docs/foundation/release-v0.24.9-closeout.md"
   ]
 }

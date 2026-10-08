@@ -7,6 +7,17 @@ architecture, MSRV, and source-oracle checks.
 
 ## Local Contracts
 
+- Resolve repository and fixture roots from the invoking directory at runtime,
+  including nested paths and shared-cache worktrees. Print the actual verification
+  workspace. Never fall back to `CARGO_MANIFEST_DIR` embedded in a cached binary;
+  invocations outside a recognized workspace fail before checks. The two real
+  cached-binary regressions and shared-testkit invocation-root regression are
+  mandatory acceptance cases. Native release admission during pending account
+  discovery is mandatory as a shared pure routing case on every target and a real
+  TUI process case on Unix. Native capacity and owned descendants/settlement,
+  inventory validation, Windows constraints and malformed-job accounting cases
+  are also mandatory on every native platform.
+
 - ADR 0028 `acceptance` runs fixed named policy/runtime/native-host cases and rejects
   missing, ignored or zero-match selections. Automatic enrollment with real evidence
   and invalid enrollment without state writes are named gate cases. `verify` includes it.

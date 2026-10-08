@@ -26,25 +26,6 @@ pub struct AuthProvider {
     pub key_url: String,
 }
 
-/// Startup destination derived from credential availability.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum StartupRoute {
-    /// Credentials exist; enter the main harness.
-    Main,
-    /// Required credentials are absent; intercept into the authentication screen.
-    Auth,
-}
-
-/// Pure startup gate used by production and tests.
-#[must_use]
-pub const fn startup_route(required_credential_present: bool) -> StartupRoute {
-    if required_credential_present {
-        StartupRoute::Main
-    } else {
-        StartupRoute::Auth
-    }
-}
-
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum AuthStep {
     Provider,
@@ -422,12 +403,6 @@ mod tests {
             environment_variable: "ZAI_API_KEY".into(),
             key_url: "https://z.ai/manage-apikey/apikey-list".into(),
         }
-    }
-
-    #[test]
-    fn missing_credentials_route_to_auth_and_present_credentials_route_main() {
-        assert_eq!(startup_route(false), StartupRoute::Auth);
-        assert_eq!(startup_route(true), StartupRoute::Main);
     }
 
     #[test]

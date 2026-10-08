@@ -8,6 +8,7 @@ User directive: 2026-09-12 screenshot and workflow audit.
 
 | ID | Requirement | Acceptance evidence |
 | --- | --- | --- |
+| S0 | Every fresh native launch reaches the welcome screen without credentials. Providers is the first Settings category; every registered adapter's authentication is reachable, and Back keeps the host open. Linux, macOS Intel/Apple Silicon and Windows run the same private signed-out process acceptance. | `first_launch_pty.py`, authentication process fixture and five-target native gate. Current hosted results belong in the repair report. |
 | S1 | Acceptance, Swarm and Providers use the active theme and shared native menu geometry. | Theme buffer tests; isolated native Settings PTY. |
 | S2 | Ordinary Settings form one draft. Leaving offers Save changes, Discard changes and Keep editing; submenu navigation never saves. Providers retain their explicit confirmation. | Native PTY exercises all three outcomes; grouped-save failure regression. |
 | S3 | Primary/auxiliary model, reasoning, generation, mixture, permission and session mode survive an explicit save and restart, and reach execution configuration. Provider values are validated against the current adapter. | Saved-choice restore tests, turn-configuration tests, PTY, both-host LM Studio HTTP-body regression. |
@@ -30,12 +31,21 @@ User directive: 2026-09-12 screenshot and workflow audit.
 
 ## Execution
 
+[Native first-launch and RRC workspace repair](foundation/2026-10-08-native-first-launch-and-rrc-workspace-repair.md)
+tracks the user-reported Windows landing/authentication trap and the cached
+verification binary selecting an old release worktree. Earlier seeded-key or
+version/help checks do not certify S0. Current evidence must match the exact source
+and native platform, including signed-out startup.
+
+
 [Windows missing runtime package repair](foundation/2026-10-08-windows-missing-runtime-package-repair.md)
 records the failed user installation after v0.24.8. Its unbundled VC runtime
 imports were not covered by synthetic installer fixtures or a developer-equipped
 host. Static CRT linkage, preflight before replacement and real exact-candidate
-package checks are implemented; fresh hosted checks and the user-device retest
-remain required. Earlier installer receipts certify only their recorded scope.
+package checks are implemented. The [v0.24.9 closeout](foundation/release-v0.24.9-closeout.md#windows-package-acceptance)
+records both real-package PowerShell 5.1/7 installs, published ZIP import/checksum
+audit, complete exact-source matrices and publication as passed. The original
+Windows10 device retest remains required; earlier receipts retain their recorded scope.
 
 [Windows installer compatibility report](foundation/windows-powershell-installer-repair.md)
 tracks the public installation/S5 installer repair; native Windows Server 2025

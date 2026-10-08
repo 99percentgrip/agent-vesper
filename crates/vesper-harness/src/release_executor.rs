@@ -648,10 +648,10 @@ impl NativeReleaseExecutor {
     ) -> Result<Self, RrcError> {
         Ok(Self {
             workspace: workspace.canonicalize()?,
-            cancelled,
+            cancelled: Arc::clone(&cancelled),
             firewall: None,
             activity: Some(activity),
-            resource_governor: Some(resource_governor),
+            resource_governor: Some(resource_governor.with_cancellation(Arc::clone(&cancelled))),
             repair_heartbeat: None,
         })
     }
@@ -900,6 +900,9 @@ impl NativeReleaseExecutor {
                 Ok(admission)
             }
             Err(error) => {
+                if self.cancelled.load(Ordering::Acquire) {
+                    return Err(RrcError::Cancelled);
+                }
                 if let Some(telemetry) = error.telemetry() {
                     self.note_resource_telemetry(telemetry.clone());
                 }
@@ -932,6 +935,9 @@ impl NativeReleaseExecutor {
                 Ok((true, telemetry))
             }
             Err(error) => {
+                if self.cancelled.load(Ordering::Acquire) {
+                    return Err(RrcError::Cancelled);
+                }
                 let telemetry = error.telemetry().cloned().ok_or_else(|| {
                     RrcError::ResourceConstrained(format!(
                         "resource watch could not obtain telemetry: {error}"
@@ -1141,7 +1147,7 @@ impl NativeReleaseExecutor {
 
     /// Attaches the controller-owned governor required by native Cargo gates.
     pub fn with_resource_governor(mut self, governor: HostResourceGovernor) -> Self {
-        self.resource_governor = Some(governor);
+        self.resource_governor = Some(governor.with_cancellation(Arc::clone(&self.cancelled)));
         self
     }
 
@@ -2817,8 +2823,7 @@ fn spawn_release_worker_at_root_with_policy(
         resource_telemetry: record
             .resource_deferred
             .as_ref()
-            .map(|deferred| deferred.telemetry.clone())
-            .or_else(|| resource_governor.snapshot(None).ok()),
+            .map(|deferred| deferred.telemetry.clone()),
     }));
     let (start_tx, start_rx) = std::sync::mpsc::sync_channel::<()>(0);
     let worker_identity = repo_identity.clone();

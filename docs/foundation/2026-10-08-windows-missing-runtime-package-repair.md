@@ -102,3 +102,15 @@ Neither this repair nor old green checks establish universal bug-free RRC parity
 ## Subsequent exact-candidate hosted result
 
 The first v0.24.9 candidate c076ebc7 completed all eight native gates. Hosted Windows shipping compilation and the CRT import audit passed; both offline PowerShell host regressions passed. Actual Desktop 5.1 installation succeeded, then the real-package check incorrectly required stdout although ACP metadata uses stderr. The real PowerShell 7 body was skipped. The complete prerequisite matrix settled nine passed / three failed, including two Linux dependency acquisition failures; no tag was created. The [causal diagnosis follow-up](2026-10-08-rrc-ci-causal-diagnosis-repair.md) preserves the native stop and integrates the check/setup corrections before any release. The laptop retest remains open.
+
+## Final hosted and publication follow-up
+
+The [v0.24.9 closeout](release-v0.24.9-closeout.md#corrective-implementation-and-observed-final-delivery)
+supersedes this report's prerelease hosted/publication-pending boundary for final
+source `82b5e4183fa74e012ee4c3f36b7a9715d22d02b8`: all eight native gates,
+all twelve exact-SHA prerequisite jobs and all seven producing jobs passed.
+Actual Windows package installation passed in PowerShell 5.1 and 7; the published
+ZIP checksum/import audit passed. Native RRC delivered its final summary and
+reached Complete/Idle with Registry/report readback verified. Earlier failed
+candidate evidence remains preserved. Alex's Windows10 laptop retest and
+live-model coding repair effectiveness remain outside this acceptance.

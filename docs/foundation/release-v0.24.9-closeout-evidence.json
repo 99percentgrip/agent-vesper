@@ -1,0 +1,69 @@
+{
+  "version": "0.24.9",
+  "candidate": "82b5e4183fa74e012ee4c3f36b7a9715d22d02b8",
+  "tag_object": "71cfdb64418e8e3b1c1fa6b05fdbf4851cd5c3c8",
+  "status": "complete",
+  "native_owner": "complete/idle before /quit; final TUI summary observed",
+  "local_gates": "8/8",
+  "exact_sha_prerequisite_jobs": "12/12",
+  "producing_jobs": "7/7",
+  "publication_read_retries": 0,
+  "publication_watch_millis": 972986,
+  "receipts": [
+    {
+      "path": "release-v0.24.9-native-local-gates-evidence.json",
+      "sha256": "74288e4317f2290081e643583bed802043ba5c08723e6c555cb50ec58cb8c6b4"
+    },
+    {
+      "path": "release-v0.24.9-exact-main-prerequisites-evidence.json",
+      "sha256": "d1994626737ef7a588a7af2ea3fae5e979d8c69c28cc87993cb2581f4f50d44d"
+    },
+    {
+      "path": "release-v0.24.9-native-complete-evidence.json",
+      "sha256": "2c4e96bbbd30cdc5a7a5e3b59687f635a36c4af3008f0b074b178af7ae3d149e"
+    },
+    {
+      "path": "release-v0.24.9-producing-jobs-evidence.json",
+      "sha256": "51085f7651ba98ca5912f029d370faebd3b0268a58c63ebdc06b1896a100f3dc"
+    },
+    {
+      "path": "release-v0.24.9-published-release-evidence.json",
+      "sha256": "d0d5e4189aa98536e3af9b110cfe63e1b4e0079d24eef8f4c2ab064adee65252"
+    },
+    {
+      "path": "release-v0.24.9-registry-pr-evidence.json",
+      "sha256": "f516cdac7b84df43bf2003300717d5affed088f076f663c59adc5d9816a7b912"
+    },
+    {
+      "path": "release-v0.24.9-registry-readback-evidence.json",
+      "sha256": "1ef31aee210ba12f66b3d558550d101a1ba2aa71eb6d0df95b31376ea23a552f"
+    },
+    {
+      "path": "release-v0.24.9-published-windows-package-evidence.json",
+      "sha256": "0d8d27a1fbe41489c6c46ab7f6625aedcd9c41625f03e67c91548204d57feed8"
+    },
+    {
+      "path": "release-v0.24.9-document-links-evidence.json",
+      "sha256": "b78c8efba5df42dc1cbdbd26d974f67a8ebfe6fa1294e4186b410bda3cf8953c"
+    },
+    {
+      "path": "release-v0.24.9-prd-reverification-evidence.json",
+      "sha256": "520624629bde7ae649da64028fc06fadfac9039c24eab4565da58814439ef3f8"
+    },
+    {
+      "path": "release-v0.24.9-prd-reverification-receipts.tar.gz",
+      "sha256": "f127be63594613c3bf5a6c38db2024e9586aa2607f854704aecb1c28ed80879d"
+    }
+  ],
+  "raw_archive": {
+    "path": "release-v0.24.9-closeout-receipts.tar.gz",
+    "sha256": "1d81f4057a819e1cb1fba913f7574cb22f37f5643fa348bc6778974c2c84337a"
+  },
+  "remaining": [
+    "Alex Windows10 laptop retest",
+    "Live-model coding repair effectiveness is not established by hermetic tests or a green release",
+    "Universal bug-free/100% PRD parity is not certified by this release"
+  ],
+  "documentation_check": "All added relative links and owning PRD links resolve; 11 pre-existing index references to original local-only materials are absent from this isolated clone and recorded without copying or changing those materials.",
+  "current_prd_named_cases": "108/108 observed passes; all36 binding sections/all23 criteria covered; no named-case gap"
+}

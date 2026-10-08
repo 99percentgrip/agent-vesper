@@ -6,6 +6,10 @@ Own evidence and decisions that close the pre-workspace blockers identified by r
 
 ## Ownership
 
+- `2026-10-08-native-first-launch-and-rrc-workspace-repair.md` owns the Windows
+  first-launch/authentication trap, hidden provider category, cached xtask root
+  defect, current source/fixture regressions and five-native-platform UI/RRC gates.
+
 - `2026-10-08-rrc-ci-causal-diagnosis-repair.md` owns the fully settled v0.24.9 evidence stop, causal selection/classification repairs, Windows CLI stream check, HTTPS runner setup and retained failed/native receipts.
 
 - `2026-10-08-windows-missing-runtime-package-repair.md` owns the user-reported

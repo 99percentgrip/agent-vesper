@@ -6,9 +6,20 @@ Verify terminal interaction through the production TUI binary with isolated stat
 
 ## Ownership
 
+- `first_launch_pty.py` verifies signed-out first launch for every registered
+  provider, all four Settings authentication routes, benign Back and clean Quit.
+  Never seed a Z.ai key in this case; malformed private GLM vaults deliberately
+  block native-keyring lookup while OpenAI/xAI use signed-out tombstones.
+- `settings_pty.py` supplies the common rendered-screen observer. POSIX uses
+  stdlib PTYs; Windows uses the exact hashed Python 3.13 pywinpty wheel in
+  `windows-terminal-requirements.txt`, explicitly ConPTY. Reads, exits and
+  cleanup are bounded; no production dependency is added. Native keyboard
+  navigation runs on every OS; POSIX authentication fixtures also retain clicks.
+
 - `release_hosts_pty.py` observes one isolated RRC ledger through real TUI/ACP
-  processes: partial matrix, blocked no-write retry, Published/main degraded,
-  and cross-host cancellation preserving epoch/run/tag/assets. Synthetic persisted
+  processes for all four selected, signed-out adapters: partial matrix, blocked no-write retry, Published/main degraded,
+  and cross-host cancellation preserving epoch/run/tag/assets. ACP pipe reading uses a bounded queue on every OS; Windows identities retain
+  the native canonical path prefix. Synthetic persisted
   evidence and signed-out vaults must never dispatch a provider request.
   Seed the ledger identity and filename from the canonical Git common directory,
   matching both production hosts. Published mutation fixtures include the required
@@ -17,7 +28,9 @@ Verify terminal interaction through the production TUI binary with isolated stat
 - `openai_startup_responsiveness.rs` owns the real-PTY proof that a stalled
   OpenAI `/models` fixture cannot block typed or bracketed-paste input, and
   that both catalog completion and HTTP failure leave the event loop
-  responsive. A burst already queued in the PTY is applied before the next
+  responsive. Native natural-language release admission must reject a private
+  non-Git workspace immediately while the model fixture is still held; it must not
+  wait for account discovery or create release state. A burst already queued in the PTY is applied before the next
   full redraw. It requires `integration-test-harness` and never calls a live
   provider. Children use a cleared environment, isolated HOME/XDG/cognition roots,
   and private signed-out vaults; the selected OpenAI adapter always uses the
@@ -215,7 +228,8 @@ Verify terminal interaction through the production TUI binary with isolated stat
 
 ## Work Guidance
 
-- Keep terminal fixtures bounded and dependency-free; failures print the last screen.
+- Keep terminal fixtures bounded; Windows permits only the pinned CI terminal
+  dependency. Failures print the last screen.
 
 ## Verification
 

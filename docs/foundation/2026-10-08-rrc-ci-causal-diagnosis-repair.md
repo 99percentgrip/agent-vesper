@@ -100,3 +100,15 @@ summary. This report preserves the failed v0.24.9 candidate instead of treating
 old green tests as proof of current completion. Generic unknowable failures still
 stop safely; universal bug-free RRC parity is not certified. Windows laptop
 acceptance cannot be fabricated by a hosted runner.
+
+## Final hosted and publication follow-up
+
+The [v0.24.9 closeout](release-v0.24.9-closeout.md#corrective-implementation-and-observed-final-delivery)
+supersedes this report's prerelease hosted/publication-pending boundary for final
+source `82b5e4183fa74e012ee4c3f36b7a9715d22d02b8`: all eight native gates,
+all twelve exact-SHA prerequisite jobs and all seven producing jobs passed.
+Actual Windows package installation passed in PowerShell 5.1 and 7; the published
+ZIP checksum/import audit passed. Native RRC delivered its final summary and
+reached Complete/Idle with Registry/report readback verified. Earlier failed
+candidate evidence remains preserved. Alex's Windows10 laptop retest and
+live-model coding repair effectiveness remain outside this acceptance.

@@ -193,7 +193,7 @@ try {
     }
     Write-Host ""
     Write-Host "Next:"
-    Write-Host "  agent-vesper-tui                  (launch; Auth Hub opens if needed)"
+    Write-Host "  agent-vesper-tui                  (launch; Settings > Providers for sign-in)"
     Write-Host "  agent-vesper-acp --setup          (optional non-interactive setup)"
     Write-Host "  set ZAI_API_KEY=<your Z.ai key>   (optional environment override)"
     Write-Host ""

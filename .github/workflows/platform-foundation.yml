@@ -134,6 +134,38 @@ jobs:
           cargo xtask sessions verify
           cargo xtask architecture
           cargo xtask acceptance
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.13'
+      - name: Prepare native Windows terminal fixture
+        if: matrix.platform_spike == 'windows'
+        shell: bash
+        timeout-minutes: 3
+        run: |
+          python -m pip install --only-binary=:all: --require-hashes -r apps/agent-vesper-tui/tests/windows-terminal-requirements.txt
+      - name: Verify clean native first launch and provider Settings
+        shell: bash
+        timeout-minutes: 12
+        env:
+          RUSTC_WRAPPER: ${{ steps.sccache_check.outputs.sccache_ready == 'true' && 'sccache' || '' }}
+        run: |
+          cargo build --locked -p agent-vesper-tui -p agent-vesper-acp --features agent-vesper-tui/docker,agent-vesper-tui/swarm,agent-vesper-tui/bridge,agent-vesper-tui/voice-kokoro,agent-vesper-tui/voice-flm,agent-vesper-acp/docker,agent-vesper-acp/swarm,agent-vesper-acp/bridge
+          native_binary=target/debug/agent-vesper-tui
+          acp_binary=target/debug/agent-vesper-acp
+          if [ "${{ matrix.platform_spike }}" = "windows" ]; then
+            native_binary="$native_binary.exe"
+            acp_binary="$acp_binary.exe"
+          fi
+          python apps/agent-vesper-tui/tests/first_launch_pty.py "$native_binary"
+          python apps/agent-vesper-tui/tests/settings_auth_pty.py "$native_binary"
+          python apps/agent-vesper-tui/tests/release_hosts_pty.py "$native_binary" "$acp_binary"
+      - name: Verify production Windows resource governor in a constrained Job Object
+        if: matrix.platform_spike == 'windows'
+        shell: bash
+        timeout-minutes: 6
+        env:
+          RUSTC_WRAPPER: ${{ steps.sccache_check.outputs.sccache_ready == 'true' && 'sccache' || '' }}
+        run: python crates/vesper-harness/tests/windows_resource_job.py
       - name: Run Stage 4.1 process transcript blockers
         shell: bash
         timeout-minutes: 12

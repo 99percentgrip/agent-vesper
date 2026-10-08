@@ -86,7 +86,7 @@ cd path/to/your-project
 agent-vesper-tui
 ```
 
-Both commands should report the installed release version. Complete the authentication screen and use `/settings` → Providers to change providers. Follow any restart prompt. [OpenAI authentication](openai-provider.md) has separate instructions for API keys and subscription sign-in.
+Both commands should report the installed release version. The first launch opens the welcome screen even before sign-in. Open **Settings → Providers** to choose and authenticate a provider; cancelling setup keeps Vesper open. Follow any restart prompt. [OpenAI authentication](openai-provider.md) has separate instructions for API keys and subscription sign-in.
 
 The package includes the terminal app, ACP server, sandbox supervisor, web-fetch helper, browser-driver image, and seed skills. The installer verifies the archive checksum and attempts to import the driver. A missing container engine does not prevent ordinary coding use; set it up later from Settings.
 

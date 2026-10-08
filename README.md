@@ -83,8 +83,9 @@ cd path/to/your-project
 agent-vesper-tui
 ```
 
-Complete the authentication screen. On the welcome screen, open **Settings** to
-choose your provider, model, permissions, and theme, then select **Start coding**.
+On the welcome screen, open **Settings → Providers** to choose and authenticate a
+provider. Sign-in is optional until you send a provider request. Open **Settings** to
+choose your model, permissions, and theme, then select **Start coding**.
 During a conversation, use **`/settings`** to return to these controls.
 
 When you leave Settings after making ordinary changes, choose **Save changes**,

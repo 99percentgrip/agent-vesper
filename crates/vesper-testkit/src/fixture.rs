@@ -395,10 +395,23 @@ fn assert_canary_clean(value: &Value) -> Result<(), FixtureError> {
     Ok(())
 }
 
-/// Returns the repository fixture root.
+/// Returns the invoking workspace's fixture root, including shared-cache builds.
 #[must_use]
 pub fn fixture_root() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fixtures")
+    invocation_fixture_root(&std::env::current_dir().expect("fixture invocation directory")).expect(
+        "fixture caller must be inside a workspace; cached build paths are not authoritative",
+    )
+}
+
+fn invocation_fixture_root(cwd: &Path) -> Option<PathBuf> {
+    let cwd = cwd.canonicalize().ok()?;
+    cwd.ancestors()
+        .find(|root| {
+            root.join("fixtures").is_dir()
+                && fs::read_to_string(root.join("Cargo.toml"))
+                    .is_ok_and(|manifest| manifest.lines().any(|line| line.trim() == "[workspace]"))
+        })
+        .map(|root| root.join("fixtures"))
 }
 
 /// Fixture loading/validation failure.
@@ -473,6 +486,22 @@ mod tests {
     use vesper_domain::{LegacySessionError, LegacySessionV1};
 
     use super::*;
+
+    #[test]
+    fn invocation_fixture_roots_do_not_follow_cached_build_paths() {
+        let temporary = crate::LegacyStoreBuilder::new().build().unwrap();
+        assert!(invocation_fixture_root(temporary.root()).is_none());
+        for name in ["one", "two"] {
+            let root = temporary.root().join(name);
+            fs::create_dir_all(root.join("crates/caller")).unwrap();
+            fs::create_dir(root.join("fixtures")).unwrap();
+            fs::write(root.join("Cargo.toml"), "[workspace]\n").unwrap();
+            assert_eq!(
+                invocation_fixture_root(&root.join("crates/caller")),
+                Some(root.canonicalize().unwrap().join("fixtures"))
+            );
+        }
+    }
 
     #[test]
     fn all_authoritative_scenarios_validate_and_index_matches() {

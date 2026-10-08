@@ -65,9 +65,7 @@ pub mod voice_readiness;
 #[path = "voice_speech_worker.rs"]
 pub mod voice_speech_worker;
 pub mod web_hub;
-pub use auth_hub::{
-    AuthHubAction, AuthHubState, AuthProvider, StartupRoute, render_auth_hub, startup_route,
-};
+pub use auth_hub::{AuthHubAction, AuthHubState, AuthProvider, render_auth_hub};
 pub use auth_settings::{
     AuthUiHooks, LiveSettingsEvents, ProviderSettingsOutcome, SettingsEvents,
     run_authentication_panel, run_provider_settings,

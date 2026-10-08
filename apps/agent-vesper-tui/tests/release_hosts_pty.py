@@ -7,7 +7,8 @@ import hashlib
 import json
 import os
 from pathlib import Path
-import select
+import queue
+import threading
 import socket
 import subprocess
 import sys
@@ -20,6 +21,9 @@ def seed(root, sha, published=False):
     common = Path(subprocess.check_output(
         ['git', 'rev-parse', '--git-common-dir'], cwd=root, text=True).strip())
     identity = str((common if common.is_absolute() else root / common).resolve())
+    if os.name == "nt":
+        # Rust canonicalize retains the extended-length Windows path prefix.
+        identity = "\\\\?\\" + identity
     now = '2026-10-05T00:00:00Z'
     jobs = [dict(workflow_id=10, run_id=20, attempt=1, job_id=100+i,
                  workflow_name='five-target-foundation', job_name=f'fixture-lane-{i}',
@@ -54,24 +58,30 @@ class Acp:
     def __init__(self, binary, root, env):
         self.child = subprocess.Popen([binary], cwd=root, env=env, stdin=subprocess.PIPE,
                                       stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
-        self.pending = b''
+        self.rows = queue.Queue()
+        def read_rows():
+            for row in self.child.stdout:
+                self.rows.put(row)
+            self.rows.put(None)
+        self.reader = threading.Thread(target=read_rows, daemon=True)
+        self.reader.start()
         self.messages = []
 
     def rpc(self, identity, method, params):
         self.child.stdin.write((json.dumps(dict(jsonrpc='2.0', id=identity, method=method, params=params))+'\n').encode())
         self.child.stdin.flush()
         deadline = time.monotonic()+30
-        while time.monotonic()<deadline:
-            while b'\n' in self.pending:
-                row, self.pending = self.pending.split(b'\n',1)
-                value = json.loads(row);self.messages.append(value)
-                if value.get('id') == identity:
-                    assert 'error' not in value, value
-                    return value
-            ready,_,_ = select.select([self.child.stdout],[],[],max(0,deadline-time.monotonic()))
-            if ready:
-                chunk=os.read(self.child.stdout.fileno(),65536)
-                assert chunk, 'ACP ended before response';self.pending+=chunk
+        while time.monotonic() < deadline:
+            try:
+                row = self.rows.get(timeout=max(.001, deadline-time.monotonic()))
+            except queue.Empty:
+                break
+            assert row is not None, 'ACP ended before response'
+            value = json.loads(row)
+            self.messages.append(value)
+            if value.get('id') == identity:
+                assert 'error' not in value, value
+                return value
         raise AssertionError('ACP response deadline exceeded')
 
     def prompt(self, identity, session, text):
@@ -81,10 +91,16 @@ class Acp:
                          for value in self.messages[start:] if value.get('method')=='session/update')
 
     def close(self):
-        self.child.terminate();self.child.wait(timeout=10)
+        if self.child.poll() is None:
+            self.child.terminate()
+        self.child.wait(timeout=10)
+        self.reader.join(timeout=5)
+        assert not self.reader.is_alive(), "ACP stdout reader did not settle"
+        self.child.stdin.close()
+        self.child.stdout.close()
 
 
-def run(tui_binary, acp_binary):
+def run_provider(tui_binary, acp_binary, selected):
     with tempfile.TemporaryDirectory(prefix='vesper-release-hosts-') as temp:
         root=Path(temp).resolve()
         subprocess.run(['git','init','-q','-b','main'],cwd=root,check=True)
@@ -93,18 +109,27 @@ def run(tui_binary, acp_binary):
         subprocess.run(['git','remote','add','origin','https://github.com/fixture/rrc-hosts'],cwd=root,check=True)
         sha=subprocess.check_output(['git','rev-parse','HEAD'],cwd=root,text=True).strip()
         ledger=seed(root,sha)
+        glm=root/'zai-vault.json';glm.write_text('{"credentials":null}');glm.chmod(0o600)
         vault=root/'vault.json';vault.write_text(json.dumps(dict(credentials={name:{'native-auth':json.dumps(dict(mode='signed-out'))} for name in ['openai','xai']})));vault.chmod(0o600)
         listener=socket.socket();listener.bind(('127.0.0.1',0));listener.listen();listener.settimeout(.05)
-        extra=dict(AGENT_VESPER_RELEASE_ROOT=str(ledger.parent),AGENT_VESPER_OPENAI_CREDENTIALS_PATH=str(vault),
+        extra=dict(ZAI_API_KEY='',Z_AI_API_KEY='',AGENT_VESPER_PROVIDER=selected,
+                   AGENT_VESPER_CREDENTIALS_PATH=str(glm),
+                   AGENT_VESPER_RELEASE_ROOT=str(ledger.parent),AGENT_VESPER_OPENAI_CREDENTIALS_PATH=str(vault),
                    AGENT_VESPER_XAI_CREDENTIALS_PATH=str(vault),AGENT_VESPER_FULL_HARNESS='1',AGENT_VESPER_VRO_ENABLED='0',
                    AGENT_VESPER_GLM_BASE_URL=f'http://127.0.0.1:{listener.getsockname()[1]}/v4',
                    AGENT_VESPER_ALLOW_INSECURE_LOOPBACK='1')
         host=Host(tui_binary,root,extra)
         env=dict(PATH=os.environ['PATH'],HOME=str(root/'home'),XDG_CONFIG_HOME=str(root/'config'),
-                 XDG_DATA_HOME=str(root/'data'),XDG_STATE_HOME=str(root/'state'),ZAI_API_KEY='fixture-key',
-                 AGENT_VESPER_PROVIDER='zai',AGENT_VESPER_COGNITION_ROOT=str(root/'acp-cognition'),
+                 XDG_DATA_HOME=str(root/'data'),XDG_STATE_HOME=str(root/'state'),
+                 AGENT_VESPER_LMSTUDIO_ROOT=str(root/'lmstudio'),AGENT_VESPER_COGNITION_ROOT=str(root/'acp-cognition'),
                  AGENT_VESPER_GLOBAL_COGNITION_ROOT=str(root/'global-cognition'),
                  HTTP_PROXY='http://127.0.0.1:9',HTTPS_PROXY='http://127.0.0.1:9',ALL_PROXY='http://127.0.0.1:9',NO_PROXY='127.0.0.1',**extra)
+        if os.name == "nt":
+            for name in ("SystemRoot", "WINDIR", "COMSPEC"):
+                if name in os.environ:
+                    env[name] = os.environ[name]
+            env.update(USERPROFILE=str(root/'home'), APPDATA=str(root/'config'),
+                       LOCALAPPDATA=str(root/'data'), TEMP=str(root/'tmp'), TMP=str(root/'tmp'))
         acp=Acp(acp_binary,root,env)
         try:
             acp.rpc(1,'initialize',dict(protocolVersion=1))
@@ -131,7 +156,12 @@ def run(tui_binary, acp_binary):
             except socket.timeout: pass
         finally:
             acp.close();host.close();listener.close()
-    print('PASS: native TUI and ACP observed identical partial-matrix and Published/main-degraded state; blocked retry wrote nothing; ACP cancellation reached TUI with epoch/run/tag/assets retained; no provider calls.')
+    print(f'PASS: signed-out {selected}: native TUI and ACP observed identical partial-matrix and Published/main-degraded state; blocked retry wrote nothing; ACP cancellation reached TUI with epoch/run/tag/assets retained; no provider calls.')
+
+
+def run(tui_binary, acp_binary):
+    for selected in ('zai', 'openai', 'xai', 'lmstudio'):
+        run_provider(tui_binary, acp_binary, selected)
 
 
 if __name__=='__main__': run(*(str(Path(arg).resolve()) for arg in sys.argv[1:3]))

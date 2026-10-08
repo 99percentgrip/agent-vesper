@@ -134,6 +134,11 @@ When the user requests a durable behavior change, record it here or in the relev
 - Required web-driver images belong in the installation package. Installers
   and native Settings setup/repair must handle their verified import; users
   must not have to locate separate driver release assets.
+- Fresh native launches must show the landing screen without requiring a provider
+  credential. Settings must expose every registered provider before sign-in on
+  Linux, macOS and Windows; cancelling authentication returns to the caller.
+  Exact-candidate native terminal acceptance must include private signed-out state,
+  not only a seeded Z.ai key or noninteractive version/help checks.
 - Provider selection belongs in Settings and uses the same restrained,
   bordered Save/Cancel menu style as Web tools, not a separate legacy picker.
 - `/usage` is a standard provider-neutral status card in both hosts: active

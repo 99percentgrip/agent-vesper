@@ -4,7 +4,9 @@
 
 ## Start with a concrete task
 
-Launch `agent-vesper-tui` from your project directory. After authentication, the
+Launch `agent-vesper-tui` from your project directory. The welcome screen opens
+without requiring a credential. Open **Settings → Providers** to choose and
+authenticate a provider; Back returns to Settings without exiting Vesper. The
 welcome screen shows your selected provider, model, and installed version. Use
 ↑/↓ and Enter, or click a row, to **Start coding**, open **Settings**, or **Check
 for updates**. Settings uses a centered menu; select a category and then a value

@@ -107,6 +107,15 @@ jobs:
       - name: Build exact-candidate Windows release executables
         shell: bash
         run: cargo build --locked --release --package agent-vesper-acp --package agent-vesper-tui --package vesper-web-fetch --package vesper-sandbox --features agent-vesper-acp/docker,agent-vesper-tui/docker,agent-vesper-acp/swarm,agent-vesper-tui/swarm,agent-vesper-acp/bridge,agent-vesper-tui/bridge,agent-vesper-tui/voice-kokoro,agent-vesper-tui/voice-flm --target x86_64-pc-windows-msvc
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.13'
+      - name: Verify real Windows release first launch and provider Settings
+        shell: bash
+        timeout-minutes: 5
+        run: |
+          python -m pip install --only-binary=:all: --require-hashes -r apps/agent-vesper-tui/tests/windows-terminal-requirements.txt
+          python apps/agent-vesper-tui/tests/first_launch_pty.py target/x86_64-pc-windows-msvc/release/agent-vesper-tui.exe
       - name: Reject external VC runtime dependencies
         shell: bash
         run: |

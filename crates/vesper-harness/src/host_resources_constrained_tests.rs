@@ -19,6 +19,8 @@ fn capacity(available: u64, swap_used_percent: u64) -> HostCapacity {
         swap_free_bytes: swap_total.saturating_sub(swap_total * swap_used_percent / 100),
         cgroup_memory_limit_bytes: Some(12 * GIB),
         cgroup_memory_current_bytes: Some(12 * GIB - available),
+        native_memory_limit_bytes: None,
+        native_memory_current_bound_bytes: None,
         logical_cpus: 64,
         linux: LinuxPressureSignals::default(),
     }

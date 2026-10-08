@@ -37,8 +37,17 @@ migration gates and disposable platform assumptions on hosts unavailable locally
   with shipping features, audits normal/delay PE imports to reject external VC/CRT
   runtime dependencies, and installs the real candidate in private state under both
   PowerShell hosts. Publishing repeats the import audit on the staged Windows
-  package. Synthetic packages and developer-equipped runners never substitute
+  package. Its actual release-profile TUI must also pass signed-out ConPTY
+  landing and all-provider setup before publication. Synthetic packages and developer-equipped runners never substitute
   for a real clean Windows release install.
+- The five-target prerequisite builds shipping-feature TUI/ACP and runs actual
+  signed-out landing, all-provider Settings authentication and cross-host RRC
+  ledger controls on every native runner. Windows uses pinned, hash-verified
+  Python 3.13 ConPTY; Linux/macOS use stdlib PTYs. Version/help and seeded-key
+  tests cannot substitute for this interactive first-launch gate. Native governor
+  cases run on all targets; Windows additionally runs a real constrained Job Object
+  fixture against the production policy, proving unavailable/unsafe capacity is
+  withheld without substituting synthetic lifecycle telemetry.
 - Keep the five release-target families explicit in the matrix: linux-x86_64,
   linux-arm64, macos-intel, macos-apple-silicon, windows-x86_64.
 - Validation workflows must not call live providers or require credentials.

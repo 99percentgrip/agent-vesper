@@ -207,6 +207,10 @@ fn launch(
         std::fs::write(&path, vault.to_string())?;
         std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600))?;
     }
+    // Block the unrelated GLM native-keyring fallback even on macOS.
+    let glm_vault = home.join("zai-credentials.json");
+    std::fs::write(&glm_vault, r#"{"credentials":null}"#)?;
+    std::fs::set_permissions(&glm_vault, std::fs::Permissions::from_mode(0o600))?;
     let (master, slave) = open_pty()?;
     let input = master.try_clone()?;
     let stdin = slave.try_clone()?;
@@ -220,6 +224,7 @@ fn launch(
         .current_dir(home)
         .env("TERM", "xterm-256color")
         .env("AGENT_VESPER_PROVIDER", "openai")
+        .env("AGENT_VESPER_CREDENTIALS_PATH", &glm_vault)
         .env("AGENT_VESPER_HOME", home)
         .env("AGENT_VESPER_OPENAI_TEST_URL", endpoint)
         .env(
@@ -461,4 +466,61 @@ fn openai_startup_does_not_wait_for_unselected_xai_discovery() {
         !contacted.load(Ordering::Acquire),
         "unselected xAI discovery was contacted before the TUI could render"
     );
+}
+
+#[test]
+fn native_release_admission_does_not_wait_for_account_model_discovery() {
+    let home = tempfile::tempdir().expect("home");
+    let listener = TcpListener::bind("127.0.0.1:0").expect("bind");
+    let endpoint = format!("http://{}/models", listener.local_addr().expect("addr"));
+    let release = Arc::new((
+        Mutex::new(Release {
+            request_seen: false,
+            released: false,
+            succeed: true,
+        }),
+        Condvar::new(),
+    ));
+    let server_release = Arc::clone(&release);
+    let server = thread::spawn(move || serve(listener, server_release));
+    let TuiProcess {
+        mut child,
+        mut input,
+        output,
+    } = launch(&endpoint, home.path(), None).expect("launch");
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        assert!(
+            wait_for(&output, LOADING, Duration::from_secs(20)),
+            "{}",
+            screen(&output)
+        );
+        input
+            .write_all(b"release patch\r")
+            .expect("native release input");
+        // There is deliberately no Git repository or release authority in this
+        // private fixture. Native admission must refuse that immediately, even
+        // while the unrelated model endpoint remains blocked.
+        assert!(
+            wait_for(&output, b"git-common-dir", Duration::from_secs(4)),
+            "native release was held behind account discovery:\n{}",
+            screen(&output)
+        );
+        assert!(!release.0.lock().expect("release lock").released);
+        assert!(
+            !home
+                .path()
+                .join("state/agent-vesper/release-recovery")
+                .exists()
+        );
+    }));
+    {
+        let (lock, gate) = &*release;
+        lock.lock().expect("release lock").released = true;
+        gate.notify_all();
+    }
+    stop(&mut child, &mut input);
+    server.join().expect("discovery fixture settlement");
+    if let Err(panic) = result {
+        std::panic::resume_unwind(panic);
+    }
 }

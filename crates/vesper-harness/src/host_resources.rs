@@ -12,8 +12,13 @@ use std::fmt;
 use std::fs::{self, File, OpenOptions};
 use std::io;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
+
+#[cfg(any(target_os = "macos", windows, test))]
+#[path = "host_resources_native.rs"]
+mod native_backend;
 
 use fs2::FileExt;
 use serde::{Deserialize, Serialize};
@@ -212,6 +217,9 @@ pub struct HostCapacity {
     pub swap_free_bytes: u64,
     pub cgroup_memory_limit_bytes: Option<u64>,
     pub cgroup_memory_current_bytes: Option<u64>,
+    /// Windows Job Object limit and measured current commitment constraint bound.
+    pub native_memory_limit_bytes: Option<u64>,
+    pub native_memory_current_bound_bytes: Option<u64>,
     pub logical_cpus: u32,
     pub linux: LinuxPressureSignals,
 }
@@ -220,6 +228,9 @@ impl HostCapacity {
     #[must_use]
     pub fn effective_memory_bytes(&self) -> u64 {
         self.cgroup_memory_limit_bytes
+            .into_iter()
+            .chain(self.native_memory_limit_bytes)
+            .min()
             .map_or(self.host_memory_total_bytes, |limit| {
                 self.host_memory_total_bytes.min(limit)
             })
@@ -231,9 +242,17 @@ impl HostCapacity {
             .cgroup_memory_limit_bytes
             .zip(self.cgroup_memory_current_bytes)
             .map(|(limit, current)| limit.saturating_sub(current));
-        cgroup_available.map_or(self.memory_available_bytes, |available| {
-            self.memory_available_bytes.min(available)
-        })
+        let native_available = self
+            .native_memory_limit_bytes
+            .zip(self.native_memory_current_bound_bytes)
+            .map(|(limit, current)| limit.saturating_sub(current));
+        cgroup_available
+            .into_iter()
+            .chain(native_available)
+            .min()
+            .map_or(self.memory_available_bytes, |available| {
+                self.memory_available_bytes.min(available)
+            })
     }
 }
 
@@ -263,6 +282,11 @@ pub struct ResourceTelemetry {
     pub memory_available_bytes: u64,
     pub cgroup_memory_limit_bytes: Option<u64>,
     pub cgroup_memory_current_bytes: Option<u64>,
+    /// Windows Job Object limit and measured current commitment constraint bound.
+    #[serde(default)]
+    pub native_memory_limit_bytes: Option<u64>,
+    #[serde(default)]
+    pub native_memory_current_bound_bytes: Option<u64>,
     pub swap_total_bytes: u64,
     pub swap_free_bytes: u64,
     pub process_tree_rss_bytes: u64,
@@ -314,6 +338,8 @@ impl Default for ResourceTelemetry {
             memory_available_bytes: 0,
             cgroup_memory_limit_bytes: None,
             cgroup_memory_current_bytes: None,
+            native_memory_limit_bytes: None,
+            native_memory_current_bound_bytes: None,
             swap_total_bytes: 0,
             swap_free_bytes: 0,
             process_tree_rss_bytes: 0,
@@ -382,10 +408,24 @@ impl ResourceTelemetry {
             },
         );
         format!(
-            "RESOURCES\nRAM avail   {} / {} GiB\nCgroup      {}\nRRC RSS     {} GiB\nSwap        {} / {} GiB logical ({}%)\nSwap trend  {}\nZram        {}\nMemory PSI  {}\nReserve     {} GiB\nGate need   {} GiB\nDisk free   {} / {} GiB\nTarget      {} GiB\nCargo jobs  {}\nrustc       {}\nPressure    {} — {}\nAction      {}",
+            "RESOURCES\nRAM avail   {} / {} GiB\nCgroup      {}{}\nRRC RSS     {} GiB\nSwap        {} / {} GiB logical ({}%)\nSwap trend  {}\nZram        {}\nMemory PSI  {}\nReserve     {} GiB\nGate need   {} GiB\nDisk free   {} / {} GiB\nTarget      {} GiB\nCargo jobs  {}\nrustc       {}\nPressure    {} — {}\nAction      {}",
             gib(self.memory_available_bytes),
             gib(self.effective_memory_bytes),
             cgroup,
+            if self.platform == "windows" {
+                self.native_memory_limit_bytes.map_or_else(
+                    || "\nWindows job unrestricted".into(),
+                    |limit| {
+                        format!(
+                            "\nWindows job {} / {} GiB current constraint bound",
+                            gib(self.native_memory_current_bound_bytes.unwrap_or(0)),
+                            gib(limit)
+                        )
+                    },
+                )
+            } else {
+                String::new()
+            },
             gib(self.process_tree_rss_bytes),
             gib(self.swap_total_bytes.saturating_sub(self.swap_free_bytes)),
             gib(self.swap_total_bytes),
@@ -418,7 +458,7 @@ impl ResourceTelemetry {
     #[must_use]
     pub fn expensive_gate_condition(&self) -> String {
         format!(
-            "{} GiB available RAM, quiet PSI, stable swap growth, and safe zram backing",
+            "{} GiB available RAM with safe observed memory, process, swap and disk pressure",
             gib(self.normal_admission_available_bytes),
         )
     }
@@ -565,15 +605,18 @@ impl fmt::Display for ResourceGovernorError {
 
 impl std::error::Error for ResourceGovernorError {}
 
-/// Platform-extensible resource governor. Linux is implemented through procfs
-/// plus cgroup v2/v1; other platforms must add a truthful backend rather than
-/// fabricating host capacity.
+/// Native resource governor. Linux uses procfs and ancestor cgroups; macOS
+/// and Windows use safe native observations, including Windows Job Object bounds.
+/// Other platforms fail closed rather than fabricate host capacity.
 #[derive(Debug, Clone)]
 pub struct HostResourceGovernor {
     policy: ResourcePolicy,
     scheduler: ExpensiveGateScheduler,
     target_dir: PathBuf,
     swap_history: Arc<Mutex<Option<SwapHistory>>>,
+    cancelled: Option<Arc<AtomicBool>>,
+    #[cfg(any(target_os = "macos", windows))]
+    native_observer: Arc<Mutex<native_backend::NativeObserver>>,
 }
 
 impl HostResourceGovernor {
@@ -589,7 +632,17 @@ impl HostResourceGovernor {
             scheduler: ExpensiveGateScheduler::new(cache_root)?,
             target_dir,
             swap_history: Arc::new(Mutex::new(None)),
+            cancelled: None,
+            #[cfg(any(target_os = "macos", windows))]
+            native_observer: Arc::new(Mutex::new(native_backend::NativeObserver::new())),
         })
+    }
+
+    /// Bind native resource waits to the controller's existing cancellation owner.
+    #[must_use]
+    pub fn with_cancellation(mut self, cancelled: Arc<AtomicBool>) -> Self {
+        self.cancelled = Some(cancelled);
+        self
     }
 
     #[must_use]
@@ -691,6 +744,16 @@ impl HostResourceGovernor {
 
     /// Samples the live host and, when supplied, the owned root process tree.
     pub fn snapshot(&self, root_pid: Option<u32>) -> io::Result<ResourceTelemetry> {
+        if self
+            .cancelled
+            .as_ref()
+            .is_some_and(|flag| flag.load(Ordering::Acquire))
+        {
+            return Err(io::Error::new(
+                io::ErrorKind::Interrupted,
+                "resource discovery cancelled",
+            ));
+        }
         // The integration-only policy is a deterministic process-test seam,
         // not a weaker production admission mode. Do not let a shared CI
         // runner's procfs/cgroup/disk timing decide whether lifecycle tests
@@ -700,6 +763,13 @@ impl HostResourceGovernor {
         if !self.policy.admission_pressure_enabled {
             return Ok(self.synthetic_test_snapshot());
         }
+        #[cfg(any(target_os = "macos", windows))]
+        let (mut capacity, process) = self
+            .native_observer
+            .lock()
+            .map_err(|_| io::Error::other("native resource observer poisoned"))?
+            .snapshot(root_pid, self.cancelled.as_deref())?;
+        #[cfg(not(any(target_os = "macos", windows)))]
         let mut capacity = discover_host_capacity()?;
         let swap_used = capacity
             .swap_total_bytes
@@ -711,6 +781,7 @@ impl HostResourceGovernor {
             .ok()
             .and_then(|mut history| observe_swap_growth(&mut history, now, swap_used));
         capacity.linux = capacity.linux.with_swap_growth(growth);
+        #[cfg(not(any(target_os = "macos", windows)))]
         let process = root_pid.map_or(Ok(ProcessTreeUsage::default()), process_tree_usage)?;
         let disk = disk_capacity(&self.target_dir)?;
         Ok(self.telemetry_from(capacity, process, disk))
@@ -731,6 +802,8 @@ impl HostResourceGovernor {
                 swap_free_bytes: 0,
                 cgroup_memory_limit_bytes: None,
                 cgroup_memory_current_bytes: None,
+                native_memory_limit_bytes: None,
+                native_memory_current_bound_bytes: None,
                 logical_cpus: 2,
                 linux: LinuxPressureSignals::default(),
             },
@@ -811,6 +884,8 @@ impl HostResourceGovernor {
             memory_available_bytes,
             cgroup_memory_limit_bytes: capacity.cgroup_memory_limit_bytes,
             cgroup_memory_current_bytes: capacity.cgroup_memory_current_bytes,
+            native_memory_limit_bytes: capacity.native_memory_limit_bytes,
+            native_memory_current_bound_bytes: capacity.native_memory_current_bound_bytes,
             swap_total_bytes: capacity.swap_total_bytes,
             swap_free_bytes: capacity.swap_free_bytes,
             process_tree_rss_bytes: process.rss_bytes,
@@ -1017,15 +1092,14 @@ fn discover_host_capacity() -> io::Result<HostCapacity> {
         swap_free_bytes,
         cgroup_memory_limit_bytes,
         cgroup_memory_current_bytes,
+        native_memory_limit_bytes: None,
+        native_memory_current_bound_bytes: None,
         logical_cpus,
         linux,
     })
 }
 
-/// Windows and macOS are explicit extension points. Their implementations must
-/// provide available physical memory plus Job Object/memory-pressure accounting
-/// before RRC admits expensive local work on those platforms.
-#[cfg(not(target_os = "linux"))]
+#[cfg(not(any(target_os = "linux", target_os = "macos", windows)))]
 fn discover_host_capacity() -> io::Result<HostCapacity> {
     Err(io::Error::new(
         io::ErrorKind::Unsupported,
@@ -1263,7 +1337,7 @@ fn process_tree_usage(root_pid: u32) -> io::Result<ProcessTreeUsage> {
     Ok(usage)
 }
 
-#[cfg(not(target_os = "linux"))]
+#[cfg(not(any(target_os = "linux", target_os = "macos", windows)))]
 fn process_tree_usage(_: u32) -> io::Result<ProcessTreeUsage> {
     Ok(ProcessTreeUsage::default())
 }
@@ -1355,6 +1429,8 @@ mod tests {
             swap_free_bytes: swap_total.saturating_sub(swap_total * swap_used_percent / 100),
             cgroup_memory_limit_bytes: None,
             cgroup_memory_current_bytes: None,
+            native_memory_limit_bytes: None,
+            native_memory_current_bound_bytes: None,
             logical_cpus: cpus,
             linux: LinuxPressureSignals::default(),
         }
@@ -1636,6 +1712,39 @@ mod tests {
     }
 
     #[test]
+    fn windows_job_bounds_preserve_physical_capacity_and_refuse_unsafe_admission() {
+        let mut observed = capacity(20 * GIB, 0, 8);
+        observed.host_memory_total_bytes = 32 * GIB;
+        observed.native_memory_limit_bytes = Some(8 * GIB);
+        observed.native_memory_current_bound_bytes = Some(6 * GIB);
+        assert_eq!(observed.host_memory_total_bytes, 32 * GIB);
+        assert_eq!(observed.effective_memory_bytes(), 8 * GIB);
+        assert_eq!(observed.effective_available_bytes(), 2 * GIB);
+        let temporary = tempfile::tempdir().unwrap();
+        let governor = HostResourceGovernor::new(
+            ResourcePolicy::default(),
+            temporary.path(),
+            temporary.path().join("target"),
+        )
+        .unwrap();
+        let telemetry = governor.telemetry_from(
+            observed,
+            ProcessTreeUsage::default(),
+            DiskCapacity {
+                available_bytes: 100 * GIB,
+                total_bytes: 100 * GIB,
+                target_size_bytes: 0,
+            },
+        );
+        assert_eq!(telemetry.pressure, ResourcePressure::Critical);
+        assert!(
+            governor
+                .preflight_telemetry(GateCost::Expensive, telemetry)
+                .is_err()
+        );
+    }
+
+    #[test]
     fn cgroup_limit_reduces_effective_capacity() {
         let temp = tempfile::tempdir().unwrap();
         let governor = HostResourceGovernor::new(
@@ -1652,6 +1761,8 @@ mod tests {
                 swap_free_bytes: 0,
                 cgroup_memory_limit_bytes: Some(8 * GIB),
                 cgroup_memory_current_bytes: Some(3 * GIB),
+                native_memory_limit_bytes: None,
+                native_memory_current_bound_bytes: None,
                 logical_cpus: 64,
                 linux: LinuxPressureSignals::default(),
             },
@@ -1708,6 +1819,8 @@ mod tests {
                 swap_free_bytes: swap_total - incident_swap_used,
                 cgroup_memory_limit_bytes: None,
                 cgroup_memory_current_bytes: None,
+                native_memory_limit_bytes: None,
+                native_memory_current_bound_bytes: None,
                 logical_cpus: 20,
                 linux: LinuxPressureSignals {
                     memory_psi_some_avg10_bps: Some(0),

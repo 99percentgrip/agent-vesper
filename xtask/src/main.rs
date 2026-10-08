@@ -12,7 +12,7 @@ mod swarm_gate;
 
 use clap::{Parser, Subcommand};
 use serde::Deserialize;
-use vesper_testkit::{FixtureCorpus, fixture_root};
+use vesper_testkit::FixtureCorpus;
 
 const SOURCE_COMMIT: &str = "bf4d4287e2e3320aa3f09015f678e6169d520045";
 
@@ -127,7 +127,19 @@ enum SessionsTask {
 }
 
 fn main() -> ExitCode {
-    let result = match Cli::parse().command {
+    let cli = Cli::parse();
+    let root = match env::current_dir()
+        .map_err(|error| error.to_string())
+        .and_then(|cwd| resolve_repository_root(&cwd))
+    {
+        Ok(root) => root,
+        Err(error) => {
+            eprintln!("xtask failed: {error}");
+            return ExitCode::FAILURE;
+        }
+    };
+    println!("verification workspace: {}", root.display());
+    let result = match cli.command {
         Task::Verify => verify(),
         Task::Acceptance => acceptance_verify(),
         Task::AcceptanceMutations => acceptance_mutations(),
@@ -171,10 +183,30 @@ fn main() -> ExitCode {
 }
 
 fn repository_root() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .expect("xtask must be under repository root")
-        .to_path_buf()
+    resolve_repository_root(&env::current_dir().expect("validated invocation directory"))
+        .expect("validated invocation workspace")
+}
+
+fn resolve_repository_root(cwd: &Path) -> Result<PathBuf, String> {
+    let cwd = cwd.canonicalize().map_err(|error| error.to_string())?;
+    for root in cwd.ancestors() {
+        if root.join("xtask/src/main.rs").is_file()
+            && root.join("xtask/Cargo.toml").is_file()
+            && root.join("fixtures").is_dir()
+            && fs::read_to_string(root.join("Cargo.toml"))
+                .is_ok_and(|manifest| manifest.lines().any(|line| line.trim() == "[workspace]"))
+        {
+            return Ok(root.to_path_buf());
+        }
+    }
+    Err(
+        "invocation is not inside an Agent Vesper workspace; refusing cached build-path fallback"
+            .into(),
+    )
+}
+
+fn fixture_root() -> PathBuf {
+    repository_root().join("fixtures")
 }
 
 fn fixtures_validate() -> Result<(), String> {
@@ -1976,6 +2008,61 @@ struct Dependency {
 fn acceptance_verify() -> Result<(), String> {
     let cases: Vec<(&str, &[&str], &str)> = vec![
         (
+            "vesper-harness",
+            &["--lib"],
+            "host_resources::native_backend::tests::native_observation_cancellation_interrupts_a_stalled_job_probe",
+        ),
+        (
+            "vesper-harness",
+            &["--lib"],
+            "host_resources::native_backend::tests::windows_job_observations_reject_missing_malformed_and_inconsistent_values",
+        ),
+        (
+            "vesper-harness",
+            &["--lib"],
+            "host_resources::native_backend::tests::native_capacity_and_owned_process_observation_is_real",
+        ),
+        (
+            "vesper-harness",
+            &["--lib"],
+            "host_resources::native_backend::tests::native_owned_descendants_are_observed_and_reaped",
+        ),
+        (
+            "vesper-harness",
+            &["--lib"],
+            "host_resources::native_backend::tests::native_tree_counts_descendants_excludes_siblings_and_refuses_cycles",
+        ),
+        (
+            "vesper-harness",
+            &["--lib"],
+            "host_resources::tests::windows_job_bounds_preserve_physical_capacity_and_refuse_unsafe_admission",
+        ),
+        (
+            "agent-vesper-tui",
+            &["--bin", "agent-vesper-tui"],
+            "tests::native_release_controls_bypass_pending_account_discovery",
+        ),
+        (
+            "vesper-testkit",
+            &["--lib"],
+            "fixture::tests::invocation_fixture_roots_do_not_follow_cached_build_paths",
+        ),
+        (
+            "xtask",
+            &["--test", "cached_workspace"],
+            "cached_binary_uses_each_invoking_workspace_and_fixture_corpus",
+        ),
+        (
+            "xtask",
+            &["--test", "cached_workspace"],
+            "cached_binary_outside_workspace_refuses_build_directory_fallback",
+        ),
+        (
+            "agent-vesper-tui",
+            &["--bin", "agent-vesper-tui"],
+            "tests::xai_controls_reach_generic_turn_configuration",
+        ),
+        (
             "vesper-agent",
             &["--test", "acceptance_policy"],
             "every_required_host_needs_its_own_evidence",
@@ -2663,6 +2750,12 @@ fn acceptance_verify() -> Result<(), String> {
         "agent-vesper-tui",
         &["--test", "rrc_terminal_pty"],
         "rrc_child_output_is_captured_sanitized_and_confined_in_a_real_pty",
+    ));
+    #[cfg(unix)]
+    cases.push((
+        "agent-vesper-tui",
+        &["--test", "openai_startup_responsiveness"],
+        "native_release_admission_does_not_wait_for_account_model_discovery",
     ));
     let started = std::time::Instant::now();
     for (index, (package, target, name)) in cases.iter().enumerate() {

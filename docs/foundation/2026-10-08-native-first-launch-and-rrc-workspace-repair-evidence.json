@@ -1,0 +1,134 @@
+{
+  "version": 1,
+  "objective": "native-first-launch-and-cross-platform-rrc-20261008",
+  "observed_at": "2026-10-08T06:14:15.067249+00:00",
+  "base_commit": "82b5e4183fa74e012ee4c3f36b7a9715d22d02b8",
+  "source": {
+    "apps/agent-vesper-tui/src/main.rs": "bdb3457463052c9827f1c8d778e406ef064ae74ae3092dfcc9ccc15de2cf7462",
+    "apps/agent-vesper-tui/src/auth_hub.rs": "3ba5acc7b7e72cb1e13edf44f3c8ad4e3a16f27d12454d01039d05fc42086350",
+    "apps/agent-vesper-tui/src/lib.rs": "a57c5d4e1e13ada74e99d7568a117dc61b8b41f7250f3c3fb27f20f55b1fbf5f",
+    "xtask/src/main.rs": "0f750ec85190c16ae164881d96c57495729e5d3df656b22920e95f05a6ac35a4",
+    "xtask/tests/cached_workspace.rs": "0bf786c498cbe54205467121b821f1225900172938f3e993d090d958a1c68494",
+    "crates/vesper-testkit/src/fixture.rs": "b54188267730434ed93375b99975b47dfe72d1b3d7b6feae4ce124156b3e81d2",
+    "crates/vesper-harness/src/host_resources.rs": "3310cbfacdd36a4297df5ea21b89a05a3ad42f921b36e397180e48866f5bac9d",
+    "crates/vesper-harness/src/host_resources_native.rs": "642a890e33225d37e6365ec3f41c02f11464b46655d2f5c919adf245a43cd1a2",
+    "crates/vesper-harness/src/host_resources_windows_job.ps1": "c78873285f317e34a171f6d43b99dacbe863ff57a089bcea2fc7d09274f7612e",
+    "crates/vesper-harness/src/release_executor.rs": "babcda00b8f3d5298bdfba981d01d4a7e476000aa9c331d580d0d0bb0a978303",
+    "crates/vesper-harness/tests/windows_resource_job.py": "02a0e936cd3f713747cec77a4b6c7d4902fb311a96a6902461218048cd271e75",
+    ".github/workflows/platform-foundation.yml": "dc9595784ad8648e1715e5ee141f6a09dc16743b20efcd648ab772d4188c6187",
+    ".github/workflows/ci.yml": "e5f2f00d92a3a59b7277ba4f6736c1847f03a480c1ebbb85693e211819a908bb",
+    "Cargo.lock": "d5beebc4407bc00c21ee0bef2473adfc4b5efb87b485781676648ae30ef8f576"
+  },
+  "receipts": [
+    {
+      "file": "vesper-first-launch-red.log",
+      "sha256": "54a7b7c3cd1a7663da26ca4f44cd0a17d452cadf5ee94f908412ec0647919627",
+      "bytes": 7087
+    },
+    {
+      "file": "vesper-first-launch-verify.log",
+      "sha256": "7006f71d1e80c0ea88f0b0d7e2d68ff1eb69e4e0646b4287d0f388ca94210482",
+      "bytes": 201752
+    },
+    {
+      "file": "vesper-first-launch-current-verify.log",
+      "sha256": "da1b4762a1d39fec96ec2c66736d2d4bb15934877da656849c65e0aec50ef4b6",
+      "bytes": 344155
+    },
+    {
+      "file": "vesper-first-launch-keyboard-green.log",
+      "sha256": "35a369bdae90394ddf3bf3ecfb079bf727be795dd23b4ca4f64ffd0d9a4d0321",
+      "bytes": 7237
+    },
+    {
+      "file": "vesper-native-release-discovery-red.log",
+      "sha256": "16bbf09fae65ed4619ab05d3288efe35edc6df39d1d0c842c253c5eeb88a142b",
+      "bytes": 11689
+    },
+    {
+      "file": "vesper-native-release-discovery-green.log",
+      "sha256": "44083cbe25a39f12f0936aae2f2a00f02dc86bff54386dc21d534141270c850e",
+      "bytes": 12209
+    },
+    {
+      "file": "vesper-native-resource-green.log",
+      "sha256": "41ce674e61ef5188421974f8de62c5515e1dc39aca4cc8a4825540606d21a869",
+      "bytes": 3853
+    },
+    {
+      "file": "vesper-first-launch-native-governor-final-verify.log",
+      "sha256": "5a1dc88e1dea9e9e5c872f9df3b50827a061208520489da88412cbcf9cb836b4",
+      "bytes": 380820
+    },
+    {
+      "file": "vesper-native-release-discovery-final-green.log",
+      "sha256": "321ed96e72184b80680ad32762182639f2d2f15f65413bced84adbda3840f219",
+      "bytes": 878
+    },
+    {
+      "file": "vesper-native-release-routing-green.log",
+      "sha256": "f5f5c885f1101dbea36fb59d4da004fdac8a92496c1f2382251b5aa8550114a0",
+      "bytes": 544
+    },
+    {
+      "file": "vesper-native-resource-cancellation-green.log",
+      "sha256": "6480e13a2df2cb7b81ce82a72eed986923f056a2e3bea021b25aa531e42b726a",
+      "bytes": 3454
+    },
+    {
+      "file": "vesper-native-resource-windows-final-typecheck.log",
+      "sha256": "724e62702a2eeac277741b5ba6cfc27246d48e24d49adc919f4ffdbf81a7f7ca",
+      "bytes": 347
+    },
+    {
+      "file": "vesper-native-resource-macos-arm-typecheck.log",
+      "sha256": "625978b2d1cfbd6789f6163192a904633d5565c332618711d2757f2f6ddaa9fa",
+      "bytes": 766
+    },
+    {
+      "file": "vesper-native-resource-macos-intel-typecheck.log",
+      "sha256": "ca17bf5d001a6845e72c3db8d52a9c757950fe2ddef6d0c014e79b9c000b1d18",
+      "bytes": 766
+    },
+    {
+      "file": "vesper-first-launch-final-supply-chain.log",
+      "sha256": "1f47d279fb87fef1ab45ccd87f1f5e7970aa492b6e451fcff02fa3eb067178b4",
+      "bytes": 179901
+    },
+    {
+      "file": "vesper-first-launch-final-release-policy.log",
+      "sha256": "1a902fd4c537c33c9c15041b84a9ad5661cfe31a3f4d21f81c9f7ae7a631eec6",
+      "bytes": 109
+    },
+    {
+      "file": "vesper-first-launch-native-governor-shipping-build.log",
+      "sha256": "f41ec3a5e31651f760a6f161885f52397a0b6846616ac431ccac1e5d0ac786d4",
+      "bytes": 3040
+    },
+    {
+      "file": "vesper-final-shipping-landing.log",
+      "sha256": "7eb2a6fd676fb7db388cc133b9ec23bc88a3c7973e794ff14d010627097ffef3",
+      "bytes": 284
+    },
+    {
+      "file": "vesper-final-shipping-auth.log",
+      "sha256": "87cabd995af7c6400985199b11eb09b9747b5689f6094c4592a77a08dd67fefb",
+      "bytes": 337
+    },
+    {
+      "file": "vesper-final-shipping-rrc.log",
+      "sha256": "53879753111c218b486526777051a0f5f903f50296b2a154d512b02b870f116d",
+      "bytes": 900
+    }
+  ],
+  "archive_sha256": "32e41bbe0002d126cf73b1d923ca5624ecccb20dd4d305a6f2f4f0625ddcddd3",
+  "binary_sha256": {
+    "/tmp/vesper-final-tui-20261008": "1cd94261ec1546e06a4f0d1aa71b6fd2bda1caa4ba644881a03d5135794ee3b3",
+    "/tmp/vesper-final-acp-20261008": "cfbf17a6bca202a87bbdae3b35ada25f1bc6f41813f6c42e90e4cbd5f5b1f5fa"
+  },
+  "current_local_acceptance": 147,
+  "native_hosted_acceptance": "pending",
+  "publication": "pending",
+  "original_windows_10_device": "not observed",
+  "live_provider_account": "not exercised"
+}

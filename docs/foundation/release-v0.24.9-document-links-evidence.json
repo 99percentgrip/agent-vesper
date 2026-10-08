@@ -1,0 +1,16 @@
+{
+  "scope": "Existing evidence-index references absent from isolated committed source; all predate current changes. Original local materials remain untouched.",
+  "missing_links": [
+    "2026-10-02-agent-process-status-check.md",
+    "2026-09-29-active-agent-supervision-0845z.md",
+    "vro19-hold-decision.md",
+    "../vro19/",
+    "vro19-adoption-g0-architecture-execution.md",
+    "../vro19/VRO-19_Google_Gemini_Antigravity_Integration_PRD_v3.md",
+    "../vro19/G0_SCOPE_DECISION.md",
+    "../vro19/proposed-delegated-agent-architecture.md",
+    "vro19-prd-v3-package-review.md",
+    "vro19-prd-v2-review.md",
+    "vro19-prd-review.md"
+  ]
+}

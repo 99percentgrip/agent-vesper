@@ -194,7 +194,7 @@ esac
 # the OS credential manager when available, with the documented private-vault
 # fallback.
 printf '\nNext:\n'
-printf '  agent-vesper-tui                      # launch; authentication screen opens if needed\n'
+printf '  agent-vesper-tui                      # launch; Settings > Providers for sign-in\n'
 printf '  agent-vesper-acp --setup              # optional non-interactive setup\n'
 printf '  export ZAI_API_KEY="<your Z.ai key>"   # optional environment override\n'
 printf '\nThen register the installed binary as a custom ACP agent in Zed (see README "Install in Zed").\n'

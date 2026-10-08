@@ -1094,6 +1094,20 @@ reset, stashed or mutated by this process.
 
 ## 37. Current Implementation Status
 
+[Native first-launch and RRC workspace repair](foundation/2026-10-08-native-first-launch-and-rrc-workspace-repair.md)
+records a newly reproduced verification-scope defect: a shared cached `xtask`
+validated its embedded old release worktree instead of the invoking candidate.
+Both source and fixture roots now resolve from the invocation, with no build-path
+fallback, and two real-process cases are mandatory acceptance. The five-target
+native gate also exercises signed-out provider setup and TUI/ACP release controls
+with every registered adapter selected. Natural-language native release admission
+now bypasses pending account discovery through the shared classifier. Production
+macOS/Windows governor backends replace the prior unavailable extension points;
+current native platform, constrained-job and cancellable-observer evidence remains
+required before completion.
+Earlier test counts alone do not establish this newly uncovered scope.
+
+
 [Windows missing runtime package repair](foundation/2026-10-08-windows-missing-runtime-package-repair.md)
 records the subsequent failed user-device install and unbundled runtime imports.
 The corrective v0.24.9 epoch was cancelled before push/tag to incorporate that
@@ -1203,4 +1217,13 @@ The [2026-10-07 reverification](foundation/2026-10-06-rrc-autonomy-and-prd-audit
 
 ### 2026-10-08 settled CI diagnosis follow-up
 
-[Settled-CI causal diagnosis repair](foundation/2026-10-08-rrc-ci-causal-diagnosis-repair.md) records the complete v0.24.9 red matrix and the native evidence stop. Shared diagnosis now retains runtime CLI assertions, first APT fetch failures and bounded same-step dependency timeout context; unproven causes remain uncertain. Windows CLI acceptance and CI acquisition inputs are repaired in the same candidate. Fresh hosted/publication evidence and laptop acceptance remain separately required.
+[Settled-CI causal diagnosis repair](foundation/2026-10-08-rrc-ci-causal-diagnosis-repair.md) records the complete v0.24.9 red matrix and the native evidence stop. Shared diagnosis now retains runtime CLI assertions, first APT fetch failures and bounded same-step dependency timeout context; unproven causes remain uncertain. Windows CLI acceptance and CI acquisition inputs are repaired in the same candidate. The [v0.24.9 closeout](foundation/release-v0.24.9-closeout.md#corrective-implementation-and-observed-final-delivery) records eight fresh native gates, twelve exact-SHA prerequisite jobs, seven producing jobs, actual Windows installs, published-package audit and Complete/Idle final delivery as passed. Laptop acceptance and live-model coding repair effectiveness remain separately unexecuted.
+
+[Release v0.24.9 closeout evidence](foundation/release-v0.24.9-closeout.md) records this release; full PRD parity remains separately evidenced.
+
+The [final v0.24.9 requirement reconciliation](foundation/release-v0.24.9-closeout.md#requested-prd-evidence-reconciliation)
+matched all 100 baseline named cases for all 36 binding sections/23 criteria,
+plus eight publication/causal regressions, to observed passes in completed
+exact-source canonical CI (108/108). No mapped acceptance case is uncovered.
+This is current bounded-contract evidence, not universal absence of defects or
+live-model/device acceptance beyond the recorded scope.

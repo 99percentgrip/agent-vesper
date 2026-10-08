@@ -305,8 +305,20 @@ Z.ai and Playwright MCP server descriptors.
   watches passively with bounded backoff, does not respawn the gate while pressure is
   unchanged, and returns automatically to `LocalVerification` only after three safe
   `Normal` observations. Defer and recovery each emit one milestone; polling emits
-  none. Non-Linux production resource discovery is explicit unavailable: expensive
-  local gates fail safely until a truthful platform backend exists. The explicit
+  none. `host_resources_native.rs` supplies safe native macOS/Windows physical
+  memory, swap/commit headroom and descendant RSS/counts through pinned MSRV-1.88
+  `sysinfo` with only its system feature. Linux retains ancestor-cgroup/PSI/zram
+  discovery. Windows also owns one fixed read-only PowerShell Job Object observer
+  (`host_resources_windows_job.ps1`), with isolated compiler scratch, bounded
+  startup/response/output and owned-tree cleanup. Waits use the existing controller
+  cancellation token. Admission registers the worker before any native sample;
+  no synchronous resource query blocks the launch UI. It measures current job private
+  commitment and per-process maxima from a stable PID inventory; historical peaks
+  must not keep recovered capacity deferred. Unknown, malformed or inaccessible
+  observations refuse. Job/per-process constraints are combined conservatively;
+  native constraints remain distinct from cgroup fields. Unsupported platforms
+  still fail closed. The production reserve, disk, concurrency and retry policies
+  are shared unchanged. The explicit
   test-support permissive policy always uses a bounded deterministic synthetic snapshot
   so shared-runner pressure cannot control lifecycle acceptance; dedicated tests retain
   live Linux discovery and constrained-observation coverage, and the production policy
@@ -689,6 +701,12 @@ Z.ai and Playwright MCP server descriptors.
   constrained-host and resumable-deferral tests retain production resource-policy
   coverage.
 - Run `cargo test -p vesper-harness`.
+- Native capacity, owned descendants/settlement, process-inventory validation and
+  Windows constraint/parser cases are fixed acceptance on all five targets.
+  `tests/windows_resource_job.py` additionally creates a private real 2 GiB
+  Windows Job Object and executes the production governor fixture; native
+  five-target CI must observe the constraint and refuse unsafe Cargo admission.
+  This is fixture authority only, with no provider or release mutation.
 - Run `cargo test -p vesper-harness --test vro13_e2e` (VRO-13 PR-8
   cross-feature fixture: watcher fire → bounded turn → composed
   firewall → opt-in sandbox route → scope-keyed slot ledger; run with

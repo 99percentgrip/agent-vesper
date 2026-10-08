@@ -9,7 +9,10 @@ fakes, and synthetic read-store/disk-invariance helpers.
 
 - This crate is non-production and may depend on foundational crates.
 - Production crates must never depend on this crate.
-- Fixture data is loaded from `fixtures/`; do not duplicate captured payloads.
+- Fixture data is loaded from the invoking workspace's `fixtures/`; cached
+  `CARGO_MANIFEST_DIR` paths cannot select another worktree. Nested invocations
+  resolve the nearest workspace, and absent workspace roots fail explicitly.
+  Do not duplicate captured payloads. The invocation-root case is mandatory acceptance.
 - Temporary stores may write only beneath unique test-owned temporary roots and
   must never discover or mutate real user state.
 - Hash/no-write manifests record the complete synthetic tree without following

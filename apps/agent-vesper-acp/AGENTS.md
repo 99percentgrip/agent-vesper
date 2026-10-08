@@ -98,9 +98,10 @@ transport, stderr-only tracing, and orderly shutdown.
   constrained-host coverage. Its short receipt deadline requires every controlled Cargo
   command to record promptly before release. Its metadata JSON uses a literal
   `%s` argument rather than implementation-dependent printf format escapes; the
-  named metadata regression requires valid JSON. Non-Linux production governor discovery
-  remains deliberately unavailable and is covered by the separate five-target lifecycle
-  gates.
+  named metadata regression requires valid JSON. Production macOS/Windows governor
+  discovery is shared with TUI through the native harness observer, including
+  Windows Job Object constraints. Native platform observation/descendant tests and
+  the real constrained-Windows-job fixture supplement synthetic lifecycle evidence.
 
 - `/skills settings status|save mode standard|enhanced|save enable|disable <skill>`
   uses the shared domain parser and harness preferences. Reads create no workspace
@@ -156,10 +157,10 @@ transport, stderr-only tracing, and orderly shutdown.
   enablement is independent and is not required for conversation persistence.
 - Provider selection is a composition-boundary concern resolved before the
   runtime is constructed. Production registers Z.ai GLM, LM Studio, and
-  native OpenAI in every boot so the ACP `provider` footer picker (TUI
+  native OpenAI and xAI in every boot so the ACP `provider` footer picker (TUI
   `/provider` parity) can switch between them mid-session. The initial
   acting provider comes from the `--provider` flag or
-  `AGENT_VESPER_PROVIDER` (accepted tokens: `glm`/`zai`, `lmstudio`, `openai`). The
+  `AGENT_VESPER_PROVIDER` (accepted tokens: `glm`/`zai`, `lmstudio`, `openai`, `xai`). The
   deterministic synthetic adapter is reachable only through the
   `integration-test-harness` feature and must never be advertised as a real
   provider or model. The runtime stays provider-neutral; provider-specific

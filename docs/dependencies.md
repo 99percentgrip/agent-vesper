@@ -4,6 +4,14 @@ The table below is the historical Stage 5 register, not a current restriction
 on production crates. Current versions and owners are authoritative in Cargo
 manifests, `Cargo.lock`, and the crate DOX index.
 
+Native RRC resource observation uses `sysinfo = 0.37.2` (MIT, Rust 1.88),
+with default features disabled and only `system`. It provides safe native physical
+memory, swap/commit accounting and process-tree metrics on macOS/Windows. Linux
+retains its procfs/ancestor-cgroup observer. Windows Job Object constraints use
+fixed read-only OS queries through its system PowerShell, without another Rust
+unsafe boundary or optional runtime installation. Transitive platform packages
+remain lockfile- and supply-chain-gated.
+
 Native OpenAI adds pinned `fs2 = 0.4.3` (MIT OR Apache-2.0) for cross-platform
 RAII credential-operation locks. This serializes refresh and logout across
 hosts without unsafe code in Vesper. The adapter otherwise reuses the

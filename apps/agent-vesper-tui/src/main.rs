@@ -42,10 +42,9 @@ use agent_vesper_tui::{
     AuthProvider, CommandIntent, CommandRegistry, DEFAULT_INTERVIEW_QUESTION_LIMIT,
     DispatchOutcome, InterviewQuestionLimit, LmStudioHub, LmStudioSettings, LmStudioSettingsAction,
     MAX_INTERVIEW_QUESTIONS, MediaOp, PermissionChoice, PermissionModal, PlanPhase,
-    ProviderSuperpowerSurface, SessionState, StartupRoute, TerminalAction, ViewModel,
-    apply_model_plan, apply_task_plan, dispatch, footer_action_at, load_lmstudio_settings,
-    query_startup_view, render_lmstudio_hub, render_to_frame, save_lmstudio_settings,
-    startup_route, ui_layout_metrics,
+    ProviderSuperpowerSurface, SessionState, TerminalAction, ViewModel, apply_model_plan,
+    apply_task_plan, dispatch, footer_action_at, load_lmstudio_settings, query_startup_view,
+    render_lmstudio_hub, render_to_frame, save_lmstudio_settings, ui_layout_metrics,
 };
 use crossterm::{
     event::{
@@ -1563,8 +1562,9 @@ async fn drive_loop(
         .map_err(|error| format!("terminal init failed: {error}"))?;
     // OpenAI credential lookup and model discovery are network/credential-store
     // work. They must not run before the event loop, or keyboard and paste
-    // input stays unread for the whole request. Other providers keep the
-    // existing startup screen because this repair is scoped to OpenAI.
+    // input stays unread for the whole request. Authentication is an explicit
+    // Settings or /auth action: credential absence must never hide the landing
+    // screen or trap a fresh installation in the default provider.
     let mut openai_auth_task: Option<tokio::task::JoinHandle<bool>> = None;
     let mut openai_discovery_task: Option<
         tokio::task::JoinHandle<
@@ -1582,15 +1582,6 @@ async fn drive_loop(
                 registry.credential_present(&id).await.unwrap_or(false)
             }));
         }
-    } else if let Some(provider) = auth.clone() {
-        ensure_provider_authenticated(
-            &mut terminal,
-            registry,
-            provider,
-            AuthenticationIntent::Startup,
-            &session.state.preferences.theme,
-        )
-        .await?;
     }
 
     // Refresh only at an interaction boundary; never perform network I/O in rendering.
@@ -1608,6 +1599,27 @@ async fn drive_loop(
     // budget on slow macOS runners (typed text plus paste needs three frames).
     let mut pending_terminal_events = VecDeque::new();
     loop {
+        if landing_pending {
+            landing_pending = false;
+            match landing_host::open(
+                &mut terminal,
+                provider_id.as_str(),
+                &active_model_label(&session.state, surface),
+                &session.state.preferences.theme,
+            )
+            .await?
+            {
+                agent_vesper_tui::landing::LandingAction::Quit => return Ok(()),
+                agent_vesper_tui::landing::LandingAction::Settings => {
+                    settings_from_landing = true;
+                    session.settings_menu_open = true;
+                    session.input.clear();
+                }
+                _ => {
+                    settings_from_landing = false;
+                }
+            }
+        }
         if session.settings_menu_open
             && session.voice.snapshot().phase != agent_vesper_tui::ui::VoicePhase::Idle
         {
@@ -1618,28 +1630,13 @@ async fn drive_loop(
         if let Some(task) = openai_auth_task.as_ref()
             && task.is_finished()
         {
-            let present = openai_auth_task
+            // Lookup remains asynchronous, but a missing credential does not
+            // enter a modal or terminate an otherwise usable native session.
+            let _present = openai_auth_task
                 .take()
                 .expect("finished OpenAI auth task")
                 .await
                 .unwrap_or(false);
-            if let Some(provider) = auth.clone()
-                && AuthenticationIntent::Startup.requires_screen(present)
-            {
-                let mut events = agent_vesper_tui::LiveSettingsEvents::default();
-                let mut hooks = agent_vesper_tui::AuthUiHooks::default();
-                agent_vesper_tui::run_authentication_panel(
-                    &mut terminal,
-                    registry,
-                    provider.id.as_str(),
-                    &session.state.preferences.theme,
-                    &mut events,
-                    &mut hooks,
-                    false,
-                )
-                .await
-                .map(|_| ())?;
-            }
             refresh_openai_models = true;
         }
         if provider_id.as_str() == "openai"
@@ -1747,27 +1744,6 @@ async fn drive_loop(
                 provider_id,
             ) {
                 session.state.status = Some(error);
-            }
-        }
-        if landing_pending {
-            landing_pending = false;
-            match landing_host::open(
-                &mut terminal,
-                provider_id.as_str(),
-                &active_model_label(&session.state, surface),
-                &session.state.preferences.theme,
-            )
-            .await?
-            {
-                agent_vesper_tui::landing::LandingAction::Quit => return Ok(()),
-                agent_vesper_tui::landing::LandingAction::Settings => {
-                    settings_from_landing = true;
-                    session.settings_menu_open = true;
-                    session.input.clear();
-                }
-                _ => {
-                    settings_from_landing = false;
-                }
             }
         }
         if session.settings_menu_open {
@@ -2449,10 +2425,11 @@ async fn drive_loop(
                         continue;
                     }
                 }
-                if openai_account_pending
-                    && (!session.input.trim().starts_with('/')
-                        || !session.pending_text_pastes.is_empty())
-                {
+                if account_discovery_blocks_submission(
+                    openai_account_pending,
+                    &session.input,
+                    !session.pending_text_pastes.is_empty(),
+                ) {
                     session.state.status = Some(OPENAI_MODEL_LOADING_STATUS.into());
                     continue;
                 }
@@ -3525,14 +3502,13 @@ async fn edit_lmstudio_settings(
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum AuthenticationIntent {
-    Startup,
     ProviderSwitch,
     ExplicitReauth,
 }
 
 impl AuthenticationIntent {
     fn requires_screen(self, credential_present: bool) -> bool {
-        self == Self::ExplicitReauth || startup_route(credential_present) != StartupRoute::Main
+        self == Self::ExplicitReauth || !credential_present
     }
 }
 
@@ -3551,7 +3527,7 @@ async fn ensure_provider_authenticated(
         .credential_present(&provider_id)
         .await
         .unwrap_or(false);
-    // Startup and provider switching reuse a valid stored credential.
+    // Provider switching reuses a valid stored credential.
     // Only explicit reauthentication re-opens the screen for rotation.
     if !intent.requires_screen(credential_present) {
         return Ok(());
@@ -4044,6 +4020,10 @@ fn session_setting_candidates(
         "/settings" => {
             let mut settings: Vec<(String, String)> = vec![
                 (
+                    "/provider".into(),
+                    "Providers · select the provider for your next launch".into(),
+                ),
+                (
                     "/settings skills".into(),
                     "Skills · routing preview and project choices".into(),
                 ),
@@ -4060,10 +4040,6 @@ fn session_setting_candidates(
                 (
                     "/settings bridge".into(),
                     "Bridge · application control (experimental)".into(),
-                ),
-                (
-                    "/provider".into(),
-                    "Providers · select the provider for your next launch".into(),
                 ),
                 (
                     "/web".into(),
@@ -4158,7 +4134,9 @@ fn session_setting_candidates(
                     format!("{} · current {current}", descriptor.display_name.as_str()),
                 ));
             }
-            settings.splice(0..0, provider_rows);
+            // Provider setup must remain visible even when an adapter exposes
+            // more controls than fit in the first Settings viewport.
+            settings.splice(1..1, provider_rows);
             settings
         }
         "/plan" | "/api-plan" | "/endpoint" => {
@@ -5762,6 +5740,17 @@ fn format_character_count(count: usize) -> String {
         formatted.push(ch);
     }
     formatted
+}
+
+fn account_discovery_blocks_submission(pending: bool, input: &str, has_paste: bool) -> bool {
+    use vesper_harness::release_recovery::{ReleaseIntentDecision, classify_release_intent};
+    pending
+        && (has_paste
+            || (!input.trim().starts_with('/')
+                && matches!(
+                    classify_release_intent(input),
+                    ReleaseIntentDecision::NotRelease
+                )))
 }
 
 fn take_composer_text(session: &mut TuiSession) -> String {
@@ -16102,6 +16091,42 @@ mod tests {
     }
 
     #[test]
+    fn native_release_controls_bypass_pending_account_discovery() {
+        for input in [
+            "release patch",
+            "please publish it",
+            "/release patch",
+            "/release status",
+            "/ci",
+        ] {
+            assert!(
+                !account_discovery_blocks_submission(true, input, false),
+                "{input}"
+            );
+            assert!(
+                account_discovery_blocks_submission(true, input, true),
+                "pasted {input}"
+            );
+        }
+        for input in [
+            "hello",
+            "how do I release?",
+            "do not release",
+            "release later",
+            "release workflow",
+        ] {
+            assert!(
+                account_discovery_blocks_submission(true, input, false),
+                "{input}"
+            );
+            assert!(
+                !account_discovery_blocks_submission(false, input, false),
+                "{input}"
+            );
+        }
+    }
+
+    #[test]
     fn xai_controls_reach_generic_turn_configuration() {
         let available = vesper_provider_xai::AvailableModels {
             models: vec![vesper_provider_xai::XaiCatalog::find("grok-4.7").unwrap()],
@@ -16128,6 +16153,14 @@ mod tests {
             ]),
         )
         .unwrap();
+        assert_eq!(
+            settings[0].0, "/provider",
+            "provider setup must be visible first"
+        );
+        assert!(
+            settings.len() > 14,
+            "fixture must exceed one Settings viewport"
+        );
         assert!(settings.iter().any(|(command, _)| command == "/transport"));
         assert!(settings.iter().any(|(command, _)| command == "/xai-web"));
         assert!(
@@ -16398,7 +16431,6 @@ mod tests {
 
     #[test]
     fn provider_switch_reuses_a_valid_stored_authentication() {
-        assert!(!AuthenticationIntent::Startup.requires_screen(true));
         assert!(!AuthenticationIntent::ProviderSwitch.requires_screen(true));
         assert!(AuthenticationIntent::ExplicitReauth.requires_screen(true));
         assert!(AuthenticationIntent::ProviderSwitch.requires_screen(false));
