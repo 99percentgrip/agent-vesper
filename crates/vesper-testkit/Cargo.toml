@@ -15,12 +15,12 @@ serde.workspace = true
 serde_json.workspace = true
 sha2.workspace = true
 thiserror.workspace = true
-vesper-config = { path = "../vesper-config", version = "=0.24.10" }
-vesper-domain = { path = "../vesper-domain", version = "=0.24.10" }
-vesper-policy = { path = "../vesper-policy", version = "=0.24.10" }
-vesper-provider = { path = "../vesper-provider", version = "=0.24.10" }
-vesper-security = { path = "../vesper-security", version = "=0.24.10" }
-vesper-bridge = { path = "../vesper-bridge", version = "=0.24.10" }
+vesper-config = { path = "../vesper-config", version = "=0.24.11" }
+vesper-domain = { path = "../vesper-domain", version = "=0.24.11" }
+vesper-policy = { path = "../vesper-policy", version = "=0.24.11" }
+vesper-provider = { path = "../vesper-provider", version = "=0.24.11" }
+vesper-security = { path = "../vesper-security", version = "=0.24.11" }
+vesper-bridge = { path = "../vesper-bridge", version = "=0.24.11" }
 
 [lints]
 workspace = true

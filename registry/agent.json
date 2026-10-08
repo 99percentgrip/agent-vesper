@@ -6,23 +6,23 @@
   "distribution": {
     "binary": {
       "darwin-aarch64": {
-        "archive": "https://github.com/99percentgrip/agent-vesper/releases/download/v0.24.10/agent-vesper-acp-darwin-aarch64.tar.gz",
+        "archive": "https://github.com/99percentgrip/agent-vesper/releases/download/v0.24.11/agent-vesper-acp-darwin-aarch64.tar.gz",
         "cmd": "./agent-vesper-acp/agent-vesper-acp"
       },
       "darwin-x86_64": {
-        "archive": "https://github.com/99percentgrip/agent-vesper/releases/download/v0.24.10/agent-vesper-acp-darwin-x86_64.tar.gz",
+        "archive": "https://github.com/99percentgrip/agent-vesper/releases/download/v0.24.11/agent-vesper-acp-darwin-x86_64.tar.gz",
         "cmd": "./agent-vesper-acp/agent-vesper-acp"
       },
       "linux-aarch64": {
-        "archive": "https://github.com/99percentgrip/agent-vesper/releases/download/v0.24.10/agent-vesper-acp-linux-aarch64.tar.gz",
+        "archive": "https://github.com/99percentgrip/agent-vesper/releases/download/v0.24.11/agent-vesper-acp-linux-aarch64.tar.gz",
         "cmd": "./agent-vesper-acp/agent-vesper-acp"
       },
       "linux-x86_64": {
-        "archive": "https://github.com/99percentgrip/agent-vesper/releases/download/v0.24.10/agent-vesper-acp-linux-x86_64.tar.gz",
+        "archive": "https://github.com/99percentgrip/agent-vesper/releases/download/v0.24.11/agent-vesper-acp-linux-x86_64.tar.gz",
         "cmd": "./agent-vesper-acp/agent-vesper-acp"
       },
       "windows-x86_64": {
-        "archive": "https://github.com/99percentgrip/agent-vesper/releases/download/v0.24.10/agent-vesper-acp-windows-x86_64.zip",
+        "archive": "https://github.com/99percentgrip/agent-vesper/releases/download/v0.24.11/agent-vesper-acp-windows-x86_64.zip",
         "cmd": "./agent-vesper-acp/agent-vesper-acp.exe"
       }
     }
@@ -32,6 +32,6 @@
   "license_url": "https://github.com/99percentgrip/agent-vesper/blob/main/LICENSE",
   "name": "Agent Vesper",
   "repository": "https://github.com/99percentgrip/agent-vesper",
-  "version": "0.24.10",
+  "version": "0.24.11",
   "website": "https://github.com/99percentgrip/agent-vesper"
 }
