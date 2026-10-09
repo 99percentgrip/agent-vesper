@@ -241,6 +241,15 @@ Verify terminal interaction through the production TUI binary with isolated stat
 
 ## Verification
 
+- `voice_setup_pty.py` exercises the actual native Voice dependency consent,
+  declines installation, preserves the draft and proves Discard restores OFF.
+  It runs against shipping-feature binaries on all five native lanes; no device,
+  package setup or provider prompt is invoked.
+
+- `voice_r20_default_capture.rs` checks finalized canonical WAV headers in the
+  real managed store; PCM conversion tests preserve duration and amplitude across
+  native device rates. Controlled fixtures prove contracts, never microphones.
+
 - `r3_loop_pty.py` delays fixture Python import by two seconds, allows background
   integrity preflight, then requires recorder-process onset within one second.
   It records first-PCM timing separately; 250 ms key polling and synthetic

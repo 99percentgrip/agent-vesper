@@ -80,12 +80,12 @@ fn shared_voice_python() -> std::path::PathBuf {
         }
     }
     if let Some(venv) = std::env::var_os("GLM_VENV_PATH") {
-        let candidate = std::path::PathBuf::from(venv).join("bin").join("python");
+        let candidate = crate::platform_voice::venv_python(std::path::Path::new(&venv));
         if candidate.is_file() {
             return candidate;
         }
     }
-    let candidate = crate::voice_venv_root().join("bin").join("python");
+    let candidate = crate::platform_voice::venv_python(&crate::voice_venv_root());
     if candidate.is_file() {
         return candidate;
     }

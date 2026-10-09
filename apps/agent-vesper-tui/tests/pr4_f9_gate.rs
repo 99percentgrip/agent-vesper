@@ -184,7 +184,10 @@ fn enabled_but_missing_prerequisite_names_the_blocker_not_enable() {
                 !message.contains("not enabled"),
                 "must never tell the user to enable what is already on: {message}"
             );
-            assert!(message.contains("install"), "actionable remedy: {message}");
+            assert!(
+                message.contains("Settings → Voice → Set up local voice dependencies"),
+                "native actionable remedy: {message}"
+            );
         }
         Gate::Disabled => panic!("enabled scope must never classify as Disabled"),
         Gate::Ready => panic!("espeak-ng absent must block"),
@@ -246,6 +249,15 @@ fn settings_panel_and_f9_share_one_assessment() {
         path.interpreter(),
         Some(path.as_search()),
     );
+    if cfg!(target_os = "macos") {
+        assert!(
+            checks
+                .iter()
+                .any(|check| check.name.contains("native audio") && check.ok)
+        );
+        assert!(matches!(f9_gate(_workspace.root(), &path), Gate::Ready));
+        return;
+    }
     let aplay_check = checks
         .iter()
         .find(|check| check.name.contains("aplay"))

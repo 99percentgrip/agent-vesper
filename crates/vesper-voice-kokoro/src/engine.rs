@@ -41,7 +41,7 @@ use crate::vocab::{PhonemeVocab, SharedVocab};
 /// emits `waveform` at 24 kHz; never relabeled to canonical).
 pub const MODEL_SAMPLE_RATE_HZ: u32 = 24_000;
 /// ONNX Runtime shared-library file name inside the pack.
-pub const RUNTIME_LIB_NAME: &str = "libonnxruntime.so.1.28.0";
+pub const RUNTIME_LIB_NAME: &str = pack::RUNTIME_LIB_NAME;
 /// Intra-op thread count (bounded; a TTS unit must not take the whole CPU).
 const INTRA_THREADS: u16 = 2;
 /// Hard bound on accepted waveform samples per run (~5 minutes at 24 kHz;
@@ -149,14 +149,7 @@ fn load_error(error: ort::LoadDynamicError) -> vesper_voice::error::VoiceError {
 /// historical PR-4 defect class is not repeated here).
 #[must_use]
 pub fn resolve_phonemizer() -> Option<PathBuf> {
-    let path = Path::new(pack::PHONEMIZER_EXECUTABLE);
-    if path.is_absolute() {
-        return path.is_file().then(|| path.to_path_buf());
-    }
-    let search = std::env::var_os("PATH")?;
-    std::env::split_paths(&search)
-        .map(|dir| dir.join(pack::PHONEMIZER_EXECUTABLE))
-        .find(|candidate| candidate.is_file())
+    pack::resolve_phonemizer()
 }
 
 /// One voice's style vector, loaded from the pack (522 240 bytes = 510

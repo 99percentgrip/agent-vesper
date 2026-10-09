@@ -1,11 +1,12 @@
 {
   "version": 1,
-  "objective_id": "windows-native-credential-persistence-20261008",
-  "objective_label": "Windows subscription credential persistence and cross-platform native acceptance",
-  "variant_label": "159-case local acceptance, shared-cache proof isolation, authoritative cancellation and refreshed hosts passed; native persistence/release gates required",
-  "variant_id": "windows-native-auth-rrc-proof-isolation-integrated-20261008",
+  "objective_id": "native-voice-platform-implementation-20261009",
+  "objective_label": "Native Windows/macOS voice backends and guided local dependency setup",
+  "variant_label": "Local canonical 159-case acceptance, Rust 1.88, final focused source and module checks passed; native CI and hardware acceptance remain required",
+  "variant_id": "native-voice-platform-implementation-verified-20261009",
   "canonical_release_source": true,
   "supersedes": [
+    "windows-native-auth-rrc-proof-isolation-integrated-20261008",
     "windows-native-auth-rrc-platform-proof-continuation-integrated-20261008",
     "windows-native-auth-rrc-cache-observation-integrated-20261008",
     "windows-native-auth-rrc-session-and-ownership-integrated-20261008",
@@ -27,9 +28,8 @@
     "rrc-autonomy-prd-audit-20261006"
   ],
   "evidence_reports": [
-    "docs/foundation/2026-10-08-windows-credential-persistence-repair.md",
-    "docs/foundation/2026-10-08-native-first-launch-and-rrc-workspace-repair.md",
-    "docs/foundation/release-v0.24.10-closeout.md"
+    "docs/foundation/2026-10-09-native-voice-platform-parity-repair.md",
+    "docs/foundation/2026-10-09-windows-voice-parity-verification.md"
   ],
-  "completed_at": "2026-10-08T20:18:30.165035+00:00"
+  "completed_at": "2026-10-09T11:12:44.635976+00:00"
 }

@@ -1,7 +1,9 @@
 //! Terminal-only microphone controller. The worker owns all audio and subprocesses.
 use agent_vesper_tui::ui::VoicePhase;
+#[cfg(target_os = "linux")]
+use std::io::Read;
 use std::{
-    io::{BufRead, BufReader, Read, Write},
+    io::{BufRead, BufReader, Write},
     path::PathBuf,
     process::{Child, Command, Stdio},
     sync::{
@@ -163,6 +165,7 @@ impl Drop for Controller {
 struct Process(Child);
 /// The Linux recorder-stream pump: joins the drain thread and holds the
 /// shared capture slot (the worker takes the capture back at Stop).
+#[cfg(target_os = "linux")]
 struct PumpHandle {
     join: Option<std::thread::JoinHandle<()>>,
     slot: std::sync::Arc<
@@ -171,6 +174,7 @@ struct PumpHandle {
     /// Set when the store's hard CAP (not a mere EOF) ended the capture.
     cap_hit: std::sync::Arc<std::sync::atomic::AtomicBool>,
 }
+#[cfg(target_os = "linux")]
 impl PumpHandle {
     /// Joins the pump thread after the recorder stopped (its stdout
     /// closes; the loop exits; the capture is finalized in-thread).
@@ -180,6 +184,7 @@ impl PumpHandle {
         }
     }
 }
+#[cfg(target_os = "linux")]
 impl Drop for PumpHandle {
     fn drop(&mut self) {
         if let Some(join) = self.join.take() {
@@ -281,6 +286,8 @@ struct Worker {
     quit: Arc<AtomicBool>,
     out: mpsc::SyncSender<String>,
     recorder: Option<Process>,
+    #[cfg(any(target_os = "windows", target_os = "macos"))]
+    native_recorder: Option<agent_vesper_tui::voice_native_audio::NativeCapture>,
     audio: Option<Audio>,
     started: Option<Instant>,
     python: Option<String>,
@@ -312,6 +319,8 @@ impl Worker {
             quit,
             out,
             recorder: None,
+            #[cfg(any(target_os = "windows", target_os = "macos"))]
+            native_recorder: None,
             audio: None,
             started: None,
             python: None,
@@ -339,8 +348,7 @@ impl Worker {
     /// R20: whether the managed capture has already been finalized by a
     /// hard cap (the writer closed while data existed). On Linux the
     /// pump finalizes in-thread at the cap; the slot still holds the
-    /// capture. On macOS the recorder writes the store path directly
-    /// and the cap is enforced at finish.
+    /// capture. Native Windows/macOS streams report their writer cap separately.
     fn capture_finished_by_cap(&self) -> bool {
         #[cfg(target_os = "linux")]
         {
@@ -362,6 +370,7 @@ impl Worker {
         while !self.quit.load(Ordering::Acquire) {
             match rx.recv_timeout(Duration::from_millis(50)) {
                 Ok(Control::Discard) => {
+                    let _ = self.stop();
                     self.audio = None;
                     self.started = None;
                     self.publish(VoicePhase::Idle, "Voice audio discarded.");
@@ -400,6 +409,22 @@ impl Worker {
                 Err(mpsc::RecvTimeoutError::Disconnected) => break,
                 Err(mpsc::RecvTimeoutError::Timeout) => {}
             }
+            #[cfg(any(target_os = "windows", target_os = "macos"))]
+            if let Some(recorder) = self.native_recorder.as_ref() {
+                let error = recorder.error();
+                if error.is_some() || recorder.hit_cap() {
+                    let _ = self.stop();
+                    self.publish(
+                        VoicePhase::Error,
+                        error.unwrap_or_else(|| {
+                            "Capture limit reached. F5 transcribes saved audio; Del discards."
+                                .to_owned()
+                        }),
+                    );
+                } else {
+                    self.publish(VoicePhase::Recording, "Recording microphone · F5 Stop");
+                }
+            }
             if let Some(recorder) = self.recorder.as_mut() {
                 match recorder.0.try_wait() {
                     Ok(None) => {
@@ -433,6 +458,7 @@ impl Worker {
             }
         }
         // Stop the recorder before dropping its private audio directory.
+        let _ = self.stop();
         self.recorder = None;
         self.audio = None;
         self.sidecar = None;
@@ -487,7 +513,7 @@ impl Worker {
         let root = agent_vesper_tui::voice_venv_root();
         std::fs::create_dir_all(root.parent().ok_or("Invalid voice directory.")?)
             .map_err(|_| "Cannot create voice backend directory.")?;
-        let python = root.join("bin/python");
+        let python = agent_vesper_tui::platform_voice::venv_python(&root);
         let uv = super::bundled_uv_path().unwrap_or_else(|| "uv".into());
         let mut probe = Command::new(&uv);
         probe.arg("--version");
@@ -499,18 +525,23 @@ impl Worker {
             }
             let mut command = Command::new(&uv);
             command
-                .args(["pip", "install", "faster-whisper", "--python"])
+                .args(["pip", "install", "faster-whisper==1.2.1", "--python"])
                 .arg(&python);
             self.run_command(command, Duration::from_secs(600))?;
         } else {
-            let mut command = Command::new("python3");
-            command.args(["-m", "venv"]).arg(&root);
-            if !python.exists() {
-                self.run_command(command, Duration::from_secs(120))?;
+            #[cfg(windows)]
+            return Err("Local voice dependencies are missing. Open Settings → Voice → Set up local voice dependencies, then Retry recording.".into());
+            #[cfg(not(windows))]
+            {
+                let mut command = Command::new("python3");
+                command.args(["-m", "venv"]).arg(&root);
+                if !python.exists() {
+                    self.run_command(command, Duration::from_secs(120))?;
+                }
+                let mut command = Command::new(&python);
+                command.args(["-m", "pip", "install", "faster-whisper==1.2.1"]);
+                self.run_command(command, Duration::from_secs(600))?;
             }
-            let mut command = Command::new(&python);
-            command.args(["-m", "pip", "install", "faster-whisper"]);
-            self.run_command(command, Duration::from_secs(600))?;
         }
         let mut check = Command::new(&python);
         check.args(["-c", "import faster_whisper"]);
@@ -520,8 +551,15 @@ impl Worker {
         Ok(python)
     }
     fn start(&mut self) -> Result<(), String> {
-        if !cfg!(any(target_os = "linux", target_os = "macos")) {
-            return Err("Microphone capture currently supports Linux and macOS.".into());
+        if !agent_vesper_tui::voice_capture_root().is_absolute() {
+            return Err("Cannot locate your private voice data directory. Restore the system user-data paths, then Retry recording.".into());
+        }
+        if !cfg!(any(
+            target_os = "linux",
+            target_os = "macos",
+            target_os = "windows"
+        )) {
+            return Err("Microphone capture is unavailable on this platform.".into());
         }
         // Capture must not wait for Python imports, package probing or model
         // loading. A known installed interpreter can load the sidecar in
@@ -531,7 +569,8 @@ impl Worker {
                 std::env::var_os("VESPER_PYTHON_PATH").as_deref(),
                 std::env::var_os("GLM_VENV_PATH").as_deref(),
             );
-            let installed = agent_vesper_tui::voice_venv_root().join("bin/python");
+            let installed =
+                agent_vesper_tui::platform_voice::venv_python(&agent_vesper_tui::voice_venv_root());
             let python = self.python.clone().or_else(|| {
                 if explicit {
                     Some(configured)
@@ -549,103 +588,130 @@ impl Worker {
         if self.cancelled() {
             return Err("Voice preparation cancelled.".into());
         }
-        // VRO-17 R20 (2026-09-23 repair): EVERY explicit capture — F5
-        // dictation in default builds and F9 conversation in feature
-        // builds — is created through the ONE managed store (hard
-        // 120 s / 4 MiB caps, cross-instance aggregate reservation,
-        // lease-backed cleanup, free-space reserve, dead-lease
-        // recovery). Low/unknown space or aggregate exhaustion defers
-        // the capture with an actionable reason: never relocation,
-        // unbounded buffering, or user-data deletion.
-        let managed = match agent_vesper_tui::voice_capture_store::ManagedCapture::start_passthrough(
-            &agent_vesper_tui::voice_capture_root(),
-        ) {
-            Ok(managed) => managed,
-            Err(error) => {
-                return Err(format!("Voice capture deferred: {error}"));
-            }
-        };
-        // The recorder's destination is the managed capture. On Linux
-        // the recorder streams WAV on stdout into the store's capped
-        // writer (byte cap at the writer boundary — never polling); on
-        // macOS afrecord needs a path and writes the store's capture
-        // file directly (the store bounds and owns it).
-        let mut command = if cfg!(target_os = "linux") {
-            let mut c = Command::new("arecord");
-            // "-" streams the WAV to stdout.
-            c.args([
-                "-q", "-f", "S16_LE", "-r", "16000", "-c", "1", "-t", "wav", "-",
-            ]);
-            c
-        } else {
-            let mut c = Command::new("afrecord");
-            c.args(["-f", "WAVE", "-d", "LEI16@16000", "-c", "1"]);
-            c.arg(managed.wav_path());
-            c
-        };
-        command
-            .stdin(Stdio::null())
-            .stdout(if cfg!(target_os = "linux") {
-                Stdio::piped()
-            } else {
-                Stdio::null()
-            })
-            .stderr(Stdio::null());
-        let mut process = spawn(&mut command)?;
-        #[cfg(target_os = "linux")]
+        #[cfg(any(target_os = "windows", target_os = "macos"))]
         {
-            if let Some(stdout) = process.0.stdout.take() {
-                let slot: std::sync::Arc<
-                    std::sync::Mutex<Option<agent_vesper_tui::voice_capture_store::ManagedCapture>>,
-                > = std::sync::Arc::new(std::sync::Mutex::new(Some(managed)));
-                let pump_slot = std::sync::Arc::clone(&slot);
-                let cap_hit = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
-                let pump_cap = std::sync::Arc::clone(&cap_hit);
-                let pump = std::thread::spawn(move || {
-                    use std::io::Read;
-                    let mut stdout = stdout;
-                    let mut buffer = [0u8; 16 * 1024];
-                    loop {
-                        match stdout.read(&mut buffer) {
-                            Ok(0) | Err(_) => break,
-                            Ok(count) => {
-                                let Ok(mut guard) = pump_slot.lock() else {
-                                    break;
-                                };
-                                let Some(capture) = guard.as_mut() else {
-                                    break;
-                                };
-                                if !capture.write_pcm(&buffer[..count]).unwrap_or(false) {
-                                    pump_cap.store(true, std::sync::atomic::Ordering::Release);
-                                    break;
+            self.native_recorder =
+                Some(agent_vesper_tui::voice_native_audio::NativeCapture::start(
+                    &agent_vesper_tui::voice_capture_root(),
+                )?);
+            self.audio = None;
+            self.started = Some(Instant::now());
+            self.publish(VoicePhase::Recording, "Recording microphone · F5 Stop");
+            return Ok(());
+        }
+        #[cfg(not(any(target_os = "windows", target_os = "macos")))]
+        {
+            // VRO-17 R20 (2026-09-23 repair): EVERY explicit capture — F5
+            // dictation in default builds and F9 conversation in feature
+            // builds — is created through the ONE managed store (hard
+            // 120 s / 4 MiB caps, cross-instance aggregate reservation,
+            // lease-backed cleanup, free-space reserve, dead-lease
+            // recovery). Low/unknown space or aggregate exhaustion defers
+            // the capture with an actionable reason: never relocation,
+            // unbounded buffering, or user-data deletion.
+            let managed =
+                match agent_vesper_tui::voice_capture_store::ManagedCapture::start_passthrough(
+                    &agent_vesper_tui::voice_capture_root(),
+                ) {
+                    Ok(managed) => managed,
+                    Err(error) => {
+                        return Err(format!("Voice capture deferred: {error}"));
+                    }
+                };
+            // The recorder's destination is the managed capture. On Linux
+            // the recorder streams WAV on stdout into the store's capped
+            // writer (byte cap at the writer boundary — never polling); on
+            // macOS afrecord needs a path and writes the store's capture
+            // file directly (the store bounds and owns it).
+            let mut command = if cfg!(target_os = "linux") {
+                let mut c = Command::new("arecord");
+                // "-" streams the WAV to stdout.
+                c.args([
+                    "-q", "-f", "S16_LE", "-r", "16000", "-c", "1", "-t", "wav", "-",
+                ]);
+                c
+            } else {
+                let mut c = Command::new("afrecord");
+                c.args(["-f", "WAVE", "-d", "LEI16@16000", "-c", "1"]);
+                c.arg(managed.wav_path());
+                c
+            };
+            command
+                .stdin(Stdio::null())
+                .stdout(if cfg!(target_os = "linux") {
+                    Stdio::piped()
+                } else {
+                    Stdio::null()
+                })
+                .stderr(Stdio::null());
+            let mut process = spawn(&mut command)?;
+            #[cfg(target_os = "linux")]
+            {
+                if let Some(stdout) = process.0.stdout.take() {
+                    let slot: std::sync::Arc<
+                        std::sync::Mutex<
+                            Option<agent_vesper_tui::voice_capture_store::ManagedCapture>,
+                        >,
+                    > = std::sync::Arc::new(std::sync::Mutex::new(Some(managed)));
+                    let pump_slot = std::sync::Arc::clone(&slot);
+                    let cap_hit = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+                    let pump_cap = std::sync::Arc::clone(&cap_hit);
+                    let pump = std::thread::spawn(move || {
+                        use std::io::Read;
+                        let mut stdout = stdout;
+                        let mut buffer = [0u8; 16 * 1024];
+                        loop {
+                            match stdout.read(&mut buffer) {
+                                Ok(0) | Err(_) => break,
+                                Ok(count) => {
+                                    let Ok(mut guard) = pump_slot.lock() else {
+                                        break;
+                                    };
+                                    let Some(capture) = guard.as_mut() else {
+                                        break;
+                                    };
+                                    if !capture.write_pcm(&buffer[..count]).unwrap_or(false) {
+                                        pump_cap.store(true, std::sync::atomic::Ordering::Release);
+                                        break;
+                                    }
                                 }
                             }
                         }
-                    }
-                    if let Ok(mut guard) = pump_slot.lock()
-                        && let Some(capture) = guard.as_mut()
-                    {
-                        capture.finish();
-                    }
-                });
-                self.pump = Some(PumpHandle {
-                    join: Some(pump),
-                    slot,
-                    cap_hit,
-                });
+                        if let Ok(mut guard) = pump_slot.lock()
+                            && let Some(capture) = guard.as_mut()
+                        {
+                            capture.finish();
+                        }
+                    });
+                    self.pump = Some(PumpHandle {
+                        join: Some(pump),
+                        slot,
+                        cap_hit,
+                    });
+                }
             }
+            #[cfg(not(target_os = "linux"))]
+            {
+                self.managed = Some(managed);
+            }
+            self.recorder = Some(process);
+            self.audio = None; // the managed store owns the capture file
+            self.started = Some(Instant::now());
+            self.publish(VoicePhase::Recording, "Recording microphone · F5 Stop");
+            Ok(())
         }
-        #[cfg(not(target_os = "linux"))]
-        {
-            self.managed = Some(managed);
-        }
-        self.recorder = Some(process);
-        self.audio = None; // the managed store owns the capture file
-        self.started = Some(Instant::now());
-        self.publish(VoicePhase::Recording, "Recording microphone · F5 Stop");
-        Ok(())
     }
     fn stop(&mut self) -> Result<(), String> {
+        #[cfg(any(target_os = "windows", target_os = "macos"))]
+        if let Some(recorder) = self.native_recorder.take() {
+            let (capture, error) = recorder.finish();
+            if let Some(capture) = capture {
+                self.audio = Some(Audio::for_managed(capture));
+            }
+            if let Some(error) = error {
+                return Err(error);
+            }
+        }
         if let Some(mut recorder) = self.recorder.take() {
             #[cfg(unix)]
             {

@@ -1,0 +1,178 @@
+{
+  "schema_version": 1,
+  "base_commit": "58314f199149c0cb0d21b6f22fb3e482e999d685",
+  "method": "Downloaded official immutable releases; measured SHA-256, exact sizes and archive members. Native execution is separately gated.",
+  "onnx_runtime": [
+    {
+      "archive": "onnxruntime-linux-aarch64-1.28.0.tgz",
+      "size": 8116278,
+      "sha256": "e15ff8b5d85afe6c144d97c6fd432254bf76a219daaf17658087d6ecb3e8f0bb",
+      "url": "https://github.com/microsoft/onnxruntime/releases/download/v1.28.0/onnxruntime-linux-aarch64-1.28.0.tgz",
+      "members": [
+        {
+          "path": "onnxruntime-linux-aarch64-1.28.0/lib/libonnxruntime.so.1.28.0",
+          "size": 20591712,
+          "sha256": "f1ec1a08eb99bd6e5401340f0a2b101381bf4694415480291dc13bcaa30f9ec7"
+        },
+        {
+          "path": "onnxruntime-linux-aarch64-1.28.0/ThirdPartyNotices.txt",
+          "size": 325054,
+          "sha256": "0e07b95f3a8d6230037707c5c4a2b554d12c4cb67369669ac255635528ffcee2"
+        },
+        {
+          "path": "onnxruntime-linux-aarch64-1.28.0/LICENSE",
+          "size": 1073,
+          "sha256": "2f07c72751aed99790b8a4869cf2311df85a860b22ded05fa22803587a48922c"
+        }
+      ]
+    },
+    {
+      "archive": "onnxruntime-osx-arm64-1.28.0.tgz",
+      "size": 32396562,
+      "sha256": "1268b359718099bde2cedb55787f182a130067bc4f31e8c88478c445b850d3d8",
+      "url": "https://github.com/microsoft/onnxruntime/releases/download/v1.28.0/onnxruntime-osx-arm64-1.28.0.tgz",
+      "members": [
+        {
+          "path": "onnxruntime-osx-arm64-1.28.0/ThirdPartyNotices.txt",
+          "size": 325054,
+          "sha256": "0e07b95f3a8d6230037707c5c4a2b554d12c4cb67369669ac255635528ffcee2"
+        },
+        {
+          "path": "onnxruntime-osx-arm64-1.28.0/LICENSE",
+          "size": 1073,
+          "sha256": "2f07c72751aed99790b8a4869cf2311df85a860b22ded05fa22803587a48922c"
+        },
+        {
+          "path": "onnxruntime-osx-arm64-1.28.0/lib/libonnxruntime.1.28.0.dylib",
+          "size": 39312136,
+          "sha256": "dc19bbcb2f5c9fb3c68b4f9248aa0a35065ff702c5dbeae75eac54a74da97b6d"
+        },
+        {
+          "path": "onnxruntime-osx-arm64-1.28.0/lib/libonnxruntime.dylib",
+          "size": 39312136,
+          "sha256": "dc19bbcb2f5c9fb3c68b4f9248aa0a35065ff702c5dbeae75eac54a74da97b6d"
+        },
+        {
+          "path": "onnxruntime-osx-arm64-1.28.0/lib/libonnxruntime.1.28.0.dylib.dSYM/Contents/Resources/DWARF/libonnxruntime.1.28.0.dylib",
+          "size": 48550508,
+          "sha256": "6d4d90020921e549f10fc84d885359bdba583e403c7e35db572b8d54491bc186"
+        },
+        {
+          "path": "onnxruntime-osx-arm64-1.28.0/testdata/libcustom_op_library.dylib",
+          "size": 260120,
+          "sha256": "a10336ba1552d94dbbd9e95acaaeec5f50a081965f3fcf0834628141fd7802f1"
+        }
+      ]
+    },
+    {
+      "archive": "onnxruntime-win-x64-1.28.0.zip",
+      "size": 78796801,
+      "sha256": "abef733dacbe2f571547a7150b479b5cb9cc0df22f96c24983a42cadb1b4f8bc",
+      "url": "https://github.com/microsoft/onnxruntime/releases/download/v1.28.0/onnxruntime-win-x64-1.28.0.zip",
+      "members": [
+        {
+          "path": "onnxruntime-win-x64-1.28.0/lib/onnxruntime.dll",
+          "size": 15809848,
+          "sha256": "18370c375f07357fa5874344a9d9ac17e6b6fe1eb18b1dd209d79483b4470257"
+        },
+        {
+          "path": "onnxruntime-win-x64-1.28.0/LICENSE",
+          "size": 1094,
+          "sha256": "c250d6278f0b47a6439fb7592b08b58a55eb9f535aa49a1db63211c3f982b674"
+        },
+        {
+          "path": "onnxruntime-win-x64-1.28.0/ThirdPartyNotices.txt",
+          "size": 331175,
+          "sha256": "fb0af774b4d7cffc5b9d046f2aaeade2f37df2f80abf8033c95dfffcc77a8866"
+        }
+      ]
+    },
+    {
+      "archive": "onnxruntime-osx-x86_64-1.23.2.tgz",
+      "size": 11676322,
+      "sha256": "d10359e16347b57d9959f7e80a225a5b4a66ed7d7e007274a15cae86836485a6",
+      "url": "https://github.com/microsoft/onnxruntime/releases/download/v1.23.2/onnxruntime-osx-x86_64-1.23.2.tgz",
+      "members": [
+        {
+          "path": "./onnxruntime-osx-x86_64-1.23.2/ThirdPartyNotices.txt",
+          "size": 326866,
+          "sha256": "e9e90971a8e75a9a8ac0c6412e29c1202d079998389915aa485f46c816c3b4cc"
+        },
+        {
+          "path": "./onnxruntime-osx-x86_64-1.23.2/LICENSE",
+          "size": 1073,
+          "sha256": "2f07c72751aed99790b8a4869cf2311df85a860b22ded05fa22803587a48922c"
+        },
+        {
+          "path": "./onnxruntime-osx-x86_64-1.23.2/lib/libonnxruntime.1.23.2.dylib",
+          "size": 39742608,
+          "sha256": "8c9c78de65ea3786f987c0d980e9c1b13a3a5fbc6b3e2965ba05b450e6e4c054"
+        }
+      ]
+    }
+  ],
+  "uv": [
+    {
+      "file": "uv-x86_64-pc-windows-msvc.zip",
+      "size": 15685515,
+      "sha256": "7c38608c8a18ee137d748a1773053b07ec8f3a30fab49aebaa6f4e4efeceb019",
+      "members": [
+        "uv.exe",
+        "uvw.exe",
+        "uvx.exe"
+      ]
+    },
+    {
+      "file": "uv-x86_64-apple-darwin.tar.gz",
+      "size": 18120254,
+      "sha256": "4fa82e37cb94767661f532b001e470b67a186c7260e305bd84ddb78fd545c0b6",
+      "members": [
+        "uv-x86_64-apple-darwin",
+        "uv-x86_64-apple-darwin/uvx",
+        "uv-x86_64-apple-darwin/uv"
+      ]
+    },
+    {
+      "file": "uv-aarch64-apple-darwin.tar.gz",
+      "size": 14650202,
+      "sha256": "0c4346de7abdb49495b393b9ec809fe387aa43e586be20fecb972216c1e71732",
+      "members": [
+        "uv-aarch64-apple-darwin",
+        "uv-aarch64-apple-darwin/uvx",
+        "uv-aarch64-apple-darwin/uv"
+      ]
+    },
+    {
+      "file": "uv-x86_64-unknown-linux-gnu.tar.gz",
+      "size": 17249236,
+      "sha256": "b4dfaef47d491a7296981f8374a4595f55dbf84e8937c8ecd2983574d8bb3da6",
+      "members": [
+        "uv-x86_64-unknown-linux-gnu",
+        "uv-x86_64-unknown-linux-gnu/uv",
+        "uv-x86_64-unknown-linux-gnu/uvx"
+      ]
+    },
+    {
+      "file": "uv-aarch64-unknown-linux-gnu.tar.gz",
+      "size": 16478994,
+      "sha256": "5231be65f496304623895dacdbf1de8504fec90303684bdf05805aa34414dd21",
+      "members": [
+        "uv-aarch64-unknown-linux-gnu",
+        "uv-aarch64-unknown-linux-gnu/uvx",
+        "uv-aarch64-unknown-linux-gnu/uv"
+      ]
+    }
+  ],
+  "windows_cpp_runtime": {
+    "url": "https://download.visualstudio.microsoft.com/download/pr/bd1c8d9d-ba95-4eee-bc6e-df1fcc876373/CC0FF0EB1DC3F5188AE6300FAEF32BF5BEEBA4BDD6E8E445A9184072096B713B/VC_redist.x64.exe",
+    "size": 25635768,
+    "sha256": "cc0ff0eb1dc3f5188ae6300faef32bf5beeba4bdd6e8e445a9184072096b713b",
+    "source": "https://aka.ms/vs/17/release/vc_redist.x64.exe"
+  },
+  "espeak_ng": {
+    "url": "https://github.com/espeak-ng/espeak-ng/releases/download/1.52.0/espeak-ng.msi",
+    "size": 12765862,
+    "sha256": "7f673c709ea5dd579d3b5ebb98688cc575328a6ab7438d2bc405b88cedaeafb9"
+  },
+  "native_acceptance": "Pending full native five-target execution; no microphone/speaker acceptance claimed"
+}

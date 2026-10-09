@@ -879,6 +879,9 @@ async fn edit_voice(
         if agent_vesper_tui::voice_flm_assets::flm_executable().is_some() {
             rows.push("Accelerated recognition (FLM NPU) · verify or review…".into());
         }
+        let setup_index = rows.len();
+        rows.push("Set up local voice dependencies…".into());
+        let readiness_index = rows.len();
         rows.push("Readiness · providers, backend and limits".into());
         rows.push("Back".into());
         let pack_row_index = if cfg!(feature = "voice-kokoro") {
@@ -888,13 +891,6 @@ async fn edit_voice(
         };
         let flm_row_index = if cfg!(feature = "voice-kokoro") { 6 } else { 5 };
         let flm_row_offered = agent_vesper_tui::voice_flm_assets::flm_executable().is_some();
-        let readiness_index = if cfg!(feature = "voice-kokoro") {
-            if flm_row_offered { 7 } else { 6 }
-        } else if flm_row_offered {
-            6
-        } else {
-            4
-        };
         let notice = "Changes are a draft until you leave Settings and choose Save changes (Esc → Save changes). Local speech does not change your main coding provider.";
         match choice(terminal, "Settings · Voice", notice, &rows, theme).await? {
             Some(0) => voice.enabled = !voice.enabled,
@@ -926,10 +922,108 @@ async fn edit_voice(
             Some(index) if flm_row_offered && index == flm_row_index => {
                 manage_flm_recognition(terminal, theme).await?;
             }
+            Some(index) if index == setup_index => {
+                setup_local_voice_dependencies(terminal, theme).await?;
+            }
             Some(index) if index == readiness_index => {
                 voice_readiness_panel(terminal, voice, theme).await?;
             }
             _ => return Ok(()),
+        }
+    }
+}
+
+/// Confirmed optional setup; rendering remains responsive during OS transactions.
+#[cfg(feature = "voice-conversation")]
+async fn setup_local_voice_dependencies(
+    terminal: &mut Terminal<Backend>,
+    theme: &str,
+) -> Result<(), String> {
+    use vesper_harness::dependency_setup::{
+        VOICE_SETUP_CONSENT, VoiceSetupPaths, setup_voice_cancellable,
+    };
+    if choice(
+        terminal,
+        "Set up local voice dependencies",
+        VOICE_SETUP_CONSENT,
+        &["Set up / repair".into(), "Cancel".into()],
+        theme,
+    )
+    .await?
+        != Some(0)
+    {
+        return Ok(());
+    }
+    let root = agent_vesper_tui::voice_venv_root();
+    let paths = VoiceSetupPaths {
+        python: agent_vesper_tui::platform_voice::venv_python(&root),
+        venv: root,
+        tools: agent_vesper_tui::platform_voice::data_root()
+            .map(|root| root.join("voice-tools"))
+            .unwrap_or_default(),
+        uv: super::bundled_uv_path(),
+    };
+    let (sender, mut progress) =
+        tokio::sync::watch::channel("Checking local voice dependencies…".to_owned());
+    let cancel = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    // Rendering/input failure also requests cancellation; OS transactions settle
+    // on the owned task before its next checkpoint, rather than silently advancing.
+    struct CancelOnExit(std::sync::Arc<std::sync::atomic::AtomicBool>);
+    impl Drop for CancelOnExit {
+        fn drop(&mut self) {
+            self.0.store(true, std::sync::atomic::Ordering::Release);
+        }
+    }
+    let _cancel_on_exit = CancelOnExit(std::sync::Arc::clone(&cancel));
+    let task_cancel = std::sync::Arc::clone(&cancel);
+    let mut task = tokio::spawn(async move {
+        setup_voice_cancellable(
+            paths,
+            |phase| {
+                let _ = sender.send(phase.to_owned());
+            },
+            || task_cancel.load(std::sync::atomic::Ordering::Acquire),
+        )
+        .await
+    });
+    loop {
+        let phase = progress.borrow_and_update().clone();
+        let stopping = cancel.load(std::sync::atomic::Ordering::Acquire);
+        terminal
+            .draw(|frame| {
+                agent_vesper_tui::settings_menu::render_menu(
+                    frame,
+                    &["Setting up local voice dependencies…".into()],
+                    0,
+                    "Local voice setup",
+                    &phase,
+                    if stopping {
+                        "Stopping after the active OS transaction…"
+                    } else {
+                        "Esc stops setup between OS transactions"
+                    },
+                    theme,
+                );
+            })
+            .map_err(|error| error.to_string())?;
+        tokio::select! {
+            result = &mut task => {
+                let outcome = result.unwrap_or_else(|_| Err("Voice dependency setup stopped unexpectedly; completed OS changes may remain.".into()));
+                let (title, message) = match outcome {
+                    Ok(message) => ("Local voice dependencies", message),
+                    Err(message) => ("Local voice setup stopped", message),
+                };
+                // A package error or cancellation must preserve the Settings draft.
+                choice(terminal, title, &message, &["Back".into()], theme).await?;
+                return Ok(());
+            }
+            _ = tokio::time::sleep(std::time::Duration::from_millis(100)) => {
+                while event::poll(std::time::Duration::ZERO).map_err(|error| error.to_string())? {
+                    if let Ok(event::Event::Key(key)) = event::read() && key.code == KeyCode::Esc {
+                        cancel.store(true, std::sync::atomic::Ordering::Release);
+                    }
+                }
+            }
         }
     }
 }
@@ -1446,7 +1540,7 @@ async fn manage_voice_pack(
         if installed && preview_worker.is_none() {
             let voice_id = voice.voice.clone().unwrap_or_else(|| "af_heart".to_owned());
             let playback =
-                std::sync::Arc::new(agent_vesper_tui::voice_playback::PlaybackOwner::new(
+                std::sync::Arc::new(agent_vesper_tui::voice_playback::PlaybackOwner::system(
                     agent_vesper_tui::resolve_player_for_preview(),
                     None,
                 ));
@@ -1540,6 +1634,16 @@ async fn manage_voice_pack(
 /// manifest and the observed free space (no fabricated estimates).
 #[cfg(feature = "voice-kokoro")]
 async fn install_voice_pack(terminal: &mut Terminal<Backend>, theme: &str) -> Result<(), String> {
+    if vesper_voice_kokoro::pack::resolve_phonemizer().is_none() {
+        match choice(terminal, "Natural Voice prerequisite", "Pronunciation tools are missing. Set up local voice dependencies before downloading the Natural Voice pack.",
+            &["Set up dependencies…".into(), "Cancel".into()], theme).await? {
+            Some(0) => setup_local_voice_dependencies(terminal, theme).await?,
+            _ => return Ok(()),
+        }
+        if vesper_voice_kokoro::pack::resolve_phonemizer().is_none() {
+            return Err("Pronunciation setup is unconfirmed. Retry local voice setup before installing the pack.".into());
+        }
+    }
     let setup = vesper_voice_kokoro::setup::VoicePackSetup::new(vesper_voice_kokoro::pack_root());
     let plan = setup.plan().map_err(|error| error.message())?;
     let mib = |bytes: u64| format!("{:.1} MiB", bytes as f64 / (1024.0 * 1024.0));
@@ -1552,7 +1656,7 @@ async fn install_voice_pack(terminal: &mut Terminal<Backend>, theme: &str) -> Re
             )
         })
         .unwrap_or_else(|| {
-            "Available at destination: unknown (setup will stop if space runs out)".to_owned()
+            "Available at destination: unavailable (setup cannot continue)".to_owned()
         });
     let reused_line = if plan.phonemizer_present {
         "Reused from your system: espeak-ng pronunciation engine".to_owned()
@@ -1826,7 +1930,7 @@ async fn remove_voice_pack(terminal: &mut Terminal<Backend>, theme: &str) -> Res
 async fn pack_details(terminal: &mut Terminal<Backend>, theme: &str) -> Result<(), String> {
     let location = vesper_voice_kokoro::pack_root();
     let body = format!(
-        "Voice model: Kokoro-82M (q8f16 ONNX export), revision {}\nVoices: Heart (af_heart), Michael (am_michael)\nPronunciation: espeak-ng IPA (your system installation)\nInference runtime: ONNX Runtime {} (CPU, x86_64 Linux)\n\nLicenses: model/voices/export Apache-2.0; ONNX Runtime MIT; espeak-ng GPL-3.0 (system component, used at a process boundary)\nNotices are shown in the application about screen and preserved beside the runtime library.\nManaged location: {}\n\nThe local neural voice does not change your separately configured main reasoning provider.",
+        "Voice model: Kokoro-82M (model_quantized.onnx), revision {}\nVoices: Heart (af_heart), Michael (am_michael)\nPronunciation: espeak-ng IPA (your system installation)\nInference runtime: ONNX Runtime {} (CPU, native platform)\n\nLicenses: model/voices/export Apache-2.0; ONNX Runtime MIT; espeak-ng GPL-3.0 (system component, used at a process boundary)\nNotices are shown in the application about screen and preserved beside the runtime library.\nManaged location: {}\n\nThe local neural voice does not change your separately configured main reasoning provider.",
         vesper_voice_kokoro::PINNED_REVISION,
         vesper_voice_kokoro::RUNTIME_VERSION,
         location.display(),

@@ -8,6 +8,8 @@ Own durable project documentation and evidence-backed engineering records.
 
 - `voice-control-prd.md` owns the requested persistent red microphone toggle,
   recorder state projection, responsive lifecycle and terminal acceptance.
+  Voice parity requires capture, recognition, pack/runtime, playback and Settings
+  setup evidence per target; authentication/RRC/general CI never substitutes.
 
 - `Vesper bridge/` owns VB-PRD-001 (Vesper Bridge application-control
   subsystem): the frozen PRD, the Phase 0 reconnaissance evidence package

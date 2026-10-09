@@ -1,5 +1,9 @@
 # Foundation Evidence Index
 
+- [Native voice platform parity repair](2026-10-09-native-voice-platform-parity-repair.md) — approved Windows/macOS audio and guided setup repair, measured official runtime packages, real Linux signal and pending exact-source native/hardware acceptance.
+
+- [Windows voice parity verification](2026-10-09-windows-voice-parity-verification.md) — eight released-source platform/setup gaps confirmed from Alex's Windows screenshots; authentication works by user report; voice repairs and native device acceptance remain open.
+
 - [RRC Windows compact fixture identity repair](2026-10-08-rrc-windows-compact-fixture-identity-repair.md) — admitted Windows-only isolated-repair script exhaustion, compact unique Cargo fixture identity, one exact local proof command and pending fresh native Windows exact-SHA rerun.
 
 - [Native first launch and RRC verification workspace repair](2026-10-08-native-first-launch-and-rrc-workspace-repair.md) — signed-out landing/provider setup, cached-workspace verification repair, native resource observation, retained failed matrix and fixture/source-diagnosis corrections; v0.24.10 passed all five native targets and 108/108 binding PRD/recovery cases per target, published sixteen assets and completed native Registry/final delivery.

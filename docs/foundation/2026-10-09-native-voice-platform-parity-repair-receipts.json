@@ -1,0 +1,164 @@
+{
+  "base_sha": "58314f199149c0cb0d21b6f22fb3e482e999d685",
+  "created_at": "2026-10-09T11:12:44.635077+00:00",
+  "archive_sha256": "f15b70f199731d2395106f7b4147bd39de7b3dfa7c463feee5c9ccf7bc41b8ce",
+  "source_sha256": {
+    ".github/test_verify_native_voice.py": "7568ca4f4368bd876da1164db175e53512aad4a543c4cd2d94d621387b291231",
+    ".github/verify_native_voice.py": "cff44de8de4035b5751303192a41eee68bf30d6e2fe3f35736aceae0ae41a52d",
+    "apps/agent-vesper-tui/src/platform_voice.rs": "65005bdd8902c81b4cc28be556043fbb8ab4649388471bcba81b6998dfdf399c",
+    "apps/agent-vesper-tui/src/voice_native_audio.rs": "59f5003111650adbc9d79f6f2e0b2b987fe0c90ee51ca6602d5f06ce4c31d362",
+    "apps/agent-vesper-tui/src/voice_pcm.rs": "45a3e24d8b569186378ec118134bc00bb6f238b22470e76127d1d00dce909ca3",
+    "apps/agent-vesper-tui/tests/voice_setup_pty.py": "b9e6e99d1c6cc5fe32e0bebf02febd9b74b0efaf1ecdfa17eb885096060c04d8",
+    "crates/vesper-harness/examples/voice_setup_receipt.rs": "bb3e146183f1068751446891adabdfb6e9cc6de11512c6b007d5ce62cea0112e",
+    "crates/vesper-harness/src/voice_dependency_setup.rs": "4246fcb8af7856e519c0dfda8fd73f78f4165615dfe25507b49bb2702efeb3b0",
+    ".github/AGENTS.md": "6ed1b37e6658bde8a30030e87c3b495bae5c487b836a3334ffa0cdc9395c7f6f",
+    ".github/workflows/platform-foundation.yml": "f9615189e5acfcfa5257146d40828356d78eb9743bbb51c4558a21282d5da9f3",
+    "Cargo.lock": "5a66d13b37879b824da784490a05e2a601b23f4ef2d2ff2149acd5ede3890040",
+    "apps/agent-vesper-tui/AGENTS.md": "91cb2b474c40faf045224fbb1bed4a78fa8c55c0f95dd10aa7979c5206e3126a",
+    "apps/agent-vesper-tui/Cargo.toml": "3ed24f39dfc9c751d236bafa67f6b2b95a120bb3c78c0231c40da206ac5dbe78",
+    "apps/agent-vesper-tui/src/lib.rs": "7b13c151977a2ce322113c4f0c44d2a96f8ec0cbb7f75c270f68e8741cc6b353",
+    "apps/agent-vesper-tui/src/main.rs": "d82f34c7a6d6b48900e1176ad77fb9bd428f40c0df804551934cf617b738ab5f",
+    "apps/agent-vesper-tui/src/settings_host.rs": "9e87fea5d24bea6850d56e66995a22990445ab382e5569bab2807e7fa49447f0",
+    "apps/agent-vesper-tui/src/voice.rs": "050f679fea8064b861499693afc3551ee4cf0a739ca818e1a8e75460878405b9",
+    "apps/agent-vesper-tui/src/voice_capture_store.rs": "79331706151e630e57755a01aec99a8f48b3d43803bb168d20406e04dcf486ac",
+    "apps/agent-vesper-tui/src/voice_conversation.rs": "6aa31c58031fcf364452a0717653d8511b7803c77b61761714df29bfcd858f6a",
+    "apps/agent-vesper-tui/src/voice_flm_vad.rs": "0beda3e7213540a2c936d41ec9cc4194dacd773adb05b2caa691f3412de23dff",
+    "apps/agent-vesper-tui/src/voice_playback.rs": "b994ee06bd9ddde6416f4514c88f72d8882bee2d881867dec6cadff48c1df072",
+    "apps/agent-vesper-tui/src/voice_readiness.rs": "6d692981f7da2ceb0433f2c8a8693e3312d4acb5d4d56a6c5b26deba5cb4f18a",
+    "apps/agent-vesper-tui/src/voice_shared_stt.rs": "d5424b8da0536d744c06fb359f43e622bda63bc035128b43bd5bb24c573283d6",
+    "apps/agent-vesper-tui/src/voice_speech_worker.rs": "6488034705ac818d160e044c154ef7cae59c1719e9e99b9217794824c84ca217",
+    "apps/agent-vesper-tui/tests/AGENTS.md": "373cf3ac0e75bfe6af423d87e309186c4b9119d66294e7743f73c8338506a221",
+    "apps/agent-vesper-tui/tests/pr4_f9_gate.rs": "871296b085d218ad86c427dcf116ebe1020f6b9ff23d59397519c34aa6e82f29",
+    "apps/agent-vesper-tui/tests/voice_r20_default_capture.rs": "53971249655299d4eacc121e6991e46847e8f0bcb69450979900ca325185fe38",
+    "crates/vesper-harness/AGENTS.md": "b3efd75660cee700065957d48489e38712a3d990ba34a139f57e06083e848029",
+    "crates/vesper-harness/src/dependency_setup.rs": "c6854ffa626ceeeb9d8809efe5ad70c442a0ec30d7cf01306f87d10620c172d8",
+    "crates/vesper-voice-kokoro/AGENTS.md": "b72dc5059c486f781f56b57b10269dc53fcc7df5e2653140f22995ea26198643",
+    "crates/vesper-voice-kokoro/Cargo.toml": "bfe03edc0954dda8d20c209379c36013df0d386424025a54c5b2e9493554b7e7",
+    "crates/vesper-voice-kokoro/src/engine.rs": "58ea3e9afa7b8f78d136b0ec254d2759c06ea5617fa529d95ea0d37ea6796312",
+    "crates/vesper-voice-kokoro/src/pack.rs": "946c040b4fac1d31692b71718bc538e671566d6e19fd66acf24c2c44e04a63c1",
+    "crates/vesper-voice-kokoro/src/setup.rs": "6fd9d3c8029fcee4567702449c1d14e44d71a6dd45a941d4d4f6c9ed8b43272e",
+    "crates/vesper-voice/AGENTS.md": "0dfd80dc64757d7df27de4681db4c822d647628ffaa63552f18b717ca31d17a5",
+    "crates/vesper-voice/src/tts_subprocess.rs": "ccf91839a1e80ae196cc4b0fc2aede017d00e07fd2b607e0d3c395ba053d0848",
+    "crates/vesper-voice/tests/pr2_tts.rs": "3bd59e8ae693fdd8ac3a51c07ff8dafb0c6420cade68a1d20c27c919a8487be7"
+  },
+  "receipts": [
+    {
+      "name": "canonical",
+      "member": "canonical.log",
+      "status": "passed",
+      "bytes": 374822,
+      "sha256": "fea92d985f24845e78d520d0084fb819bca7dd18dce0c7d163051d855f38c16c"
+    },
+    {
+      "name": "msrv-workspace",
+      "member": "msrv-workspace.log",
+      "status": "passed",
+      "bytes": 316503,
+      "sha256": "d891a5133e44cb0528dd136675639ebd9dd6504c6490ef6702bd348b3afd6349"
+    },
+    {
+      "name": "final-source-tests",
+      "member": "final-source-tests.log",
+      "status": "passed",
+      "bytes": 127407,
+      "sha256": "d96311ffa50e6c7c2005c09fc3fe410215c3e6b87ef041f75d7b6b18d86adbd1"
+    },
+    {
+      "name": "msrv-final-tui",
+      "member": "msrv-final-tui.log",
+      "status": "passed",
+      "bytes": 61181,
+      "sha256": "e5ee3f046c56d9af946c3c2a83785a5e4039fe3f1e4ca5bae622d03872e2dfff"
+    },
+    {
+      "name": "final-clippy",
+      "member": "final-clippy.log",
+      "status": "passed",
+      "bytes": 355,
+      "sha256": "dde6de25cc760751f28631115a573167cbe33af8de87c3555c99a47465012e48"
+    },
+    {
+      "name": "settings-consent",
+      "member": "settings-consent.log",
+      "status": "passed",
+      "bytes": 84,
+      "sha256": "3c20c5d213be13ae9545de46fbc5a9bc1854640595aef8cd851adb1372b6e2d4"
+    },
+    {
+      "name": "linux-pack",
+      "member": "linux-pack.log",
+      "status": "passed",
+      "bytes": 5410,
+      "sha256": "cf8a1577e569709c7de1e6fc4ad3ae743b7537c5ec934bf8fbd597c5c37acdea"
+    },
+    {
+      "name": "linux-signal",
+      "member": "linux-signal.log",
+      "status": "passed",
+      "bytes": 456,
+      "sha256": "217054aaf8af8a60eb040919dadd73e5946fe1c5a99e4bd0c1ef4ceb9ec0ae28"
+    },
+    {
+      "name": "deny",
+      "member": "deny.log",
+      "status": "passed",
+      "bytes": 222219,
+      "sha256": "34986b2050236f1677bf3e0e3625b6329b20eea321d5666169d6f2ad3a48de2f"
+    },
+    {
+      "name": "audit",
+      "member": "audit.log",
+      "status": "passed",
+      "bytes": 254,
+      "sha256": "fe3268c1d4700767399d43c101668c45ccd627d351568676b39f9924bbf8b6bd"
+    },
+    {
+      "name": "canonical-stale-expectation",
+      "member": "canonical-stale-expectation.log",
+      "status": "failed-then-repaired",
+      "bytes": 68283,
+      "sha256": "cd30aeb3bc5b502ce6b75b43be059b2a1519611bdaf02edbab7d90f6d312848e"
+    },
+    {
+      "name": "consent-stale-label",
+      "member": "consent-stale-label.log",
+      "status": "failed-then-repaired",
+      "bytes": 7559,
+      "sha256": "3af1d81cabc7e204f72537c491d47061763e2f3ef9ed7d51e47a3277eb4fb73b"
+    },
+    {
+      "name": "msrv-shared-target",
+      "member": "msrv-shared-target.log",
+      "status": "intentionally-interrupted",
+      "bytes": 4207,
+      "sha256": "83afd6af0cb10653b5f89f0f3b0c072107919859729c863426b10993f8f95d7e"
+    },
+    {
+      "name": "modules-x86_64-pc-windows-msvc",
+      "member": "modules-x86_64-pc-windows-msvc.log",
+      "status": "compile-only-passed",
+      "bytes": 948,
+      "sha256": "29a32246126f731e389aee42fa0ecb1fac970d06fef015618b98d878c80a3097"
+    },
+    {
+      "name": "modules-aarch64-apple-darwin",
+      "member": "modules-aarch64-apple-darwin.log",
+      "status": "compile-only-passed",
+      "bytes": 139,
+      "sha256": "143dfc7f65f7d1ff4ea7856b947c724015924f24d8128e66442068847198459d"
+    },
+    {
+      "name": "modules-x86_64-apple-darwin",
+      "member": "modules-x86_64-apple-darwin.log",
+      "status": "compile-only-passed",
+      "bytes": 139,
+      "sha256": "3c62a579765764177d3e01478a7a5b66e55b1ec0cb88f917aabd4890faf64a03"
+    }
+  ],
+  "unexecuted": [
+    "native exact-SHA five-target CI",
+    "real microphone/transcription/speaker hardware",
+    "OS approval/reboot UI",
+    "release publication/registry closeout"
+  ]
+}

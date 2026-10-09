@@ -1160,8 +1160,21 @@ business logic.
   Retry/Discard on error; elapsed time appears in the status row. F5 remains
   reachable through permission and command-menu interceptors. Finish/discard voice
   work before entering nested Settings loops. Screen readers receive textual state.
-  Linux uses `arecord`, macOS `afrecord`, with mono 16 kHz signed 16-bit WAV;
-  unavailable devices/backends fail honestly. Windows capture remains unsupported.
+  Linux retains `arecord`; Windows and macOS use owned CPAL WASAPI/CoreAudio
+  streams. Native callbacks downmix and convert rates to canonical mono 16 kHz
+  signed 16-bit PCM through bounded queues; the managed writer finalizes real WAV
+  headers. Missing devices/permissions and overflow fail with Retry/Discard.
+  `voice_native_audio.rs` owns streams and native timestamp-based playback drain;
+  receipts prove backend handoff, never human audibility. Stop retires the stream.
+  `voice_pcm.rs` owns bounded rate conversion; `platform_voice.rs` owns native
+  executable suffixes, interpreter layouts and application data paths. Existing
+  macOS legacy environments are reused. Native readiness checks compiled backend
+  availability; real devices are checked only on activation. Missing native data
+  paths refuse capture/setup, never relocate audio into shared temporary or
+  workspace directories.
+  Settings → Voice → Set up local voice dependencies is explicitly confirmed,
+  delegates fixed prerequisite plans to `vesper-harness::dependency_setup`, and
+  displays progress/cancellation without saving voice/provider choices.
   Interpreter discovery preserves explicit overrides, the harness venv, sibling
   venvs and system Python precedence. Fixed uv/python venv preparation runs only
   after voice activation, on the worker, with cancellation and bounded processes.

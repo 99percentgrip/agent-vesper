@@ -61,7 +61,7 @@ jobs:
   foundation:
     name: ${{ matrix.target }}
     runs-on: ${{ matrix.runner }}
-    timeout-minutes: 60
+    timeout-minutes: 90
     strategy:
       fail-fast: false
       matrix:
@@ -169,7 +169,16 @@ jobs:
           fi
           python apps/agent-vesper-tui/tests/first_launch_pty.py "$native_binary"
           python apps/agent-vesper-tui/tests/settings_auth_pty.py "$native_binary"
+          python apps/agent-vesper-tui/tests/voice_setup_pty.py "$native_binary"
           python apps/agent-vesper-tui/tests/release_hosts_pty.py "$native_binary" "$acp_binary"
+      - name: Verify native speech dependency setup and real PCM signals
+        shell: bash
+        timeout-minutes: 20
+        env:
+          RUSTC_WRAPPER: ${{ steps.sccache_check.outputs.sccache_ready == 'true' && 'sccache' || '' }}
+        run: |
+          python -m unittest discover -s .github -p test_verify_native_voice.py
+          python .github/verify_native_voice.py
       - name: Verify production Windows resource governor in a constrained Job Object
         if: matrix.platform_spike == 'windows'
         shell: bash

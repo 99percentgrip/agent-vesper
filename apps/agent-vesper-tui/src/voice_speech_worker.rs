@@ -980,6 +980,8 @@ fn build_engine(selection: &EngineSelection) -> Option<Arc<EngineHandle>> {
             match vesper_voice::tts_subprocess::SubprocessTts::new(
                 vesper_voice::tts_subprocess::SubprocessTtsConfig {
                     voice: voice_name.clone(),
+                    executable: vesper_harness::dependency_setup::voice_phonemizer()
+                        .unwrap_or_else(|| std::path::PathBuf::from("espeak-ng")),
                     ..vesper_voice::tts_subprocess::SubprocessTtsConfig::default()
                 },
                 Arc::new(vesper_voice::composition::blocking::ThreadPoolExecutor::new(1)),

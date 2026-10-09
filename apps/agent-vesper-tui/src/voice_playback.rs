@@ -1,8 +1,9 @@
 //! VRO-17 PR-4: the host playback owner.
 //!
 //! Receives canonical PCM (16 kHz mono s16 LE), owns a **bounded**
-//! in-process queue, and drives a user-installed `aplay`-class player
-//! over **stdin pipes** (`-t raw -f S16_LE -r 16000 -c 1`): no WAV
+//! in-process queue, and drives native WASAPI/CoreAudio on Windows/macOS or
+//! a user-installed Linux `aplay`-class player over **stdin pipes**
+//! (`-t raw -f S16_LE -r 16000 -c 1`): no WAV
 //! spooling, no files, no full-turn accumulation, no system-volume
 //! changes, no untracked system-service playback. The device is never
 //! assumed to accept anything else — the argv names the exact raw
@@ -10,7 +11,7 @@
 //!
 //! **Receipt semantics (verified, not inferred):**
 //!
-//! - `BytesWritten(n)` — our bytes handed to the child's stdin pipe.
+//! - `BytesWritten(n)` — our bytes accepted by the native queue or child's stdin pipe.
 //!   Strongest fact: *transport*. Proves nothing about device handoff,
 //!   audibility, or completion.
 //!
@@ -19,6 +20,9 @@
 //!   aplay plays everything it read before exiting. Strongest fact:
 //!   *the player finished consuming and playing our bytes*. It is still
 //!   not proof a human heard them.
+//!   For native streams, the queue must be empty and the reported playback
+//!   timestamp plus the final callback duration must elapse. This is backend
+//!   drain evidence; it never certifies microphone/speaker or human audibility.
 //!
 //! - `Unknown` — used whenever weaker evidence is all we have (device
 //!   missing, error before/at handoff, progress not confirmed). Never
@@ -26,7 +30,8 @@
 //!
 //! Process exit for a *nonzero* status is an error, never completion,
 //! and writing stdin alone is never completion. Stop/flush kills and
-//! reaps exactly our own child (process group), separately from any
+//! reaps exactly our own child (process group) or retires the owned native
+//! stream, separately from any
 //! slow provider/runtime cleanup — but stop-effect timing is not
 //! acoustic silence and is never claimed as such.
 //!
@@ -154,6 +159,8 @@ pub enum PlaybackError {
 /// in-memory queue, stop/flush separate from synthesis/runtime cleanup.
 pub struct PlaybackOwner {
     player: PathBuf,
+    #[cfg(any(target_os = "windows", target_os = "macos"))]
+    native: Option<crate::voice_native_audio::NativePlaybackOwner>,
     /// Device name for the player argv (empty ⇒ default device).
     device: String,
     queue: Arc<Mutex<Vec<u8>>>,
@@ -174,10 +181,26 @@ impl PlaybackOwner {
     pub fn new(player: PathBuf, device: Option<String>) -> Self {
         Self {
             player,
+            #[cfg(any(target_os = "windows", target_os = "macos"))]
+            native: None,
             device: device.unwrap_or_default(),
             queue: Arc::new(Mutex::new(Vec::new())),
             state: Mutex::new(OwnerState::default()),
         }
+    }
+
+    /// Production playback: native WASAPI/CoreAudio on Windows/macOS; ALSA on Linux.
+    #[must_use]
+    pub fn system(player: PathBuf, device: Option<String>) -> Self {
+        #[allow(unused_mut)]
+        let mut owner = Self::new(player, device);
+        #[cfg(any(target_os = "windows", target_os = "macos"))]
+        {
+            owner.native = Some(crate::voice_native_audio::NativePlaybackOwner::new(
+                owner.device.clone(),
+            ));
+        }
+        owner
     }
 
     /// Validates the player path shape (no shell strings).
@@ -186,8 +209,15 @@ impl PlaybackOwner {
     ///
     /// [`PlaybackError::Unavailable`] for a malformed path.
     pub fn validate(&self) -> Result<(), PlaybackError> {
+        #[cfg(any(target_os = "windows", target_os = "macos"))]
+        if let Some(_native) = self.native.as_ref() {
+            return Ok(());
+        }
         let text = self.player.to_string_lossy();
-        if text.is_empty() || text.contains([';', '|', '&', '`', ' ']) {
+        if text.is_empty()
+            || text.contains([';', '|', '&', '`'])
+            || (text.contains(' ') && !self.player.is_file())
+        {
             return Err(PlaybackError::Unavailable {
                 reason: "player path must be a plain executable path".into(),
             });
@@ -207,6 +237,10 @@ impl PlaybackOwner {
     /// (missing executable/permission), [`PlaybackError::Failed`] on
     /// other spawn errors. Never a fake success.
     pub fn begin_stream(&self) -> Result<(), PlaybackError> {
+        #[cfg(any(target_os = "windows", target_os = "macos"))]
+        if let Some(native) = self.native.as_ref() {
+            return native.begin_stream();
+        }
         self.validate()?;
         let mut state = self.state.lock().map_err(|_| PlaybackError::Failed {
             reason: "state lock poisoned".into(),
@@ -322,6 +356,10 @@ impl PlaybackOwner {
     /// See [`PlaybackError`]; `BytesWritten` receipts are only emitted
     /// for bytes actually accepted by the pipe.
     pub fn push_pcm(&self, pcm: &[u8]) -> Result<PlaybackReceipt, PlaybackError> {
+        #[cfg(any(target_os = "windows", target_os = "macos"))]
+        if let Some(native) = self.native.as_ref() {
+            return native.push_pcm(pcm);
+        }
         if pcm.len() > MAX_QUEUED_BYTES {
             return Err(PlaybackError::QueueFull {
                 max: MAX_QUEUED_BYTES,
@@ -383,7 +421,8 @@ impl PlaybackOwner {
         Ok(PlaybackReceipt::BytesWritten(state.written_total))
     }
 
-    /// Ends the stream: closes stdin, waits (bounded) for the player to
+    /// Native streams use a bounded timestamp/queue drain. Linux closes stdin
+    /// and waits (bounded) for the player to
     /// drain and exit. Exit 0 ⇒ `Drained` (the verified strongest
     /// fact); anything else ⇒ error/Unknown.
     ///
@@ -397,6 +436,10 @@ impl PlaybackOwner {
     ///
     /// [`PlaybackError::Failed`] on nonzero exit or wait failure.
     pub fn end_stream(&self) -> Result<PlaybackReceipt, PlaybackError> {
+        #[cfg(any(target_os = "windows", target_os = "macos"))]
+        if let Some(native) = self.native.as_ref() {
+            return native.end_stream();
+        }
         {
             let mut state = self.state.lock().map_err(|_| PlaybackError::Failed {
                 reason: "state lock poisoned".into(),
@@ -476,6 +519,11 @@ impl PlaybackOwner {
     /// Executed **separately** from any slow provider/runtime cleanup;
     /// timing is not acoustic silence and is never claimed as such.
     pub fn stop_flush(&self) {
+        #[cfg(any(target_os = "windows", target_os = "macos"))]
+        if let Some(native) = self.native.as_ref() {
+            native.stop_flush();
+            return;
+        }
         if let Ok(mut state) = self.state.lock() {
             state.stopped = true;
             state.current.take(); // Drop kills + reaps exactly our child
@@ -487,6 +535,11 @@ impl PlaybackOwner {
 
     /// Resets for a new stream (after stop or completion).
     pub fn reset(&self) {
+        #[cfg(any(target_os = "windows", target_os = "macos"))]
+        if let Some(native) = self.native.as_ref() {
+            native.stop_flush();
+            return;
+        }
         if let Ok(mut state) = self.state.lock() {
             state.current.take();
             state.stopped = false;
@@ -711,5 +764,17 @@ sys.exit(0)
     fn malformed_player_path_rejected() {
         let owner = PlaybackOwner::new(PathBuf::from("/bin/sh -c evil"), None);
         assert!(owner.validate().is_err());
+    }
+}
+
+#[cfg(test)]
+mod platform_path_tests {
+    use super::*;
+    #[test]
+    fn existing_player_path_accepts_spaces_without_shell_parsing() {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("player with spaces");
+        std::fs::write(&path, []).unwrap();
+        assert!(PlaybackOwner::new(path, None).validate().is_ok());
     }
 }

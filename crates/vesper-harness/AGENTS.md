@@ -381,6 +381,13 @@ Z.ai and Playwright MCP server descriptors.
   normal tool execution never installs packages or initializes/downloads a VM.
   Browser readiness runs a bounded network-disabled, read-only container with no
   host mounts and verifies removal. Missing platform acceptance remains in the PRD.
+  Its `voice_dependency_setup.rs` component owns separately confirmed local voice
+  prerequisite health/repair: private native-layout Python/uv, espeak-ng and
+  Windows C++ runtime dependencies. Fixed official packages require exact sizes
+  and hashes before execution; healthy components are reused. Administrator/tool
+  prompts stay explicit. No model tools, provider calls, credential access or
+  voice preference writes are introduced. `examples/voice_setup_receipt.rs` is
+  guarded disposable-runner acceptance, never an installed tool.
 
 - `lens_tools` owns shared native artifact-review and planning-interview tools:
   bounded question validation, workspace confinement, real Lens invocation and

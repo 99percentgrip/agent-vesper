@@ -43,6 +43,9 @@ pub const PROVIDER_ID: &str = "voice-kokoro";
 pub const PINNED_REVISION: &str = "1939ad2a8e416c0acfeecc08a694d14ef25f2231";
 
 /// Pinned ONNX Runtime (CPU) release the adapter is ABI-matched to.
+#[cfg(all(target_os = "macos", target_arch = "x86_64"))]
+pub const ORT_VERSION: &str = "1.23.2";
+#[cfg(not(all(target_os = "macos", target_arch = "x86_64")))]
 pub const ORT_VERSION: &str = "1.28.0";
 
 /// Readiness-plumbing alias (the runtime version surfaced in Details).
@@ -53,6 +56,48 @@ pub const RUNTIME_VERSION: &str = ORT_VERSION;
 /// phonemizer. Both are external components on the user's machine
 /// (espeak-ng GPL-3.0 system binary; never copied or bundled).
 pub const PHONEMIZER_EXECUTABLE: &str = "espeak-ng";
+
+/// Executable candidates from an explicit search path; Windows suffix handling
+/// stays independent of the invoking working directory.
+pub fn phonemizer_in(search: &std::ffi::OsStr, windows: bool) -> Option<PathBuf> {
+    std::env::split_paths(search)
+        .flat_map(|dir| {
+            let mut candidates = vec![dir.join(PHONEMIZER_EXECUTABLE)];
+            if windows {
+                candidates.push(dir.join("espeak-ng.exe"));
+            }
+            candidates
+        })
+        .find(|candidate| candidate.is_file())
+}
+
+/// Resolve the external pronunciation component, including native installer paths.
+pub fn resolve_phonemizer() -> Option<PathBuf> {
+    if let Some(search) = std::env::var_os("PATH")
+        && let Some(path) = phonemizer_in(&search, cfg!(windows))
+    {
+        return Some(path);
+    }
+    #[cfg(windows)]
+    for variable in ["ProgramFiles", "ProgramFiles(x86)"] {
+        if let Some(root) = std::env::var_os(variable) {
+            for directory in ["eSpeak NG", "eSpeak NG/bin"] {
+                let path = PathBuf::from(&root).join(directory).join("espeak-ng.exe");
+                if path.is_file() {
+                    return Some(path);
+                }
+            }
+        }
+    }
+    #[cfg(target_os = "macos")]
+    for base in ["/opt/homebrew/bin", "/usr/local/bin"] {
+        let path = Path::new(base).join(PHONEMIZER_EXECUTABLE);
+        if path.is_file() {
+            return Some(path);
+        }
+    }
+    None
+}
 
 /// Pinned asset: exact remote path, byte size, sha256 (verified against
 /// the primary source's LFS manifest), and the installed file name.
@@ -152,7 +197,29 @@ pub fn pack_root() -> PathBuf {
             .join("agent-vesper")
             .join("voice-pack");
     }
-    if let Some(home) = std::env::var_os("HOME") {
+    #[cfg(windows)]
+    if let Some(local) = std::env::var_os("LOCALAPPDATA")
+        .filter(|path| Path::new(path).is_absolute())
+        .map(PathBuf::from)
+        .or_else(|| {
+            std::env::var_os("USERPROFILE")
+                .filter(|path| Path::new(path).is_absolute())
+                .map(|home| PathBuf::from(home).join("AppData/Local"))
+        })
+    {
+        return local.join("agent-vesper/voice-pack");
+    }
+    #[cfg(not(windows))]
+    if let Some(home) = std::env::var_os("HOME").filter(|path| Path::new(path).is_absolute()) {
+        #[cfg(target_os = "macos")]
+        {
+            let legacy = PathBuf::from(&home).join(".local/share/agent-vesper/voice-pack");
+            if legacy.is_dir() {
+                return legacy;
+            }
+            return PathBuf::from(home).join("Library/Application Support/agent-vesper/voice-pack");
+        }
+        #[cfg(not(target_os = "macos"))]
         return PathBuf::from(home)
             .join(".local")
             .join("share")
@@ -163,13 +230,125 @@ pub fn pack_root() -> PathBuf {
     PathBuf::from("/nonexistent-agent-vesper-voice-pack")
 }
 
-/// Verified size of the extracted CPU runtime library (measured from the
-/// pinned archive: `lib/libonnxruntime.so.1.28.0`).
-pub const RUNTIME_LIB_SIZE: u64 = 24_268_848;
-/// Verified sizes of the runtime license/notice files shipped alongside
-/// the library (extracted from the same pinned archive).
-pub const RUNTIME_LICENSE_SIZE: u64 = 10_132;
-pub const RUNTIME_NOTICES_SIZE: u64 = 33_599;
+/// Each runtime is measured from its official upstream release archive.
+/// Intel macOS uses a verified upstream x86_64 archive (1.23.2); the adapter uses
+/// the compatible v17 C API, not APIs requiring the Linux/ARM/Windows version.
+macro_rules! runtime_manifest {
+    ($archive:literal, $prefix:literal, $size:literal, $digest:literal,
+     $lib:literal, $lib_size:literal, $lib_digest:literal,
+     $license_size:literal, $license_digest:literal, $notices_size:literal, $notices_digest:literal) => {
+        pub const RUNTIME_PREFIX: &str = $prefix;
+        pub const RUNTIME_LIB_NAME: &str = $lib;
+        pub const RUNTIME_ASSET: PinnedAsset = PinnedAsset {
+            remote_path: $archive,
+            installed_name: concat!("onnxruntime/lib/", $lib),
+            size: $size,
+            sha256: $digest,
+            role: PackRole::Runtime,
+        };
+        pub const RUNTIME_LIB_FILE: PinnedAsset = PinnedAsset {
+            remote_path: concat!($archive, "!lib/", $lib),
+            installed_name: concat!("onnxruntime/lib/", $lib),
+            size: $lib_size,
+            sha256: $lib_digest,
+            role: PackRole::Runtime,
+        };
+        pub const RUNTIME_LICENSE_FILE: PinnedAsset = PinnedAsset {
+            remote_path: concat!($archive, "!LICENSE"),
+            installed_name: "onnxruntime/lib/LICENSE-ONNXRUNTIME",
+            size: $license_size,
+            sha256: $license_digest,
+            role: PackRole::Runtime,
+        };
+        pub const RUNTIME_NOTICES_FILE: PinnedAsset = PinnedAsset {
+            remote_path: concat!($archive, "!ThirdPartyNotices.txt"),
+            installed_name: "onnxruntime/lib/ThirdPartyNotices-ONNXRUNTIME.txt",
+            size: $notices_size,
+            sha256: $notices_digest,
+            role: PackRole::Runtime,
+        };
+    };
+}
+
+#[cfg(all(target_os = "linux", target_arch = "aarch64"))]
+runtime_manifest!(
+    "onnxruntime-linux-aarch64-1.28.0.tgz",
+    "onnxruntime-linux-aarch64-1.28.0",
+    8116278,
+    "e15ff8b5d85afe6c144d97c6fd432254bf76a219daaf17658087d6ecb3e8f0bb",
+    "libonnxruntime.so.1.28.0",
+    20591712,
+    "f1ec1a08eb99bd6e5401340f0a2b101381bf4694415480291dc13bcaa30f9ec7",
+    1073,
+    "2f07c72751aed99790b8a4869cf2311df85a860b22ded05fa22803587a48922c",
+    325054,
+    "0e07b95f3a8d6230037707c5c4a2b554d12c4cb67369669ac255635528ffcee2"
+);
+
+#[cfg(all(target_os = "macos", target_arch = "aarch64"))]
+runtime_manifest!(
+    "onnxruntime-osx-arm64-1.28.0.tgz",
+    "onnxruntime-osx-arm64-1.28.0",
+    32396562,
+    "1268b359718099bde2cedb55787f182a130067bc4f31e8c88478c445b850d3d8",
+    "libonnxruntime.1.28.0.dylib",
+    39312136,
+    "dc19bbcb2f5c9fb3c68b4f9248aa0a35065ff702c5dbeae75eac54a74da97b6d",
+    1073,
+    "2f07c72751aed99790b8a4869cf2311df85a860b22ded05fa22803587a48922c",
+    325054,
+    "0e07b95f3a8d6230037707c5c4a2b554d12c4cb67369669ac255635528ffcee2"
+);
+
+#[cfg(all(target_os = "windows", target_arch = "x86_64"))]
+runtime_manifest!(
+    "onnxruntime-win-x64-1.28.0.zip",
+    "onnxruntime-win-x64-1.28.0",
+    78796801,
+    "abef733dacbe2f571547a7150b479b5cb9cc0df22f96c24983a42cadb1b4f8bc",
+    "onnxruntime.dll",
+    15809848,
+    "18370c375f07357fa5874344a9d9ac17e6b6fe1eb18b1dd209d79483b4470257",
+    1094,
+    "c250d6278f0b47a6439fb7592b08b58a55eb9f535aa49a1db63211c3f982b674",
+    331175,
+    "fb0af774b4d7cffc5b9d046f2aaeade2f37df2f80abf8033c95dfffcc77a8866"
+);
+
+#[cfg(all(target_os = "macos", target_arch = "x86_64"))]
+runtime_manifest!(
+    "onnxruntime-osx-x86_64-1.23.2.tgz",
+    "./onnxruntime-osx-x86_64-1.23.2",
+    11676322,
+    "d10359e16347b57d9959f7e80a225a5b4a66ed7d7e007274a15cae86836485a6",
+    "libonnxruntime.1.23.2.dylib",
+    39742608,
+    "8c9c78de65ea3786f987c0d980e9c1b13a3a5fbc6b3e2965ba05b450e6e4c054",
+    1073,
+    "2f07c72751aed99790b8a4869cf2311df85a860b22ded05fa22803587a48922c",
+    326866,
+    "e9e90971a8e75a9a8ac0c6412e29c1202d079998389915aa485f46c816c3b4cc"
+);
+
+#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+runtime_manifest!(
+    "onnxruntime-linux-x64-1.28.0.tgz",
+    "onnxruntime-linux-x64-1.28.0",
+    9125960,
+    "a3e1b79d7bb1bf09696ce675f49e4064e6c81f6202b8225624fff0e93f8d6407",
+    "libonnxruntime.so.1.28.0",
+    24268848,
+    "1461ef7cc3d9e49982591721683cc3e3a55580aeca9a5254e7aac47b75ee4bab",
+    1073,
+    "2f07c72751aed99790b8a4869cf2311df85a860b22ded05fa22803587a48922c",
+    325054,
+    "0e07b95f3a8d6230037707c5c4a2b554d12c4cb67369669ac255635528ffcee2"
+);
+
+/// Actual retained runtime byte counts for this target.
+pub const RUNTIME_LIB_SIZE: u64 = RUNTIME_LIB_FILE.size;
+pub const RUNTIME_LICENSE_SIZE: u64 = RUNTIME_LICENSE_FILE.size;
+pub const RUNTIME_NOTICES_SIZE: u64 = RUNTIME_NOTICES_FILE.size;
 
 /// The staging root for in-flight downloads (`<pack_root>/staging/<pid>`).
 #[must_use]
@@ -178,47 +357,6 @@ pub fn staging_root() -> PathBuf {
         .join("staging")
         .join(std::process::id().to_string())
 }
-
-/// The ONNX Runtime CPU release archive for x86_64 Linux (the single
-/// supported target of this work unit): pinned URL, byte size, sha256
-/// (GitHub release digest), and the runtime-library role. The archive is
-/// transferred and verified, then extracted; the retained component is
-/// the library below.
-pub const RUNTIME_ASSET: PinnedAsset = PinnedAsset {
-    remote_path: "onnxruntime-linux-x64-1.28.0.tgz",
-    installed_name: "onnxruntime/lib/libonnxruntime.so.1.28.0",
-    size: 9_125_960,
-    sha256: "a3e1b79d7bb1bf09696ce675f49e4064e6c81f6202b8225624fff0e93f8d6407",
-    role: PackRole::Runtime,
-};
-
-/// The extracted runtime library as retained on disk (measured from the
-/// pinned archive): what [`verify_pack`] validates after installation.
-pub const RUNTIME_LIB_FILE: PinnedAsset = PinnedAsset {
-    remote_path: "onnxruntime-linux-x64-1.28.0.tgz!lib/libonnxruntime.so.1.28.0",
-    installed_name: "onnxruntime/lib/libonnxruntime.so.1.28.0",
-    size: 24_268_848,
-    sha256: "1461ef7cc3d9e49982591721683cc3e3a55580aeca9a5254e7aac47b75ee4bab",
-    role: PackRole::Runtime,
-};
-
-/// The extracted runtime license/notices (retained beside the library;
-/// sizes and digests measured from the pinned archive).
-pub const RUNTIME_LICENSE_FILE: PinnedAsset = PinnedAsset {
-    remote_path: "onnxruntime-linux-x64-1.28.0.tgz!LICENSE",
-    installed_name: "onnxruntime/lib/LICENSE-ONNXRUNTIME",
-    size: 1_073,
-    sha256: "2f07c72751aed99790b8a4869cf2311df85a860b22ded05fa22803587a48922c",
-    role: PackRole::Runtime,
-};
-
-pub const RUNTIME_NOTICES_FILE: PinnedAsset = PinnedAsset {
-    remote_path: "onnxruntime-linux-x64-1.28.0.tgz!ThirdPartyNotices.txt",
-    installed_name: "onnxruntime/lib/ThirdPartyNotices-ONNXRUNTIME.txt",
-    size: 325_054,
-    sha256: "0e07b95f3a8d6230037707c5c4a2b554d12c4cb67369669ac255635528ffcee2",
-    role: PackRole::Runtime,
-};
 
 impl PinnedAsset {
     /// Upstream URL for the runtime component (official ORT release).
@@ -639,10 +777,18 @@ mod tests {
             assert_eq!(voice.sha256.len(), 64);
         }
         assert_eq!(ASSET_VOCAB.remote_path, "tokenizer.json");
-        assert_eq!(RUNTIME_ASSET.size, 9_125_960);
+        const { assert!(RUNTIME_ASSET.size > 1_000_000) };
+        assert_eq!(RUNTIME_ASSET.sha256.len(), 64);
         assert_eq!(
             RUNTIME_ASSET.remote_url_runtime(),
-            "https://github.com/microsoft/onnxruntime/releases/download/v1.28.0/onnxruntime-linux-x64-1.28.0.tgz"
+            format!(
+                "https://github.com/microsoft/onnxruntime/releases/download/v{ORT_VERSION}/{}",
+                RUNTIME_ASSET.remote_path
+            )
+        );
+        assert_eq!(
+            RUNTIME_LIB_FILE.installed_name,
+            format!("onnxruntime/lib/{RUNTIME_LIB_NAME}")
         );
         assert!(ASSET_MODEL.remote_url().ends_with(
             "/resolve/1939ad2a8e416c0acfeecc08a694d14ef25f2231/onnx/model_quantized.onnx"

@@ -6,6 +6,15 @@ Own evidence and decisions that close the pre-workspace blockers identified by r
 
 ## Ownership
 
+- `2026-10-09-native-voice-platform-parity-repair.md` and its source/receipt
+  companions own the approved native audio, prerequisite setup, five-target pack
+  repair and feature-specific validation. Compile/signal receipts never certify
+  microphone, speaker, OS-prompt or original Windows laptop acceptance.
+
+- `2026-10-09-windows-voice-parity-verification.md` and its JSON manifest own
+  the Windows screenshots, released-source speech-platform gaps and pending
+  native repair/acceptance boundary.
+
 - `2026-10-08-rrc-windows-compact-fixture-identity-repair.md` owns the admitted
   Windows isolated-repair script-exhaustion failure, compact unique Cargo fixture
   identity, focused local proof and pending fresh native Windows boundary.

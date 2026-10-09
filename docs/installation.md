@@ -129,7 +129,7 @@ Web access and browser interaction are opt-in. See [web tools](web-tools.md) for
 
 ### Voice input
 
-Voice input is optional and supported in the Linux/macOS terminal app. It needs a microphone and a recording command: `arecord` on Linux or `afrecord` on macOS. On Debian/Ubuntu install `alsa-utils`; on Fedora install `alsa-utils` with `dnf`.
+Voice input is optional in the terminal app. Linux uses `arecord`; Windows and macOS use native microphone streams. The operating system must permit microphone access for your terminal. Open **Settings → Voice → Set up local voice dependencies** to verify or repair local recognition and pronunciation tools. Confirmed setup reuses healthy components and shows progress; your OS may ask for administrator approval or developer tools. Text coding remains available if setup is declined.
 
 Starting with v0.23.0, click the red **● Push to talk** control (or press **F5**)
 to start recording. Click **■ Stop** or press F5 again to transcribe. Recording
@@ -141,9 +141,9 @@ retains private audio for **Retry voice** or **Discard** (Delete); it is removed
 on success, discard or normal app exit. Completed dictation is appended to the
 composer for review and is never sent automatically.
 
-If no suitable transcription environment exists, first use attempts to install `faster-whisper` into Vesper's voice environment and download the chosen model. This needs network access and can take time. The POSIX installer bundles `uv` when its download succeeds; a system `uv` or Python virtual-environment setup is the fallback.
+Guided setup prepares a private native-layout Python environment with `faster-whisper` and installs missing `espeak-ng` pronunciation tools. Windows setup also checks the C++ runtime required by the optional speech libraries. Downloads have fixed integrity checks; OS approval and restart requirements remain explicit. Recognition may download the selected model on first use. Existing Linux/macOS first-use environment preparation remains available.
 
-If recording is unavailable, confirm the recording command is on PATH and the terminal has microphone access. Voice setup is separate from ordinary text-based coding.
+If recording is unavailable, check the named error and system microphone permissions, then use guided setup or Retry. Failed audio remains available for Retry/Discard. Voice setup is separate from ordinary text coding.
 
 For conversation, open **Settings → Voice**, turn **Voice conversation** on,
 choose recognition/synthesis compute and a speech engine, then leave Settings
@@ -163,11 +163,11 @@ or supported. Vesper does not provide NPU speech synthesis.
 
 ### Optional Natural Voice pack
 
-Voice conversation can speak through the system speech engine. For a local neural voice, the Linux x86_64 terminal build offers an optional voice pack — Settings → Voice → *Natural Voice pack* → **Install voice pack**. The confirmation shows the exact download (about 98 MiB), installed size (about 113 MiB), and peak extra space before anything is downloaded; progress is real byte progress you can stop with Esc. Installation verifies every file against its pinned source and runs a silent synthesis check before the pack reads Ready. It never selects the engine, enables conversation, or plays audio by itself.
+Voice conversation can speak through the system speech engine. For local neural speech, open Settings → Voice → *Natural Voice pack* → **Install voice pack**. The confirmation shows the exact download, installed size, available storage and peak extra space for your platform; setup refuses unmeasurable capacity. Linux, Windows, Intel macOS and Apple Silicon have separately verified runtime packages. Progress shows actual bytes and supports Esc cancellation. Every file is verified against its pinned source and a silent synthesis check must pass before Ready. Installation does not select the engine, enable conversation or play audio.
 
-After installation, choose **Speech engine → Neural voice**, pick Heart or Michael, and leave Settings with **Save changes**. **Preview voice** plays a fixed phrase through your audio player without submitting anything to the agent. **Repair / Verify** revalidates the pack; **Remove voice pack** reclaims about 113 MiB and deletes only pack-owned files (it refuses while another running Vesper process is using the pack). Speech runs entirely locally; it does not change your main coding provider. Removing the pack while it is your selected voice makes that voice unavailable until you choose another engine and save.
+After installation, choose **Speech engine → Neural voice**, pick Heart or Michael, and leave Settings with **Save changes**. **Preview voice** plays a fixed phrase without submitting anything to the agent. Windows/macOS use native output streams; Linux retains its audio player. **Repair / Verify** revalidates the pack; **Remove voice pack** deletes only pack-owned files and refuses while another Vesper process is using the pack. Speech runs locally and does not change your coding provider. Removing the selected pack makes that voice unavailable until you choose another engine and save.
 
-Pronunciation uses your system `espeak-ng`; install it with your package manager if it is missing (the readiness report names it). Licenses: model/voices/export Apache-2.0, ONNX Runtime MIT, espeak-ng GPL-3.0 (system component used at a process boundary).
+Pronunciation uses `espeak-ng`; guided setup offers its installation or repair when missing. Licenses: model/voices/export Apache-2.0, ONNX Runtime MIT, espeak-ng GPL-3.0 (external system component). Optional uv is MIT/Apache-2.0; Windows runtime installation uses Microsoft's official redistributable.
 
 All shipped STT/TTS routes are local or explicitly configured self-hosted
 routes. Vesper v1 includes no third-party cloud speech provider. Local speech

@@ -159,21 +159,23 @@ pub async fn query_startup_view(
 
 /// Resolve the harness-owned voice backend venv root. Precedence:
 /// `$AGENT_VESPER_VOICE_VENV` → `$XDG_DATA_HOME/agent-vesper/voice-venv` →
-/// `~/.local/share/agent-vesper/voice-venv` (auto-bootstrapped by the
-/// dictation worker on first F5).
+/// native application data. Existing macOS legacy environments are reused.
 pub fn voice_venv_root() -> std::path::PathBuf {
     if let Some(root) = std::env::var_os("AGENT_VESPER_VOICE_VENV") {
         return std::path::PathBuf::from(root);
     }
-    if let Some(xdg) = std::env::var_os("XDG_DATA_HOME") {
-        return std::path::PathBuf::from(xdg)
-            .join("agent-vesper")
-            .join("voice-venv");
+    #[cfg(target_os = "macos")]
+    if std::env::var_os("XDG_DATA_HOME").is_none()
+        && let Some(home) = std::env::var_os("HOME")
+    {
+        let legacy = std::path::PathBuf::from(home).join(".local/share/agent-vesper/voice-venv");
+        if platform_voice::venv_python(&legacy).is_file() {
+            return legacy;
+        }
     }
-    let home = std::env::var_os("HOME")
-        .map(std::path::PathBuf::from)
-        .unwrap_or_else(std::env::temp_dir);
-    home.join(".local/share/agent-vesper/voice-venv")
+    platform_voice::data_root()
+        .map(|root| root.join("voice-venv"))
+        .unwrap_or_default()
 }
 
 /// The audio player path for the preview surface (same PATH-resolution
@@ -224,13 +226,7 @@ pub fn feature_gated_settings_entries() -> Vec<(&'static str, &'static str)> {
 /// harness data root (same root as the voice venv): private, owned,
 /// and reservation-accounted across TUI instances.
 pub fn voice_capture_root() -> std::path::PathBuf {
-    let base = std::env::var_os("XDG_DATA_HOME")
-        .map(std::path::PathBuf::from)
-        .or_else(|| {
-            std::env::var_os("HOME").map(|home| std::path::PathBuf::from(home).join(".local/share"))
-        })
-        .unwrap_or_else(std::env::temp_dir);
-    base.join("agent-vesper")
+    platform_voice::data_root().unwrap_or_default()
 }
 
 /// Test seam for the Settings → Voice save path: the production
@@ -315,3 +311,11 @@ mod tests {
         assert!(auth_provider_from_descriptor(&bare).is_none());
     }
 }
+
+/// Host-owned platform paths for local voice preparation.
+pub mod platform_voice;
+
+#[cfg(any(target_os = "windows", target_os = "macos"))]
+pub mod voice_native_audio;
+/// Streaming canonical PCM conversion, shared by native input and output.
+pub mod voice_pcm;

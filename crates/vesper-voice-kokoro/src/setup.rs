@@ -200,20 +200,21 @@ impl VoicePackSetup {
     /// [`VoiceError::Unavailable`] when the managed location cannot be
     /// identified at all.
     pub fn plan(&self) -> Result<SetupPlan, SetupError> {
+        if !self.root.is_absolute()
+            || self.root == Path::new("/nonexistent-agent-vesper-voice-pack")
+        {
+            return Err(SetupError::Storage {
+                detail: "Cannot locate your private voice pack directory. Restore user data paths, then Retry setup.".into(),
+            });
+        }
         let transfer_bytes = Download::Asset(&ASSET_MODEL).size()
             + Download::Asset(&ASSET_VOCAB).size()
             + VOICE_ASSETS.iter().map(|v| v.size).sum::<u64>()
             + RUNTIME_ASSET.size;
-        let available = free_bytes(&self.root);
-        if let Some(available) = available {
-            let required = pack::PEAK_SETUP_BYTES;
-            if available < required {
-                return Err(SetupError::InsufficientSpace {
-                    available,
-                    required,
-                });
-            }
-        }
+        let available = Some(require_space(
+            free_bytes(&self.root),
+            pack::PEAK_SETUP_BYTES,
+        )?);
         Ok(SetupPlan {
             transfer_bytes,
             retained_bytes: pack::RETAINED_PACK_BYTES,
@@ -470,7 +471,7 @@ impl VoicePackSetup {
         }
         place("model_quantized.onnx.part", ASSET_MODEL.installed_name)?;
         place(
-            "ort-extract/libonnxruntime.so.1.28.0",
+            &format!("ort-extract/{}", pack::RUNTIME_LIB_NAME),
             RUNTIME_ASSET.installed_name,
         )?;
         place("ort-extract/LICENSE", "onnxruntime/lib/LICENSE-ONNXRUNTIME")?;
@@ -505,16 +506,7 @@ impl VoicePackSetup {
     }
 
     fn ensure_space(&self, required: u64) -> Result<(), SetupError> {
-        if let Some(available) = free_bytes(&self.root)
-            && available < required
-        {
-            return Err(SetupError::InsufficientSpace {
-                available,
-                required,
-            });
-        }
-        // Unknown space defers the check (never guesses); the largest
-        // writes still carry the caller's earlier plan gate.
+        require_space(free_bytes(&self.root), required)?;
         Ok(())
     }
 
@@ -705,19 +697,19 @@ async fn spawn_and_wait(
 /// `dest` (no path traversal by construction: member names are fixed).
 fn extract_runtime(archive: &Path, dest: &Path) -> Result<(), String> {
     std::fs::create_dir_all(dest).map_err(|error| error.to_string())?;
-    let prefix = format!("onnxruntime-linux-x64-{}/", pack::ORT_VERSION);
-    for member in [
-        "lib/libonnxruntime.so.1.28.0",
-        "LICENSE",
-        "ThirdPartyNotices.txt",
-    ] {
-        let tar_path = format!("{prefix}{member}");
-        let output = std::process::Command::new("/usr/bin/tar")
-            .args(["-xzf"])
+    let members = [
+        format!("lib/{}", pack::RUNTIME_LIB_NAME),
+        "LICENSE".into(),
+        "ThirdPartyNotices.txt".into(),
+    ];
+    for member in &members {
+        let archive_path = format!("{}/{member}", pack::RUNTIME_PREFIX);
+        let output = std::process::Command::new(if cfg!(windows) { "tar.exe" } else { "tar" })
+            .arg("-xf")
             .arg(archive)
             .arg("-C")
             .arg(dest)
-            .arg(&tar_path)
+            .arg(&archive_path)
             .output()
             .map_err(|error| format!("could not extract the runtime ({error})"))?;
         if !output.status.success() {
@@ -726,13 +718,8 @@ fn extract_runtime(archive: &Path, dest: &Path) -> Result<(), String> {
             ));
         }
     }
-    // Flatten: dest/<prefix>lib/... → dest/lib/...
-    let inner = dest.join(format!("onnxruntime-linux-x64-{}", pack::ORT_VERSION));
-    for member in [
-        "lib/libonnxruntime.so.1.28.0",
-        "LICENSE",
-        "ThirdPartyNotices.txt",
-    ] {
+    let inner = dest.join(pack::RUNTIME_PREFIX.trim_start_matches("./"));
+    for member in &members {
         let from = inner.join(member);
         let to = dest.join(member.rsplit('/').next().unwrap_or(member));
         std::fs::rename(&from, &to).map_err(|error| error.to_string())?;
@@ -780,25 +767,31 @@ fn hex(bytes: &[u8]) -> String {
     out
 }
 
-/// Free bytes at the managed location via `df -B1` (the house pattern:
-/// checked output, no libc, no shell interpolation).
-fn free_bytes(path: &Path) -> Option<u64> {
-    let probe = if path.exists() {
-        path.to_path_buf()
-    } else {
-        path.parent()?.to_path_buf()
-    };
-    let output = std::process::Command::new("df")
-        .arg("-B1")
-        .arg("--output=avail")
-        .arg(&probe)
-        .output()
-        .ok()?;
-    if !output.status.success() {
-        return None;
+/// Portable capacity measurement; only a missing path permits ancestor ascent.
+fn require_space(available: Option<u64>, required: u64) -> Result<u64, SetupError> {
+    let available = available.ok_or_else(|| SetupError::Storage {
+        detail:
+            "Cannot measure available storage. Check destination permissions, then Retry setup."
+                .into(),
+    })?;
+    if available < required {
+        return Err(SetupError::InsufficientSpace {
+            available,
+            required,
+        });
     }
-    let text = String::from_utf8_lossy(&output.stdout);
-    text.lines().nth(1)?.trim().parse::<u64>().ok()
+    Ok(available)
+}
+
+fn free_bytes(path: &Path) -> Option<u64> {
+    let mut probe = path;
+    loop {
+        match std::fs::metadata(probe) {
+            Ok(_) => return fs2::available_space(probe).ok(),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => probe = probe.parent()?,
+            Err(_) => return None,
+        }
+    }
 }
 
 /// Removal with active-user protection: refuses while a live foreign
@@ -983,14 +976,41 @@ mod tests {
 
     #[test]
     fn plan_refuses_when_space_is_forced_small() {
-        // Space gate uses `df` on the real filesystem; forcing a small
-        // result requires a filesystem override, so the gate's refusal
-        // branch is proven by the InsufficientSpace mapping in unit:
-        let error = SetupError::InsufficientSpace {
-            available: 1,
-            required: 2,
-        };
+        let error = require_space(Some(1), 2).unwrap_err();
         assert!(error.message().contains("Not enough space"));
+        assert!(matches!(
+            require_space(None, 2),
+            Err(SetupError::Storage { .. })
+        ));
+        assert_eq!(require_space(Some(2), 2).unwrap(), 2);
+    }
+
+    #[test]
+    fn native_capacity_handles_missing_descendants_and_refuses_invalid_paths() {
+        let dir = tempfile::tempdir().unwrap();
+        let missing = dir.path().join("not-created").join("voice-pack");
+        assert!(free_bytes(&missing).is_some_and(|bytes| bytes > 0));
+        let file = dir.path().join("file");
+        std::fs::write(&file, b"fixture").unwrap();
+        let invalid = file.join("child");
+        assert!(free_bytes(&invalid).is_none());
+        assert!(matches!(
+            VoicePackSetup::new(invalid).plan(),
+            Err(SetupError::Storage { .. })
+        ));
+    }
+
+    #[test]
+    fn unknown_or_relative_pack_locations_refuse_before_transfer() {
+        for root in [
+            "/nonexistent-agent-vesper-voice-pack",
+            "relative-voice-pack",
+        ] {
+            assert!(matches!(
+                VoicePackSetup::new(PathBuf::from(root)).plan(),
+                Err(SetupError::Storage { .. })
+            ));
+        }
     }
 
     #[test]

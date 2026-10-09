@@ -85,7 +85,7 @@ impl SubprocessTtsConfig {
     /// empty voice name.
     pub fn validate(&self) -> Result<(), VoiceError> {
         let text = self.executable.to_string_lossy();
-        if text.is_empty() || text.contains([';', '|', '&', '`', ' ']) {
+        if text.is_empty() || text.contains([';', '|', '&', '`']) {
             return Err(VoiceError::InvalidInput(
                 "engine path must be a plain executable path without arguments".into(),
             ));

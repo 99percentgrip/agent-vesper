@@ -11,7 +11,7 @@ publish = false
 [features]
 # Inference (ort + ONNX Runtime via load-dynamic). Default-off: this crate
 # must compile bare — pack files exist only after explicit user setup.
-ort = ["dep:ort"]
+ort = ["dep:ort", "dep:fs2"]
 # Development-only deterministic double for red tests of TUI/host wiring.
 # Test-only: bounded-buffer replay, no inference, never a production path.
 mock-synthesis = []
@@ -27,6 +27,8 @@ vesper-domain = { path = "../vesper-domain", version = "=0.24.11" }
 vesper-security = { path = "../vesper-security", version = "=0.24.11" }
 vesper-voice = { path = "../vesper-voice", version = "=0.24.11", features = ["stt-sidecar", "tts-subprocess"] }
 ort = { version = "=2.0.0-rc.13", optional = true, default-features = false, features = ["std", "load-dynamic", "ndarray"] }
+
+fs2 = { version = "=0.4.3", optional = true }
 
 [dev-dependencies]
 futures-util.workspace = true

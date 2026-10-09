@@ -156,7 +156,7 @@ fn unavailability(what: &'static str) -> VoiceError {
 
 /// The harness voice venv interpreter (same resolution as dictation).
 fn venv_python() -> Result<PathBuf, VoiceError> {
-    let candidate = crate::voice_venv_root().join("bin").join("python");
+    let candidate = crate::platform_voice::venv_python(&crate::voice_venv_root());
     if candidate.is_file() {
         return Ok(candidate);
     }

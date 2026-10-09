@@ -1047,3 +1047,22 @@ its way faster then before,”** providing positive comparative device evidence.
 No repeat seconds or error-path matrix was supplied in that historical latency
 session. Later records close the approved NPU and R6 scopes. VRO-17 remains OPEN
 only on PR-5; no numeric latency threshold is invented.
+
+## Windows/macOS platform verification follow-up — 2026-10-09
+
+[Released-source verification](foundation/2026-10-09-windows-voice-parity-verification.md)
+records Alex's Windows microphone refusal and blocked Natural Voice setup.
+The released source lacks Windows capture and selects a Linux conversation
+player/runtime, with additional Unix-only setup/path assumptions. Historical
+Linux voice and cross-host protocol receipts do not certify Windows voice or
+full macOS Natural Voice. The subsequent requested platform-parity work remains
+open until feature-specific native setup, synthesis, recognition, playback and
+device/permission evidence exists. Earlier bounded acceptance is retained at
+its original scope; no successful repair is inferred from this verification.
+
+[Approved native platform repair](foundation/2026-10-09-native-voice-platform-parity-repair.md)
+adds platform audio owners, native interpreter/executable/data paths, measured
+OS/architecture runtime manifests and separately confirmed prerequisite setup.
+All five release lanes require production dependency setup, verified real-model
+installation and both canonical PCM signal receipts. Those device-free checks
+do not close microphone/speaker, OS authorization or original-laptop acceptance.

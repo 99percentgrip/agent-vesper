@@ -4638,7 +4638,7 @@ fn vesper_python_interpreter_from(
         }
     }
     if let Some(venv) = glm_venv {
-        let candidate = std::path::PathBuf::from(venv).join("bin").join("python");
+        let candidate = agent_vesper_tui::platform_voice::venv_python(std::path::Path::new(venv));
         if candidate.is_file() {
             return (candidate.to_string_lossy().into_owned(), true);
         }
@@ -4694,8 +4694,8 @@ fn candidate_whisper_pythons_in(
     if from_env {
         push_unique(&mut candidates, env_interp);
     }
-    if let Some(venv) = voice_venv {
-        let candidate = venv.join("bin").join("python");
+    if let Some(venv) = voice_venv.filter(|root| root.is_absolute()) {
+        let candidate = agent_vesper_tui::platform_voice::venv_python(venv);
         if candidate.is_file() {
             push_unique(&mut candidates, candidate.to_string_lossy().into_owned());
         }
@@ -4712,7 +4712,8 @@ fn candidate_whisper_pythons_in(
         names.sort();
         for name in &names {
             for venv in [".venv", "venv", ".virtualenv"] {
-                let candidate = dir.join(name).join(venv).join("bin").join("python");
+                let candidate =
+                    agent_vesper_tui::platform_voice::venv_python(&dir.join(name).join(venv));
                 if candidate.is_file() {
                     push_unique(&mut candidates, candidate.to_string_lossy().into_owned());
                 }
@@ -4731,15 +4732,21 @@ fn candidate_whisper_pythons_in(
 /// voice worker’s `python3 -m venv` fallback still requires
 /// `python3`+`python3-venv` and is only reached if no `uv` is found.)
 fn bundled_uv_path() -> Option<std::path::PathBuf> {
+    let name = if cfg!(windows) { "uv.exe" } else { "uv" };
     let candidates: Vec<std::path::PathBuf> = [
         std::env::var_os("AGENT_VESPER_BUNDLE_DIR").map(std::path::PathBuf::from),
-        std::env::var_os("XDG_DATA_HOME").map(|d| std::path::PathBuf::from(d).join("agent-vesper")),
-        std::env::var_os("HOME")
-            .map(|h| std::path::PathBuf::from(h).join(".local/share/agent-vesper")),
+        agent_vesper_tui::platform_voice::data_root(),
+        agent_vesper_tui::platform_voice::data_root().map(|root| root.join("voice-tools")),
+        std::env::var_os("LOCALAPPDATA")
+            .map(|d| std::path::PathBuf::from(d).join("Programs/AgentVesper")),
+        std::env::current_exe()
+            .ok()
+            .and_then(|exe| exe.parent().map(std::path::Path::to_path_buf)),
     ]
     .into_iter()
     .flatten()
-    .map(|base| base.join("uv"))
+    .filter(|base| base.is_absolute())
+    .map(|base| base.join(name))
     .collect();
     bundled_uv_from(&candidates)
 }
@@ -18864,7 +18871,7 @@ mod tests {
         let temp =
             std::env::temp_dir().join(format!("vesper-py-interp-test-{}", std::process::id()));
         std::fs::create_dir_all(temp.join("bin")).unwrap();
-        let python_file = temp.join("bin").join("python");
+        let python_file = agent_vesper_tui::platform_voice::venv_python(&temp);
         std::fs::write(&python_file, "#!/bin/sh\necho hi\n").unwrap();
         let (interp, from_env) = vesper_python_interpreter_from(none, vesp(temp.to_str().unwrap()));
         assert_eq!(interp, python_file.to_string_lossy());
@@ -18908,7 +18915,8 @@ mod tests {
 
         let root = std::env::temp_dir().join(format!("vesper-cand-test-{}", std::process::id()));
         let setup = |project: &str, layout: &str| {
-            let py = root.join(project).join(layout).join("bin").join("python");
+            let py =
+                agent_vesper_tui::platform_voice::venv_python(&root.join(project).join(layout));
             std::fs::create_dir_all(py.parent().unwrap()).unwrap();
             std::fs::write(&py, "#!/bin/sh\n").unwrap();
             py
@@ -18921,7 +18929,7 @@ mod tests {
         // The harness-owned voice venv lives outside the projects tree.
         let voice_root =
             std::env::temp_dir().join(format!("vesper-voice-venv-test-{}", std::process::id()));
-        let voice_python = voice_root.join("bin").join("python");
+        let voice_python = agent_vesper_tui::platform_voice::venv_python(&voice_root);
         std::fs::create_dir_all(voice_python.parent().unwrap()).unwrap();
         std::fs::write(&voice_python, "#!/bin/sh\n").unwrap();
 

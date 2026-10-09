@@ -1,6 +1,6 @@
 # Persistent push-to-talk control
 
-Status: implemented with automated Linux evidence; real-device/macOS acceptance remains open. Scope: native terminal voice input.
+Status: Linux implementation retained; Windows/macOS parity repair under native validation. Real-device acceptance remains separate. Scope: native terminal voice input.
 
 ## Objective
 
@@ -12,7 +12,7 @@ red square with “Stop” during capture. Keep F5 as the equivalent shortcut.
 
 1. Idle: show a red `● Push to talk` control in the normal coding footer.
    Clicking once or pressing F5 starts capture; holding the key is not required.
-2. Recording: show `■ Stop` in red, driven by an actual live recorder process.
+2. Recording: show `■ Stop` in red, driven by an actual live recorder process or native input stream.
    Click/F5 stops capture and transcribes. Keep this distinct from agent-turn Stop.
 3. Preparing and transcribing: show truthful named states, remain responsive,
    suppress duplicate starts, and provide bounded cancellation/cleanup.
@@ -60,3 +60,17 @@ red square with “Stop” during capture. Keep F5 as the equivalent shortcut.
 [Implementation and acceptance](foundation/voice-control-execution.md).
 
 [Release pipeline](foundation/v0.22.6-release-execution.md).
+
+## Windows parity verification — 2026-10-09
+
+[Source verification](foundation/2026-10-09-windows-voice-parity-verification.md)
+confirms v0.24.11 rejects Windows microphone capture. The earlier supported-
+backend contract does not satisfy Alex's later Windows/macOS parity request.
+Capture, recognition setup, playback and prerequisite repair remain open;
+Linux results and unrelated authentication/release gates are not Windows voice
+acceptance.
+
+[Approved platform repair](foundation/2026-10-09-native-voice-platform-parity-repair.md)
+adds owned WASAPI/CoreAudio input, canonical PCM conversion, native output and
+confirmed prerequisite setup. Native CI and device acceptance have separate
+receipts; software presence or authentication does not establish audio parity.

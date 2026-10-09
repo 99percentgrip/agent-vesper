@@ -334,3 +334,22 @@ fn recorder_seam_remains_arecord_wav_to_a_path() {
 /// mpsc import is conditionally needed by future PTY-side additions).
 #[allow(dead_code)]
 fn _noop(_rx: mpsc::Receiver<()>, _d: Duration) {}
+
+#[test]
+fn canonical_store_wav_header_is_readable_after_pcm_write() {
+    let _guard = STORE_LOCK.lock().unwrap();
+    let temp = tempfile::tempdir().unwrap();
+    let mut capture = ManagedCapture::start(temp.path()).unwrap();
+    capture.write_pcm(&[0x34, 0x12, 0, 0]).unwrap();
+    capture.try_finish().unwrap();
+    let bytes = std::fs::read(capture.wav_path()).unwrap();
+    assert_eq!(&bytes[..4], b"RIFF");
+    assert_eq!(&bytes[8..16], b"WAVEfmt ");
+    assert_eq!(&bytes[20..24], &[1, 0, 1, 0]);
+    assert_eq!(&bytes[24..28], &16_000u32.to_le_bytes());
+    assert_eq!(&bytes[34..36], &16u16.to_le_bytes());
+    assert_eq!(&bytes[36..40], b"data");
+    assert_eq!(&bytes[40..44], &4u32.to_le_bytes());
+    assert_eq!(&bytes[44..], &[0x34, 0x12, 0, 0]);
+    capture.cleanup().unwrap();
+}

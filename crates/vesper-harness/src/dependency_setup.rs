@@ -878,3 +878,7 @@ fn verify_package(path: &Path, checksum: &str) -> Result<(), String> {
     }
     Ok(())
 }
+
+#[path = "voice_dependency_setup.rs"]
+mod voice;
+pub use voice::{VOICE_SETUP_CONSENT, VoiceSetupPaths, setup_voice_cancellable, voice_phonemizer};

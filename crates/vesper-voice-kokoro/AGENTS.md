@@ -65,6 +65,14 @@ as the verified inference runtime.
   `default-features = false`, features exactly `std, load-dynamic,
   ndarray`. No build-time native linking and no build-script downloads:
   the binary launches without the pack and offers setup.
+  Optional `fs2` under the same feature measures actual destination capacity;
+  unknown capacity refuses setup before transfer. Runtime archives and each
+  extracted library/license/notice have separate platform-specific size/hash
+  pins for all five release targets. Windows uses `onnxruntime.dll`, macOS dylibs
+  and Linux `.so`; extraction accepts only fixed archive members. Intel macOS
+  uses the verified upstream 1.23.2 archive via compatible C API v17; other targets
+  use 1.28.0. macOS reuses an existing legacy pack, otherwise native Application
+  Support; Windows uses LOCALAPPDATA. Absolute XDG overrides remain isolated.
 - The crate must compile bare (`cargo test -p vesper-voice-kokoro`);
   all adapter/engine/setup code is feature-gated.
 - Upstream weights/runtime are reused third-party content: pinned

@@ -392,7 +392,7 @@ impl<S: VoiceStt + ?Sized> ConversationHost<S> {
             EngineSelection::Neural { voice_id } => voice_id.clone(),
             EngineSelection::System { voice_name } => voice_name.clone(),
         };
-        let playback = Arc::new(crate::voice_playback::PlaybackOwner::new(
+        let playback = Arc::new(crate::voice_playback::PlaybackOwner::system(
             Self::player_path(),
             device,
         ));

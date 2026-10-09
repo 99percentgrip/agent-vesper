@@ -75,6 +75,10 @@ vesper-sessions = { path = "../../crates/vesper-sessions", version = "=0.24.11" 
 vesper-security = { path = "../../crates/vesper-security", version = "=0.24.11" }
 zeroize.workspace = true
 
+[target.'cfg(any(target_os = "windows", target_os = "macos"))'.dependencies]
+# WASAPI/CoreAudio stay at the terminal composition boundary; no audio I/O in the pure core.
+cpal = { version = "=0.17.3", default-features = false }
+
 [dev-dependencies]
 serde_json.workspace = true
 tempfile.workspace = true

@@ -176,6 +176,14 @@ migration gates and disposable platform assumptions on hosts unavailable locally
 
 ## Verification
 
+- `.github/verify_native_voice.py` requires a disposable native runner, installs
+  pronunciation prerequisites, isolates application state, and runs production
+  speech-dependency setup plus actual Kokoro pack verification and both real PCM
+  signal cases. All five prerequisite lanes require these named receipts before
+  tagging. Its dependencies use fixed integrity pins; no microphone, speakers,
+  provider or user credentials are exercised. OS prompt/device acceptance remains
+  separate. The 90-minute lane budget includes the 20-minute bounded speech step.
+
 - Validate YAML syntax locally where tooling exists.
 - Run `cargo xtask verify` and the MSRV workflow; record exact-SHA terminal
   conclusions rather than inferring success from workflow registration.

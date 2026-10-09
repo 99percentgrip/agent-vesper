@@ -363,10 +363,19 @@ fn missing_engine_is_unavailable_with_setup_hint() {
 #[test]
 fn config_rejects_shell_metacharacters() {
     let config = SubprocessTtsConfig {
-        executable: PathBuf::from("/bin/sh -c evil"),
+        executable: PathBuf::from("/bin/sh; evil"),
         ..SubprocessTtsConfig::default()
     };
     assert!(config.validate().is_err());
+}
+
+#[test]
+fn native_executable_paths_with_spaces_are_single_arguments() {
+    let config = SubprocessTtsConfig {
+        executable: PathBuf::from("C:/Program Files/eSpeak NG/espeak-ng.exe"),
+        ..SubprocessTtsConfig::default()
+    };
+    assert!(config.validate().is_ok());
 }
 
 // ------------------------------------------------------- storage-safety proof

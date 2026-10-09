@@ -34,20 +34,10 @@ pub struct ReadinessCheck {
 /// Returns `None` when absent. Never depends on the process CWD.
 #[must_use]
 pub fn resolve_executable_in(name: &str, search: Option<&std::ffi::OsStr>) -> Option<PathBuf> {
-    let path = Path::new(name);
-    if path.is_absolute() {
-        return path.is_file().then(|| path.to_path_buf());
+    if name == "espeak-ng" && search.is_none() {
+        return vesper_harness::dependency_setup::voice_phonemizer();
     }
-    if path.components().count() > 1 {
-        // Explicit relative path: resolve against CWD (unchanged).
-        return path.is_file().then(|| path.to_path_buf());
-    }
-    let search = search
-        .map(std::borrow::ToOwned::to_owned)
-        .or_else(|| std::env::var_os("PATH"))?;
-    std::env::split_paths(&search)
-        .map(|dir| dir.join(name))
-        .find(|candidate| candidate.is_file())
+    crate::platform_voice::resolve_executable_in(name, search)
 }
 
 /// Production resolution through the real `PATH`.
@@ -70,17 +60,22 @@ pub fn voice_readiness_with_interpreter(
         ReadinessCheck {
             name: "voice backend (dictation venv interpreter)",
             ok: venv_python.is_file(),
-            remedy: "press F5 once so Vesper prepares the local voice backend",
+            remedy: "use Settings → Voice → Set up local voice dependencies",
         },
         ReadinessCheck {
             name: "speech engine (espeak-ng)",
             ok: resolve_executable_in("espeak-ng", search).is_some(),
-            remedy: "install espeak-ng with your system package manager",
+            remedy: "use Settings → Voice → Set up local voice dependencies",
         },
         ReadinessCheck {
-            name: "audio player (aplay)",
-            ok: resolve_executable_in("aplay", search).is_some(),
-            remedy: "install alsa-utils with your system package manager",
+            name: if cfg!(any(windows, target_os = "macos")) {
+                "native audio backend (device checked on activation)"
+            } else {
+                "audio player (aplay)"
+            },
+            ok: cfg!(any(windows, target_os = "macos"))
+                || resolve_executable_in("aplay", search).is_some(),
+            remedy: "use Settings → Voice → Set up local voice dependencies",
         },
     ]
 }
@@ -89,7 +84,12 @@ pub fn voice_readiness_with_interpreter(
 /// path. The voice interpreter remains the production harness path.
 #[must_use]
 pub fn voice_readiness_in(search: Option<&std::ffi::OsStr>) -> Vec<ReadinessCheck> {
-    let venv_python = crate::voice_venv_root().join("bin").join("python");
+    let root = crate::voice_venv_root();
+    let venv_python = if root.is_absolute() {
+        crate::platform_voice::venv_python(&root)
+    } else {
+        PathBuf::new()
+    };
     voice_readiness_with_interpreter(&venv_python, search)
 }
 
@@ -176,7 +176,7 @@ pub fn neural_voice_checks() -> Vec<ReadinessCheck> {
                 "a pack file is invalid; choose Repair in Settings → Voice"
             }
             vesper_voice_kokoro::PackProblem::PhonemizerMissing => {
-                "install espeak-ng with your system package manager"
+                "use Settings → Voice → Set up local voice dependencies"
             }
             vesper_voice_kokoro::PackProblem::InsufficientSpace { .. } => {
                 "free disk space at the managed location and Retry"
@@ -201,7 +201,7 @@ pub fn neural_voice_checks() -> Vec<ReadinessCheck> {
     checks.push(ReadinessCheck {
         name: "pronunciation engine (espeak-ng)",
         ok: phonemizer_ok,
-        remedy: "install espeak-ng with your system package manager",
+        remedy: "use Settings → Voice → Set up local voice dependencies",
     });
     checks
 }
@@ -211,4 +211,34 @@ pub fn neural_voice_checks() -> Vec<ReadinessCheck> {
 #[must_use]
 pub fn first_neural_blocker() -> Option<ReadinessCheck> {
     neural_voice_checks().into_iter().find(|check| !check.ok)
+}
+
+#[cfg(test)]
+mod native_tests {
+    use super::*;
+    #[test]
+    fn readiness_uses_native_suffix_and_audio_backend_without_device_claims() {
+        let temp = tempfile::tempdir().unwrap();
+        let python = temp.path().join("python fixture");
+        std::fs::write(&python, []).unwrap();
+        std::fs::write(
+            temp.path().join(if cfg!(windows) {
+                "espeak-ng.exe"
+            } else {
+                "espeak-ng"
+            }),
+            [],
+        )
+        .unwrap();
+        let search = std::env::join_paths([temp.path()]).unwrap();
+        let checks = voice_readiness_with_interpreter(&python, Some(&search));
+        assert!(checks[0].ok && checks[1].ok);
+        if cfg!(any(windows, target_os = "macos")) {
+            assert!(checks[2].ok);
+            assert!(checks[2].name.contains("device checked on activation"));
+        } else {
+            assert!(!checks[2].ok);
+            assert!(checks[2].name.contains("aplay"));
+        }
+    }
 }

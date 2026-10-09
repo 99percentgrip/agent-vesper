@@ -22,9 +22,9 @@
 
 // PR-4 note: this module is the complete, tested R20 contract (hard
 // caps, aggregate reservation, leases, recovery). Its production call
-// site is the conversation capture worker loop, which lands with
-// user-operated device acceptance; until then the API is exercised by
-// its dedicated test suite below, so bin-level dead-code analysis is
+// site is the dictation/conversation capture worker: Linux passes through
+// the recorder WAV and Windows/macOS write canonical native PCM. Device
+// acceptance is separate from the dedicated storage fixtures. Dead-code analysis is
 // explicitly waived for the contract surface (constants included —
 // they are policy, not unused locals).
 #![allow(dead_code)]
@@ -230,6 +230,11 @@ impl ManagedCapture {
     }
 
     fn start_with(root: &Path, passthrough: bool) -> Result<Self, CaptureStoreError> {
+        if !root.is_absolute() {
+            return Err(CaptureStoreError::UnknownFreeSpace {
+                path: "private voice data directory is unavailable".into(),
+            });
+        }
         // 1. Destination filesystem must be measurable and have the
         //    reserve after the planned bounded allocation.
         let planned = CAPTURE_MAX_BYTES;
@@ -300,7 +305,18 @@ impl ManagedCapture {
     fn write_wav_header(&mut self) -> Result<(), CaptureStoreError> {
         // Canonical PCM WAV header with placeholder sizes (patched at
         // finalize; the caps below bound everything regardless).
-        let header = [0u8; 44];
+        let mut header = [0u8; 44];
+        header[0..4].copy_from_slice(b"RIFF");
+        header[8..12].copy_from_slice(b"WAVE");
+        header[12..16].copy_from_slice(b"fmt ");
+        header[16..20].copy_from_slice(&16u32.to_le_bytes());
+        header[20..22].copy_from_slice(&1u16.to_le_bytes());
+        header[22..24].copy_from_slice(&1u16.to_le_bytes());
+        header[24..28].copy_from_slice(&16_000u32.to_le_bytes());
+        header[28..32].copy_from_slice(&32_000u32.to_le_bytes());
+        header[32..34].copy_from_slice(&2u16.to_le_bytes());
+        header[34..36].copy_from_slice(&16u16.to_le_bytes());
+        header[36..40].copy_from_slice(b"data");
         self.write_raw(&header)
     }
 
@@ -393,10 +409,18 @@ impl ManagedCapture {
     /// explicit lifecycle. Called by the recorder-stream pump at EOF and
     /// safe to call on an already-finished capture.
     pub fn finish(&mut self) {
-        if self.writer.is_some() {
-            let _ = self.finalize_header();
-        }
+        let _ = self.try_finish();
+    }
+
+    /// Finalization with an explicit storage receipt for native recorders.
+    pub fn try_finish(&mut self) -> Result<(), CaptureStoreError> {
+        let result = if self.writer.is_some() {
+            self.finalize_header()
+        } else {
+            Ok(())
+        };
         self.writer = None;
+        result
     }
 
     /// Retains the capture for transcription: writes a retain marker so
@@ -543,6 +567,15 @@ fn set_private(dir: &Path) -> Result<(), CaptureStoreError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn missing_private_root_never_becomes_workspace_capture_storage() {
+        for root in [Path::new(""), Path::new("relative-voice-storage")] {
+            assert!(matches!(
+                ManagedCapture::start(root),
+                Err(CaptureStoreError::UnknownFreeSpace { .. })
+            ));
+        }
+    }
 
     fn store_root() -> PathBuf {
         let dir = std::env::temp_dir().join(format!(

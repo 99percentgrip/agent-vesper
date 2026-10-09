@@ -1,0 +1,116 @@
+{
+  "objective": "Verify reported Windows voice parity gaps in released source",
+  "source_commit": "58314f199149c0cb0d21b6f22fb3e482e999d685",
+  "status": "verification_complete_voice_repair_open",
+  "findings": [
+    {
+      "finding": "capture",
+      "path": "apps/agent-vesper-tui/src/voice.rs",
+      "source_sha256": "fdb4344d65611e0c87ef255f7d3197f148a107103c690ca35dc83614f1adf6a2",
+      "matched_line": 523,
+      "excerpt_start_line": 522,
+      "excerpt": "    fn start(&mut self) -> Result<(), String> {\n        if !cfg!(any(target_os = \"linux\", target_os = \"macos\")) {\n            return Err(\"Microphone capture currently supports Linux and macOS.\".into());\n        }\n        // Capture must not wait for Python imports, package probing or model\n        // loading. A known installed interpreter can load the sidecar in\n        // parallel with recording; missing setup is handled at transcription.\n        if self.sidecar.is_none() {\n            let (configured, explicit) = super::vesper_python_interpreter_from(\n                std::env::var_os(\"VESPER_PYTHON_PATH\").as_deref(),\n                std::env::var_os(\"GLM_VENV_PATH\").as_deref(),\n            );\n            let installed = agent_vesper_tui::voice_venv_root().join(\"bin/python\");\n            let python = self.python.clone().or_else(|| {\n                if explicit {\n                    Some(configured)\n                } else {\n                    installed\n                        .is_file()\n                        .then(|| installed.to_string_lossy().into_owned())\n                }\n            });\n            if let Some(python) = python {\n                self.sidecar = Some(Sidecar::spawn(&python)?);\n                self.python = Some(python);\n            }\n        }\n        if self.cancelled() {\n            return Err(\"Voice preparation cancelled.\".into());\n        }\n        // VRO-17 R20 (2026-09-23 repair): EVERY explicit capture \u2014 F5\n        // dictation in default builds and F9 conversation in feature\n        // builds \u2014 is created through the ONE managed store (hard\n        // 120 s / 4 MiB caps, cross-instance aggregate reservation,\n        // lease-backed cleanup, free-space reserve, dead-lease\n        // recovery). Low/unknown space or aggregate exhaustion defers\n        // the capture with an actionable reason: never relocation,\n        // unbounded buffering, or user-data deletion.\n        let managed = match agent_vesper_tui::voice_capture_store::ManagedCapture::start_passthrough(\n            &agent_vesper_tui::voice_capture_root(),\n        ) {\n            Ok(managed) => managed,\n            Err(error) => {\n                return Err(format!(\"Voice capture deferred: {error}\"));\n            }\n        };\n        // The recorder's destination is the managed capture. On Linux\n        // the recorder streams WAV on stdout into the store's capped\n        // writer (byte cap at the writer boundary \u2014 never polling); on\n        // macOS afrecord needs a path and writes the store's capture\n        // file directly (the store bounds and owns it).\n        let mut command = if cfg!(target_os = \"linux\") {\n            let mut c = Command::new(\"arecord\");\n            // \"-\" streams the WAV to stdout.\n            c.args([\n                \"-q\", \"-f\", \"S16_LE\", \"-r\", \"16000\", \"-c\", \"1\", \"-t\", \"wav\", \"-\",\n            ]);\n            c\n        } else {\n            let mut c = Command::new(\"afrecord\");\n            c.args([\"-f\", \"WAVE\", \"-d\", \"LEI16@16000\", \"-c\", \"1\"]);\n            c.arg(managed.wav_path());\n            c\n        };\n        command\n            .stdin(Stdio::null())\n            .stdout(if cfg!(target_os = \"linux\") {\n                Stdio::piped()\n            } else {",
+      "verification": "literal source inspection; not executed OS-device acceptance"
+    },
+    {
+      "finding": "player",
+      "path": "apps/agent-vesper-tui/src/voice_conversation.rs",
+      "source_sha256": "ff0f4ee24475ffd475f254edb1765623cd3292ebd73a02f71651ba2e1cea5c36",
+      "matched_line": 495,
+      "excerpt_start_line": 489,
+      "excerpt": "    fn player_path() -> std::path::PathBuf {\n        // Resolve aplay from PATH (production player); a missing player\n        // surfaces as truthful unavailability at stream time.\n        std::env::var_os(\"PATH\")\n            .and_then(|path| {\n                std::env::split_paths(&path)\n                    .map(|dir| dir.join(\"aplay\"))\n                    .find(|candidate| candidate.is_file())\n            })\n            .unwrap_or_else(|| std::path::PathBuf::from(\"aplay\"))\n    }\n",
+      "verification": "literal source inspection; not executed OS-device acceptance"
+    },
+    {
+      "finding": "runtime",
+      "path": "crates/vesper-voice-kokoro/src/pack.rs",
+      "source_sha256": "c96239903c6f1a265bdcfe2f57a83680f210ff58e635f89a4634b45e7419bc41",
+      "matched_line": 188,
+      "excerpt_start_line": 180,
+      "excerpt": "}\n\n/// The ONNX Runtime CPU release archive for x86_64 Linux (the single\n/// supported target of this work unit): pinned URL, byte size, sha256\n/// (GitHub release digest), and the runtime-library role. The archive is\n/// transferred and verified, then extracted; the retained component is\n/// the library below.\npub const RUNTIME_ASSET: PinnedAsset = PinnedAsset {\n    remote_path: \"onnxruntime-linux-x64-1.28.0.tgz\",\n    installed_name: \"onnxruntime/lib/libonnxruntime.so.1.28.0\",\n    size: 9_125_960,\n    sha256: \"a3e1b79d7bb1bf09696ce675f49e4064e6c81f6202b8225624fff0e93f8d6407\",\n    role: PackRole::Runtime,\n};\n\n/// The extracted runtime library as retained on disk (measured from the\n/// pinned archive): what [`verify_pack`] validates after installation.\npub const RUNTIME_LIB_FILE: PinnedAsset = PinnedAsset {\n    remote_path: \"onnxruntime-linux-x64-1.28.0.tgz!lib/libonnxruntime.so.1.28.0\",\n    installed_name: \"onnxruntime/lib/libonnxruntime.so.1.28.0\",\n    size: 24_268_848,\n    sha256: \"1461ef7cc3d9e49982591721683cc3e3a55580aeca9a5254e7aac47b75ee4bab\",",
+      "verification": "literal source inspection; not executed OS-device acceptance"
+    },
+    {
+      "finding": "exe_lookup",
+      "path": "crates/vesper-voice-kokoro/src/engine.rs",
+      "source_sha256": "53c0e50d466700d8a6efce2207b1e601f4610d2aa621aa39fb92e24d67318607",
+      "matched_line": 158,
+      "excerpt_start_line": 151,
+      "excerpt": "pub fn resolve_phonemizer() -> Option<PathBuf> {\n    let path = Path::new(pack::PHONEMIZER_EXECUTABLE);\n    if path.is_absolute() {\n        return path.is_file().then(|| path.to_path_buf());\n    }\n    let search = std::env::var_os(\"PATH\")?;\n    std::env::split_paths(&search)\n        .map(|dir| dir.join(pack::PHONEMIZER_EXECUTABLE))\n        .find(|candidate| candidate.is_file())\n}\n",
+      "verification": "literal source inspection; not executed OS-device acceptance"
+    },
+    {
+      "finding": "venv",
+      "path": "apps/agent-vesper-tui/src/voice.rs",
+      "source_sha256": "fdb4344d65611e0c87ef255f7d3197f148a107103c690ca35dc83614f1adf6a2",
+      "matched_line": 490,
+      "excerpt_start_line": 485,
+      "excerpt": "            }\n        }\n        let root = agent_vesper_tui::voice_venv_root();\n        std::fs::create_dir_all(root.parent().ok_or(\"Invalid voice directory.\")?)\n            .map_err(|_| \"Cannot create voice backend directory.\")?;\n        let python = root.join(\"bin/python\");\n        let uv = super::bundled_uv_path().unwrap_or_else(|| \"uv\".into());\n        let mut probe = Command::new(&uv);\n        probe.arg(\"--version\");\n        if self.run_command(probe, Duration::from_secs(5)).is_ok() {\n            let mut command = Command::new(&uv);\n            command.arg(\"venv\").arg(&root);\n            if !python.exists() {\n                self.run_command(command, Duration::from_secs(300))?;\n            }\n            let mut command = Command::new(&uv);\n            command\n                .args([\"pip\", \"install\", \"faster-whisper\", \"--python\"])\n                .arg(&python);\n            self.run_command(command, Duration::from_secs(600))?;\n        } else {\n            let mut command = Command::new(\"python3\");\n            command.args([\"-m\", \"venv\"]).arg(&root);\n            if !python.exists() {\n                self.run_command(command, Duration::from_secs(120))?;\n            }\n            let mut command = Command::new(&python);\n            command.args([\"-m\", \"pip\", \"install\", \"faster-whisper\"]);\n            self.run_command(command, Duration::from_secs(600))?;",
+      "verification": "literal source inspection; not executed OS-device acceptance"
+    },
+    {
+      "finding": "pack_location",
+      "path": "crates/vesper-voice-kokoro/src/pack.rs",
+      "source_sha256": "c96239903c6f1a265bdcfe2f57a83680f210ff58e635f89a4634b45e7419bc41",
+      "matched_line": 163,
+      "excerpt_start_line": 144,
+      "excerpt": "/// (`$XDG_DATA_HOME` honored), shared across projects and application\n/// updates \u2014 never a per-workspace copy.\n#[must_use]\npub fn pack_root() -> PathBuf {\n    if let Some(data_home) = std::env::var_os(\"XDG_DATA_HOME\")\n        && Path::new(&data_home).is_absolute()\n    {\n        return PathBuf::from(data_home)\n            .join(\"agent-vesper\")\n            .join(\"voice-pack\");\n    }\n    if let Some(home) = std::env::var_os(\"HOME\") {\n        return PathBuf::from(home)\n            .join(\".local\")\n            .join(\"share\")\n            .join(\"agent-vesper\")\n            .join(\"voice-pack\");\n    }\n    // No home: the pack cannot live anywhere honest.\n    PathBuf::from(\"/nonexistent-agent-vesper-voice-pack\")\n}",
+      "verification": "literal source inspection; not executed OS-device acceptance"
+    },
+    {
+      "finding": "space_probe",
+      "path": "crates/vesper-voice-kokoro/src/setup.rs",
+      "source_sha256": "a3a897c9a3b11ae28ec559d837ed2942e165c0a911a58ef415b25489a9a90663",
+      "matched_line": 791,
+      "excerpt_start_line": 785,
+      "excerpt": "fn free_bytes(path: &Path) -> Option<u64> {\n    let probe = if path.exists() {\n        path.to_path_buf()\n    } else {\n        path.parent()?.to_path_buf()\n    };\n    let output = std::process::Command::new(\"df\")\n        .arg(\"-B1\")\n        .arg(\"--output=avail\")\n        .arg(&probe)\n        .output()\n        .ok()?;\n    if !output.status.success() {\n        return None;\n    }\n    let text = String::from_utf8_lossy(&output.stdout);\n    text.lines().nth(1)?.trim().parse::<u64>().ok()\n}\n\n/// Removal with active-user protection: refuses while a live foreign\n/// process holds an engine lease; reclaims exactly pack-owned bytes.",
+      "verification": "literal source inspection; not executed OS-device acceptance"
+    },
+    {
+      "finding": "setup_copy",
+      "path": "apps/agent-vesper-tui/src/settings_host.rs",
+      "source_sha256": "cb5f7b8d0dc1fb39289342d0c9b4a094c855d0a6aea97408d98906062e062781",
+      "matched_line": 1560,
+      "excerpt_start_line": 1543,
+      "excerpt": "    let setup = vesper_voice_kokoro::setup::VoicePackSetup::new(vesper_voice_kokoro::pack_root());\n    let plan = setup.plan().map_err(|error| error.message())?;\n    let mib = |bytes: u64| format!(\"{:.1} MiB\", bytes as f64 / (1024.0 * 1024.0));\n    let space_line = plan\n        .available_bytes\n        .map(|available| {\n            format!(\n                \"Available at destination: {} ({available} bytes)\",\n                mib(available)\n            )\n        })\n        .unwrap_or_else(|| {\n            \"Available at destination: unknown (setup will stop if space runs out)\".to_owned()\n        });\n    let reused_line = if plan.phonemizer_present {\n        \"Reused from your system: espeak-ng pronunciation engine\".to_owned()\n    } else {\n        \"Missing prerequisite: espeak-ng (setup cannot continue without it)\".to_owned()\n    };\n    let summary = format!(\n        \"Install the Natural Voice pack?\\n\\nDownload size: {}\\nAdded after install: {}\\nPeak extra space during setup: {}\\n{space_line}\\n{reused_line}\\n\\nRuns locally after setup. Speech stays on this machine. It does not change your main coding provider.\",\n        mib(plan.transfer_bytes),\n        mib(plan.retained_bytes),\n        mib(plan.peak_bytes),\n    );\n    match choice(\n        terminal,\n        \"Install Natural Voice pack\",\n        &summary,\n        &[\"Install\".into(), \"Cancel\".into()],\n        theme,\n    )\n    .await?\n    {\n        Some(0) => {}",
+      "verification": "literal source inspection; not executed OS-device acceptance"
+    }
+  ],
+  "screenshots": [
+    {
+      "path": "/home/Alex/Downloads/1791534486847.jpg",
+      "sha256": "6e34b83043c4032c2e1615958455981ae4c624c676127e823be8d5b89370f1da",
+      "available_locally": true,
+      "source": "user-attached screenshot"
+    },
+    {
+      "path": "/home/Alex/Downloads/1791534621302.jpg",
+      "sha256": "538605b57925a1245ede677ce8e759ec076cb432ea73fd5eb38e3a0afe6b3029",
+      "available_locally": true,
+      "source": "user-attached screenshot"
+    }
+  ],
+  "auth_result": "Alex confirms authentication works on tested Windows machine",
+  "program_suites_run": false,
+  "native_windows_audio_run": false,
+  "native_macos_audio_run": false,
+  "live_provider_calls": false,
+  "installation_replaced": false,
+  "released": false,
+  "limits": [
+    "Screenshots do not show installed version; source audit uses released v0.24.11 commit.",
+    "Screenshot missing-espeak status does not establish absence of espeak-ng.exe because literal PATH lookup is incomplete.",
+    "Actual Windows environment and hardware were not remotely inspected."
+  ],
+  "documentation_validation": {
+    "new_links_checked": [
+      "2026-10-09-windows-voice-parity-verification.md",
+      "foundation/2026-10-09-windows-voice-parity-verification.md",
+      "foundation/2026-10-09-windows-voice-parity-verification.md",
+      "2026-10-09-windows-voice-parity-verification.json"
+    ],
+    "source_bytes_unchanged": true,
+    "preexisting_full_prd_link_check_failure": "docs/voice-oracle-extraction-prd.md links foundation/2026-09-21-agent-progress-0844z.md absent from clean released checkout; link predates this audit and was not rewritten.",
+    "checks": "JSON parsed; exact source hashes verified; introduced local links verified; git diff --check"
+  }
+}

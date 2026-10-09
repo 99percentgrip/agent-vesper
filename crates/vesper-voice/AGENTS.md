@@ -75,6 +75,8 @@ types, and deterministic in-memory fakes.
   (no bundling; licenses recorded in the PR-2 execution report). Spawning a
   newly published executable retries only the transient `ExecutableFileBusy`
   classification twice with a 50 ms delay; other failures remain immediate.
+  Executable paths with spaces remain one typed command argument; shell
+  metacharacters are rejected. Hosts resolve native installation paths.
 - The crate must never depend on runtime, agent, harness, or provider
   adapters. Hosts translate existing runtime/provider events into the
   voice-owned `HostEvent` vocabulary at their composition boundary; the
