@@ -6,6 +6,11 @@ Own evidence and decisions that close the pre-workspace blockers identified by r
 
 ## Ownership
 
+- `2026-10-09-native-voice-ci-and-rrc-recovery.md` and its receipt companions own the failed exact voice
+  candidate, shared-reader portability correction, failed isolated-repair journal
+  settlement and unchanged-version corrective release receipts. Hardware parity
+  and live model effectiveness remain distinct from compile/fixture proof.
+
 - `2026-10-09-native-voice-platform-parity-repair.md` and its source/receipt
   companions own the approved native audio, prerequisite setup, five-target pack
   repair and feature-specific validation. Compile/signal receipts never certify

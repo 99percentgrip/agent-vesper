@@ -1,5 +1,7 @@
 # Foundation Evidence Index
 
+- [Native voice CI and RRC recovery](2026-10-09-native-voice-ci-and-rrc-recovery.md) — complete failed v0.24.12 matrix, shared-reader compile correction and narrowly proved failed-source journal recovery; corrective release and device receipts remain separate.
+
 - [Native voice platform parity repair](2026-10-09-native-voice-platform-parity-repair.md) — approved Windows/macOS audio and guided setup repair, measured official runtime packages, real Linux signal and pending exact-source native/hardware acceptance.
 
 - [Windows voice parity verification](2026-10-09-windows-voice-parity-verification.md) — eight released-source platform/setup gaps confirmed from Alex's Windows screenshots; authentication works by user report; voice repairs and native device acceptance remain open.

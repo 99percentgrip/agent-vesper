@@ -1,0 +1,115 @@
+{
+  "scope": "Local bounded proof only; native exact-source CI and hardware acceptance remain required",
+  "files": [
+    {
+      "name": "vesper-voice-rrc-recovery-acceptance.log",
+      "bytes": 36357,
+      "sha256": "bab4d5258a36e2e39f4c4cebc606aab9a6a691d5b512c99215f92e66b8487061"
+    },
+    {
+      "name": "vesper-voice-rrc-recovery-clippy.log",
+      "bytes": 600,
+      "sha256": "e1b5a8d2e794d863351b0a392b224f711dad74ff65b90ad97fd4105623397350"
+    },
+    {
+      "name": "vesper-voice-rrc-recovery-focused.log",
+      "bytes": 654,
+      "sha256": "ffb2fd191a4ce3ae7970237c6e6c919d0a7d5556c5ad982643cd4f029c612880"
+    },
+    {
+      "name": "vesper-voice-rrc-recovery-msrv.log",
+      "bytes": 325576,
+      "sha256": "afede0ce0ac79845b9ff3a7cd345acd9a14a3941767d4985b60f232d95d1f5dd"
+    },
+    {
+      "name": "vesper-voice-rrc-recovery-tui-build.log",
+      "bytes": 60,
+      "sha256": "40108eb5c2e432741fc7f36afdf5c793ec02b19e7b1ce5e51bdd2ba377bd26cb"
+    },
+    {
+      "name": "vesper-voice-rrc-recovery-verify.log",
+      "bytes": 395904,
+      "sha256": "db48d3a3b600e1774f74ded591561cc40fdef33ace4cb85551e759fb04ea12d2"
+    },
+    {
+      "name": "vesper-voice-reader-aarch64-apple-darwin-after.log",
+      "bytes": 8,
+      "sha256": "3c696c094e2a1323fa00cf0974a861af0cd6824b1672248c1d12791a70a61e4e"
+    },
+    {
+      "name": "vesper-voice-reader-aarch64-apple-darwin-before.log",
+      "bytes": 1082,
+      "sha256": "7b9f6ccf9b8e4b56bd62f4ffb12e3aa33fd9a44ec9ada93de6c23f65bf637932"
+    },
+    {
+      "name": "vesper-voice-reader-x86_64-apple-darwin-after.log",
+      "bytes": 8,
+      "sha256": "3c696c094e2a1323fa00cf0974a861af0cd6824b1672248c1d12791a70a61e4e"
+    },
+    {
+      "name": "vesper-voice-reader-x86_64-apple-darwin-before.log",
+      "bytes": 1082,
+      "sha256": "7b9f6ccf9b8e4b56bd62f4ffb12e3aa33fd9a44ec9ada93de6c23f65bf637932"
+    },
+    {
+      "name": "vesper-voice-reader-x86_64-pc-windows-msvc-after.log",
+      "bytes": 8,
+      "sha256": "3c696c094e2a1323fa00cf0974a861af0cd6824b1672248c1d12791a70a61e4e"
+    },
+    {
+      "name": "vesper-voice-reader-x86_64-pc-windows-msvc-before.log",
+      "bytes": 1082,
+      "sha256": "6e8357e7c4b0939a4bf1dc3cd63a24b3555648fb63f4ec05c5dcef33a0b188f2"
+    },
+    {
+      "name": "vesper-rrc-classification-red.log",
+      "bytes": 3744,
+      "sha256": "f3fee37961ca8667bc702cfa86e25afde93fb4e16312e62b272b2de9d9ccf7ed"
+    },
+    {
+      "name": "vesper-rrc-classification-green.log",
+      "bytes": 684,
+      "sha256": "4b14b83c37fc706a3a4f7ea7a5b8eee07cb03d15a70fb1fb0ee6c5669450cc8b"
+    },
+    {
+      "name": "vesper-rrc-restart-metadata-red.log",
+      "bytes": 1102,
+      "sha256": "0ab87262ec70b69dda15cd6c94d4220fdf258414f34867aaf02f22846915589c"
+    },
+    {
+      "name": "vesper-rrc-restart-metadata-green.log",
+      "bytes": 591,
+      "sha256": "605004952cfcae4c728d7b6037d22f0fa4bb929e100fc3dc76040683d45938b7"
+    },
+    {
+      "name": "vesper-voice-production-recognition-linux.log",
+      "bytes": 2042,
+      "sha256": "ae47d2fcb203832f6d7a7f7acf23d2678e8636c6f7f090fe6259909136738acf"
+    },
+    {
+      "name": "vesper-voice-production-recognition-linux-green.log",
+      "bytes": 779,
+      "sha256": "fd8b255260c3e3392ac4aaeca8ac02560f125656d506f949a7a660fc00041140"
+    },
+    {
+      "name": "vesper-voice-receipt-example-check.log",
+      "bytes": 4662,
+      "sha256": "3c9f45176fe513a0420aa23e46986176a375fe3ac05a367161503b86360d16d2"
+    },
+    {
+      "name": "vesper-voice-receipt-example-msrv.log",
+      "bytes": 8152,
+      "sha256": "3b9666666b18b9109b167a27e627bb9ad97f3b737bba2e92d87ce8761d619aa3"
+    },
+    {
+      "name": "vesper-voice-rrc-recovery-local-stages.json",
+      "bytes": 1756,
+      "sha256": "eece7a829cb793d48c29509eefee486a28cdc9b70f943e260b3a8fc07c6512d5"
+    }
+  ],
+  "archive": {
+    "name": "2026-10-09-native-voice-ci-and-rrc-recovery-local-receipts.tar.gz",
+    "bytes": 167125,
+    "sha256": "d795b08ce82b457ee4d8a6992ddbed73b49b4a7b81694883ee3fad91a9a446e9"
+  }
+}

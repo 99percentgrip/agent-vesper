@@ -615,6 +615,10 @@ pub struct ReleaseLivenessRecord {
     /// that a controller still owns the epoch.
     #[serde(default)]
     pub owner_pid: Option<u32>,
+    /// An ordinary error returned from owned execution. Missing legacy metadata,
+    /// uncertain mutation fences and owner exits are not settlement evidence.
+    #[serde(default)]
+    pub settled_error: bool,
 }
 
 static RELEASE_OWNER_RELINQUISHED: AtomicBool = AtomicBool::new(false);
@@ -1254,6 +1258,7 @@ impl ReleaseRecoveryRecord {
             detail: "controller operation is active".into(),
             observed_at: Some(now),
             owner_pid: Some(std::process::id()),
+            settled_error: false,
         };
         self.updated_at = now;
         self.refresh_progress();
@@ -1288,6 +1293,7 @@ impl ReleaseRecoveryRecord {
             detail: bounded(detail, 512),
             observed_at: Some(Utc::now()),
             owner_pid: self.liveness.owner_pid,
+            settled_error: !matches!(error, RrcError::MutationBlocked(_)),
         };
         self.note_progress_milestone(self.liveness.detail.clone());
     }

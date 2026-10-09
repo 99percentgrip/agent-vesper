@@ -1,6 +1,8 @@
 //! Hosted disposable-runner acceptance only; never an installed model tool.
 use std::path::PathBuf;
-use vesper_harness::dependency_setup::{VoiceSetupPaths, setup_voice_cancellable};
+use vesper_harness::dependency_setup::{
+    VoiceSetupPaths, setup_voice_cancellable, voice_phonemizer,
+};
 
 #[tokio::main]
 async fn main() {
@@ -20,11 +22,15 @@ async fn main() {
     });
     let paths = VoiceSetupPaths {
         venv,
-        python,
+        python: python.clone(),
         tools: state.join("voice tools"),
         uv: None,
     };
     let result = setup_voice_cancellable(paths, |phase| println!("{phase}"), || false).await;
     println!("{}", result.expect("production voice dependency readiness"));
+    println!(
+        "NATIVE VOICE TOOLS {}",
+        serde_json::json!({"python": python, "espeak": voice_phonemizer().expect("verified phonemizer")})
+    );
     println!("NATIVE VOICE DEPENDENCIES VERIFIED");
 }

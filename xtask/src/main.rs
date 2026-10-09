@@ -2230,6 +2230,21 @@ fn acceptance_verify() -> Result<(), String> {
         (
             "vesper-harness",
             &["--lib"],
+            "release_executor::tests::failed_source_repair_journal_settles_only_with_clean_exact_candidate",
+        ),
+        (
+            "vesper-harness",
+            &["--lib"],
+            "release_executor::tests::failed_source_repair_journal_preserves_uncertain_mutations",
+        ),
+        (
+            "vesper-harness",
+            &["--lib"],
+            "release_executor::tests::failed_source_repair_restart_reconciles_before_heartbeat_and_permission",
+        ),
+        (
+            "vesper-harness",
+            &["--lib"],
             "release_executor::tests::live_progress_uses_durable_milestones_without_losing_case_counts",
         ),
         (

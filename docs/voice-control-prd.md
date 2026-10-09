@@ -74,3 +74,7 @@ acceptance.
 adds owned WASAPI/CoreAudio input, canonical PCM conversion, native output and
 confirmed prerequisite setup. Native CI and device acceptance have separate
 receipts; software presence or authentication does not establish audio parity.
+
+[Corrective CI and RRC recovery](foundation/2026-10-09-native-voice-ci-and-rrc-recovery.md)
+retains the failed native compilation and shared-reader repair. Corrected full
+native CI and device acceptance remain required.

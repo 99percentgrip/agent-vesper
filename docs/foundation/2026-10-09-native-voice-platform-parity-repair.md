@@ -14,6 +14,13 @@ it is not voice acceptance. Work stays on isolated branch
 `audit/windows-voice-parity-20261009`; Alex's dirty checkout and installation
 remain untouched.
 
+**Exact-CI follow-up:** native RRC subsequently pushed the v0.24.12 candidate,
+whose fully settled matrix exposed a shared-reader compile regression on Windows
+and both macOS targets. Its failed repair dispatch also exposed a journal
+recovery defect. The [corrective execution report](2026-10-09-native-voice-ci-and-rrc-recovery.md)
+retains those failures and owns the canonical descendant correction. This report's
+earlier local/audio-module successes do not certify that failed native candidate.
+
 ## Changes and traceability
 
 | Confirmed gap | Owning repair | Required proof |

@@ -1,6 +1,7 @@
 """Offline guards only; no package, device, provider or user-state access."""
 import os
 import io
+import json
 from pathlib import Path
 import tempfile
 import unittest
@@ -30,6 +31,24 @@ class NativeVoiceGuards(unittest.TestCase):
                 with patch.object(verify_native_voice.urllib.request, "urlopen", return_value=stream):
                     with self.assertRaisesRegex(RuntimeError, "bounds|integrity"):
                         verify_native_voice.download_verified("https://fixture.invalid/package", Path(root) / "package", size, digest)
+
+
+class RecognitionReceipts(unittest.TestCase):
+    def test_requires_actual_fixed_phrase_twice_from_persistent_sidecar(self):
+        values = [{"ready": True}, {"index": 0, "text": "This is a speech recognition test. Hello world.", "seconds": 4},
+                  {"done": True, "chunks": 1}]
+        receipt = "\n".join(json.dumps(v) for v in values + values[1:])
+        verify_native_voice.verify_recognition_receipt(receipt)
+        invalid = [values[:1], values, values + [{"error": "transcription failed"}],
+                   values + values[1:][::-1],
+                   [values[0], {"index": 0, "text": "", "seconds": 4}, values[2]] + values[1:],
+                   [values[0], {"index": 0, "text": "unrelated phrase", "seconds": 4}, values[2]] + values[1:]]
+        for case in invalid:
+            with self.subTest(case=case), self.assertRaisesRegex(RuntimeError, "recognition"):
+                verify_native_voice.verify_recognition_receipt("\n".join(json.dumps(v) for v in case))
+        for misleading in ["NATIVE VOICE DEPENDENCIES VERIFIED", "voice=am_michael samples=53200", "not JSON"]:
+            with self.assertRaisesRegex(RuntimeError, "recognition"):
+                verify_native_voice.verify_recognition_receipt(misleading)
 
 
 if __name__ == "__main__":

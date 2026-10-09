@@ -85,6 +85,13 @@ architecture, MSRV, and source-oracle checks.
   after an earlier check triggers bounded fresh proof in the same admission.
   Shared-cache proof-executable isolation and rejection of late worker failures
   after authoritative cancellation are mandatory on every target.
+  Failed isolated source-repair journal settlement and refusal for dirty or changed
+  candidates, infrastructure diagnosis, cancellation and external-write state are
+  mandatory on every target; settlement preserves all evidence and admissions.
+  Registered-worker restart must reconcile Failed liveness before its heartbeat
+  while preserving the next permission refusal; OwnerExited, legacy and uncertain
+  mutation journals remain fenced through repeated requests. This case also runs
+  on every native target.
 
 - `xtask` may depend on `vesper-testkit`; production crates may not depend on it.
 - Commands must not call providers or mutate source/user state.

@@ -178,8 +178,10 @@ migration gates and disposable platform assumptions on hosts unavailable locally
 
 - `.github/verify_native_voice.py` requires a disposable native runner, installs
   pronunciation prerequisites, isolates application state, and runs production
-  speech-dependency setup plus actual Kokoro pack verification and both real PCM
-  signal cases. All five prerequisite lanes require these named receipts before
+  speech-dependency setup, fixed-phrase recognition twice through the persistent
+  production transcription sidecar, actual Kokoro pack verification and both real
+  PCM signal cases. Recognition uses an immutable, size/SHA-256 verified tiny.en
+  fixture and offline CPU int8/VAD; readiness/imports alone cannot pass. All five prerequisite lanes require these named receipts before
   tagging. Its dependencies use fixed integrity pins; no microphone, speakers,
   provider or user credentials are exercised. OS prompt/device acceptance remains
   separate. The 90-minute lane budget includes the 20-minute bounded speech step.
@@ -191,6 +193,10 @@ migration gates and disposable platform assumptions on hosts unavailable locally
   cannot replace complete production prerequisite or publishing gates.
 
 ## Child DOX Index
+
+- `verify_native_voice.py`, `test_verify_native_voice.py` and
+  `native-voice-stt-model.json` — hosted real setup/recognition/synthesis, offline
+  receipt guards and immutable recognition fixture provenance.
 
 - `verify_native_credentials.py` and `test_verify_native_credentials.py` —
   explicitly hosted native credential acceptance and offline exact-receipt guards.

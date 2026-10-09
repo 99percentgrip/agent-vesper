@@ -1266,3 +1266,13 @@ This is current bounded-contract evidence, not universal absence of defects or
 live-model/device acceptance beyond the recorded scope.
 
 [Release v0.24.10 closeout evidence](foundation/release-v0.24.10-closeout.md) records this release; full PRD parity remains separately evidenced.
+
+### 2026-10-09 failed isolated repair journal recovery
+
+[Native voice CI and RRC recovery](foundation/2026-10-09-native-voice-ci-and-rrc-recovery.md)
+records the complete failed v0.24.12 matrix and provider rejection that left a
+classification journal unsettled. Shared settlement now requires the exact pushed
+candidate to remain clean/unchanged with no tag/publication state, preserving
+failure evidence and reserved admissions. Unknown owner exits and uncertain writes
+remain fenced. Focused evidence is distinct from corrected native release closeout
+and live-model effectiveness.

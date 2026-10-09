@@ -1066,3 +1066,8 @@ OS/architecture runtime manifests and separately confirmed prerequisite setup.
 All five release lanes require production dependency setup, verified real-model
 installation and both canonical PCM signal receipts. Those device-free checks
 do not close microphone/speaker, OS authorization or original-laptop acceptance.
+
+[Corrective CI and RRC recovery](foundation/2026-10-09-native-voice-ci-and-rrc-recovery.md)
+retains the failed native compilation, shared-reader correction and narrow source
+repair journal recovery. Corrected full native CI and device acceptance remain
+required; Linux-only or fixture success cannot close those gates.

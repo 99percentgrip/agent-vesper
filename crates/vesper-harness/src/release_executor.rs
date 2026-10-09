@@ -2858,7 +2858,7 @@ fn spawn_release_worker_at_root_with_policy(
                 )
             }))
             .unwrap_or_else(|_| {
-                Err(RrcError::Invalid(
+                Err(RrcError::MutationBlocked(
                     "release controller task panicked before settlement".into(),
                 ))
             });
@@ -3163,6 +3163,14 @@ fn run_release_worker(
         let Some(mut record) = ledger.load()? else {
             return Ok(());
         };
+        // The previous owner has returned a terminal failure. Reconcile only
+        // isolated source repair, under the cross-process owner lock, before
+        // replacing its failure liveness with the new owner's heartbeat.
+        if record.liveness.state == crate::release_recovery::ReleaseLivenessState::Failed
+            && record.liveness.settled_error
+        {
+            settle_failed_source_repair(&mut record, &ledger, &executor)?;
+        }
         record.note_liveness_active(release_liveness_operation(record.state));
         ledger.save_for_scheduling(&record)?;
         update_release_activity(activity, &record);
@@ -3220,7 +3228,17 @@ fn run_release_worker(
                 cancelled: Arc::clone(&cancelled),
             },
         );
-        settle_release_step_outcome(before, record.state, outcome)?;
+        if let Err(error) = settle_release_step_outcome(before, record.state, outcome) {
+            if !matches!(
+                error,
+                RrcError::Cancelled
+                    | RrcError::ResourceConstrained(_)
+                    | RrcError::MutationBlocked(_)
+            ) {
+                settle_failed_source_repair(&mut record, &ledger, &executor)?;
+            }
+            return Err(error);
+        }
         if journals_mutation && record.state != ReleaseRecoveryState::Cancelled {
             record.mutation.in_flight_operation = None;
             record.updated_at = Utc::now();
@@ -3305,6 +3323,59 @@ fn settle_release_step_outcome(
         }
         result => result,
     }
+}
+
+// Only an isolated source repair can settle without replaying a release write.
+fn settle_failed_source_repair(
+    record: &mut ReleaseRecoveryRecord,
+    ledger: &ReleaseLedger,
+    executor: &NativeReleaseExecutor,
+) -> Result<bool, RrcError> {
+    use crate::release_recovery::{ReleaseDirective, next_directive};
+    if record.state != ReleaseRecoveryState::ClassifyingFailure
+        || record.mutation.in_flight_operation.as_deref() != Some("ClassifyingFailure")
+        || !matches!(
+            next_directive(record, 0),
+            ReleaseDirective::RequestFocusedRepair { .. }
+        )
+        || !record.mutation.candidate_committed
+        || !record.mutation.candidate_pushed
+        || !record
+            .mutation
+            .repair_admissions
+            .values()
+            .any(|count| *count > 0)
+        || record.mutation.tag_name.is_some()
+        || record.mutation.tag_object.is_some()
+        || record.mutation.tag_pushed
+        || record.mutation.publication_run_id.is_some()
+        || record.mutation.publication_verified
+    {
+        return Ok(false);
+    }
+    let Some(candidate) = record.mutation.final_candidate_commit.as_deref() else {
+        return Ok(false);
+    };
+    if record.active_commit() != Some(candidate)
+        || record
+            .failures
+            .last()
+            .is_none_or(|failure| failure.source_commit != candidate)
+        || executor.checked("git", &["rev-parse", "HEAD"])?.trim() != candidate
+        || !executor.git_status()?.paths.is_empty()
+    {
+        return Ok(false);
+    }
+    // Repair tools operate in a separate isolated worktree. A settled error
+    // before promotion cannot have changed this exact, clean candidate. Keep
+    // that failed sibling and every admission/evidence receipt; never infer
+    // successful repair, reset a budget, or settle an external-write journal.
+    record.mutation.in_flight_operation = None;
+    record.note_progress_milestone(
+        "Failed source repair settled: exact candidate remains unchanged; evidence and repair admissions preserved",
+    );
+    ledger.save(record)?;
+    Ok(true)
 }
 
 fn retry_budget_label(record: &ReleaseRecoveryRecord) -> String {
@@ -6144,6 +6215,208 @@ pub(crate) mod tests {
             saved.mutation.in_flight_operation,
             record.mutation.in_flight_operation
         );
+    }
+
+    fn failed_source_repair_fixture() -> (
+        tempfile::TempDir,
+        ReleaseLedger,
+        ReleaseRecoveryRecord,
+        NativeReleaseExecutor,
+    ) {
+        let root = tempfile::tempdir().unwrap();
+        let workspace = root.path().join("source");
+        fs::create_dir(&workspace).unwrap();
+        let executor =
+            NativeReleaseExecutor::new(&workspace, Arc::new(AtomicBool::new(false))).unwrap();
+        executor.checked("git", &["init"]).unwrap();
+        executor
+            .checked("git", &["config", "user.name", "RRC fixture"])
+            .unwrap();
+        executor
+            .checked("git", &["config", "user.email", "rrc@example.invalid"])
+            .unwrap();
+        fs::write(workspace.join("source.txt"), "original\n").unwrap();
+        executor.checked("git", &["add", "source.txt"]).unwrap();
+        executor
+            .checked("git", &["commit", "-m", "fixture"])
+            .unwrap();
+        let sha = executor
+            .checked("git", &["rev-parse", "HEAD"])
+            .unwrap()
+            .trim()
+            .to_owned();
+        let ledger =
+            ReleaseLedger::open(root.path().join("ledger"), "source-repair-fixture").unwrap();
+        let mut record =
+            crate::release_recovery::start_release("source-repair-fixture", "patch", "main", &sha)
+                .unwrap();
+        record.state = ReleaseRecoveryState::ClassifyingFailure;
+        record.mutation.candidate_committed = true;
+        record.mutation.candidate_pushed = true;
+        record.mutation.final_candidate_commit = Some(sha.clone());
+        record.mutation.in_flight_operation = Some("ClassifyingFailure".into());
+        record
+            .mutation
+            .repair_admissions
+            .insert("source-regression".into(), 1);
+        record
+            .failures
+            .push(crate::release_recovery::FailureRecord {
+                workflow_id: 1,
+                run_id: 1,
+                attempt: 1,
+                job_id: 1,
+                workflow_name: "five-target-foundation".into(),
+                job_name: "windows".into(),
+                platform: Some("windows".into()),
+                step_name: Some("compile".into()),
+                fingerprint: crate::release_recovery::FailureFingerprint(
+                    "source-regression".into(),
+                ),
+                class: crate::release_recovery::ReleaseFailureClass::CompileFailure,
+                confidence: crate::release_recovery::EvidenceConfidence::Proven,
+                causal_excerpt: "missing shared Read import".into(),
+                source_commit: sha,
+                observed_at: Utc::now(),
+                other_platforms_passed: true,
+                exists_on_last_green: Some(false),
+                related_source_touched: Some(true),
+            });
+        record.note_liveness_failure(&RrcError::Invalid(
+            "provider request rejected, HTTP 429".into(),
+        ));
+        ledger.save(&record).unwrap();
+        (root, ledger, record, executor)
+    }
+
+    #[test]
+    fn failed_source_repair_journal_settles_only_with_clean_exact_candidate() {
+        let (_root, ledger, mut record, executor) = failed_source_repair_fixture();
+        let budget = record.retry_budget.clone();
+        let failures = record.failures.clone();
+        let admissions = record.mutation.repair_admissions.clone();
+        assert!(settle_failed_source_repair(&mut record, &ledger, &executor).unwrap());
+        let restored = ledger.load().unwrap().unwrap();
+        assert!(restored.mutation.in_flight_operation.is_none());
+        assert_eq!(restored.retry_budget, budget);
+        assert_eq!(restored.failures, failures);
+        assert_eq!(restored.mutation.repair_admissions, admissions);
+        assert_eq!(restored.state, ReleaseRecoveryState::ClassifyingFailure);
+        assert!(restored.repair_attempts.is_empty());
+        assert_eq!(
+            restored.liveness.state,
+            crate::release_recovery::ReleaseLivenessState::Failed
+        );
+        assert!(restored.liveness.detail.contains("429"));
+    }
+
+    #[test]
+    fn failed_source_repair_journal_preserves_uncertain_mutations() {
+        for case in 0..16 {
+            let (_root, ledger, mut record, executor) = failed_source_repair_fixture();
+            match case {
+                0 => fs::write(executor.workspace.join("source.txt"), "changed\n").unwrap(),
+                1 => fs::write(executor.workspace.join("untracked.txt"), "changed\n").unwrap(),
+                2 => {
+                    executor
+                        .checked("git", &["commit", "--allow-empty", "-m", "changed head"])
+                        .unwrap();
+                }
+                3 => record.mutation.tag_pushed = true,
+                4 => record.mutation.publication_run_id = Some(1),
+                5 => record.mutation.in_flight_operation = Some("LocalVerification".into()),
+                6 => {
+                    record.failures[0].confidence =
+                        crate::release_recovery::EvidenceConfidence::Unknown
+                }
+                7 => record.mutation.repair_admissions.clear(),
+                8 => record.state = ReleaseRecoveryState::Cancelled,
+                9 => {
+                    fs::write(executor.workspace.join("source.txt"), "staged\n").unwrap();
+                    executor.checked("git", &["add", "source.txt"]).unwrap();
+                }
+                10 => {
+                    record.failures[0].class =
+                        crate::release_recovery::ReleaseFailureClass::RunnerInfrastructureFailure
+                }
+                11 => record.mutation.tag_name = Some("v0.24.12".into()),
+                12 => record.mutation.tag_object = Some("tag-object".into()),
+                13 => record.mutation.final_candidate_commit = Some("b".repeat(40)),
+                14 => record.mutation.candidate_pushed = false,
+                15 => record.failures[0].source_commit = "b".repeat(40),
+                _ => unreachable!(),
+            }
+            let before = record.clone();
+            assert!(
+                !settle_failed_source_repair(&mut record, &ledger, &executor).unwrap(),
+                "case {case}"
+            );
+            assert_eq!(record, before, "case {case}");
+        }
+    }
+
+    #[test]
+    fn failed_source_repair_restart_reconciles_before_heartbeat_and_permission() {
+        for case in [
+            "returned-error",
+            "owner-exit",
+            "legacy",
+            "uncertain-mutation",
+        ] {
+            let (root, ledger, mut record, executor) = failed_source_repair_fixture();
+            let failed_owner = case == "returned-error";
+            if case == "owner-exit" {
+                record.liveness.state = crate::release_recovery::ReleaseLivenessState::OwnerExited;
+            } else if case == "legacy" {
+                let mut value = serde_json::to_value(&record).unwrap();
+                value["liveness"]
+                    .as_object_mut()
+                    .unwrap()
+                    .remove("settled_error");
+                record = serde_json::from_value(value).unwrap();
+                assert!(!record.liveness.settled_error);
+            } else if case == "uncertain-mutation" {
+                record.note_liveness_failure(&RrcError::MutationBlocked(
+                    "uncertain prior operation".into(),
+                ));
+            }
+            ledger.save(&record).unwrap();
+            let budget = record.retry_budget.clone();
+            let admissions = record.mutation.repair_admissions.clone();
+            for _ in 0..2 {
+                spawn_release_worker_at_root_with_permissive_policy(
+                    executor.workspace.clone(),
+                    "fixture/repo".into(),
+                    "source-repair-fixture".into(),
+                    None, // no host grant: the next side effect must still refuse
+                    root.path().join("ledger"),
+                )
+                .unwrap();
+                let deadline = Instant::now() + Duration::from_secs(10);
+                while active_release_worker("source-repair-fixture").is_some() {
+                    if Instant::now() > deadline {
+                        cancel_release_worker("source-repair-fixture");
+                        panic!("source repair restart did not settle within fixture bound");
+                    }
+                    thread::sleep(Duration::from_millis(20));
+                }
+                let restored = ledger.load().unwrap().unwrap();
+                assert_eq!(
+                    restored.mutation.in_flight_operation.is_none(),
+                    failed_owner
+                );
+                assert_eq!(restored.retry_budget, budget);
+                assert_eq!(restored.mutation.repair_admissions, admissions);
+                assert_eq!(restored.failures, record.failures);
+                assert!(restored.repair_attempts.is_empty());
+                assert!(restored.liveness.detail.contains(if failed_owner {
+                    "release mutation requires a host permission port"
+                } else {
+                    "previous release operation did not settle"
+                }));
+                assert_eq!(restored.liveness.settled_error, failed_owner);
+            }
+        }
     }
 
     #[test]

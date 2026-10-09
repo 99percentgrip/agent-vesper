@@ -1,6 +1,5 @@
 //! Terminal-only microphone controller. The worker owns all audio and subprocesses.
 use agent_vesper_tui::ui::VoicePhase;
-#[cfg(target_os = "linux")]
 use std::io::Read;
 use std::{
     io::{BufRead, BufReader, Write},

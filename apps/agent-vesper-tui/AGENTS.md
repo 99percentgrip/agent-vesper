@@ -1144,6 +1144,9 @@ business logic.
   F4 cycles bounded real Changes/Git/Diff/Files/GitHub views. `src/voice.rs`
   owns the microphone worker, recorder/sidecar processes and private temporary
   audio. `src/voice_transcribe.py` is the embedded local PCM chunk protocol.
+  The bounded sidecar response reader is shared on every target; its I/O traits
+  must compile independently of the Linux-only recorder pump. Full native TUI
+  compilation is required in addition to isolated audio-backend checks.
   `src/voice_vad.py` is the persistent backend-neutral Silero VAD worker
   (canonical mono i16 16 kHz WAV in; distinct confirmed-silence result with no
   output file; speech-only canonical WAV out, atomically published; bounded
@@ -1181,8 +1184,9 @@ business logic.
   Existing environments are import-probed; an incomplete venv never implies ready.
   The local faster-whisper sidecar loads once and stays warm across successful
   clips. Transcription reads 30-second PCM chunks and emits ordered progress;
-  completed chunks survive retry without re-appending to the composer. There is no
-  short capture timer or 90-second whole-recording deadline. Five minutes without
+  completed chunks survive retry without re-appending to the composer. Capture
+  retains R20's 120-second/4 MiB per-clip quota; unlimited dictation is not verified.
+  There is no 90-second whole-recording transcription deadline. Five minutes without
   real transcription progress fails with private audio retained for Retry/Discard.
   The UI appends completed dictation to existing input and never auto-sends it.
   Audio is deleted on success/discard/normal session exit. Cancellation and ordinary
@@ -1192,7 +1196,7 @@ business logic.
   exit cleanup evidence. No audio/transcript is written to telemetry.
   Ctrl-Shift-C copies only app-managed mouse-selected transcript text.
 - Provider catalogs and provider-specific settings belong to adapters. The
-  production composition registers the real Z.ai, LM Studio, and OpenAI adapters;
+  production composition registers the real Z.ai, LM Studio, OpenAI and xAI adapters;
   no additional provider may be advertised without its adapter and evidence.
 - When adding a new slash command, register it in
   `CommandRegistry::stage_11b`, document its surface in

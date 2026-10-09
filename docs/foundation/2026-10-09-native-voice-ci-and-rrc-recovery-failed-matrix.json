@@ -1,0 +1,324 @@
+{
+  "schema_version": 1,
+  "state": "classifying_failure",
+  "release_commit": "251e89ce9d6122b785d45de87e289cf63d144778",
+  "release_version": "0.24.12",
+  "required_gates": [
+    {
+      "head_sha": "251e89ce9d6122b785d45de87e289cf63d144778",
+      "jobs": [
+        {
+          "attempt": 1,
+          "failed_step": null,
+          "job_id": 113808672851,
+          "job_name": "quality",
+          "platform": "ubuntu-24.04",
+          "run_id": 37927134776,
+          "state": "success",
+          "url": "https://github.com/99percentgrip/agent-vesper/actions/runs/37927134776/job/113808672851",
+          "workflow_id": 324058982,
+          "workflow_name": "pull-request-validation"
+        },
+        {
+          "attempt": 1,
+          "failed_step": "Build exact-candidate Windows release executables",
+          "job_id": 113808673100,
+          "job_name": "windows-installer",
+          "platform": "windows-2025",
+          "run_id": 37927134776,
+          "state": "failure",
+          "url": "https://github.com/99percentgrip/agent-vesper/actions/runs/37927134776/job/113808673100",
+          "workflow_id": 324058982,
+          "workflow_name": "pull-request-validation"
+        },
+        {
+          "attempt": 1,
+          "failed_step": null,
+          "job_id": 113808673169,
+          "job_name": "supply-chain",
+          "platform": "ubuntu-24.04",
+          "run_id": 37927134776,
+          "state": "success",
+          "url": "https://github.com/99percentgrip/agent-vesper/actions/runs/37927134776/job/113808673169",
+          "workflow_id": 324058982,
+          "workflow_name": "pull-request-validation"
+        }
+      ],
+      "name": "pull-request-validation",
+      "run_attempt": 1,
+      "run_id": 37927134776,
+      "run_state": "failure",
+      "url": "https://github.com/99percentgrip/agent-vesper/actions/runs/37927134776"
+    },
+    {
+      "head_sha": "251e89ce9d6122b785d45de87e289cf63d144778",
+      "jobs": [
+        {
+          "attempt": 1,
+          "failed_step": "Run eligible foundational tests",
+          "job_id": 113808672284,
+          "job_name": "macos-apple-silicon",
+          "platform": "macos-15",
+          "run_id": 37927134639,
+          "state": "failure",
+          "url": "https://github.com/99percentgrip/agent-vesper/actions/runs/37927134639/job/113808672284",
+          "workflow_id": 324058986,
+          "workflow_name": "five-target-foundation"
+        },
+        {
+          "attempt": 1,
+          "failed_step": null,
+          "job_id": 113808672478,
+          "job_name": "linux-x86_64",
+          "platform": "ubuntu-24.04",
+          "run_id": 37927134639,
+          "state": "success",
+          "url": "https://github.com/99percentgrip/agent-vesper/actions/runs/37927134639/job/113808672478",
+          "workflow_id": 324058986,
+          "workflow_name": "five-target-foundation"
+        },
+        {
+          "attempt": 1,
+          "failed_step": "Run eligible foundational tests",
+          "job_id": 113808672548,
+          "job_name": "macos-intel",
+          "platform": "macos-15-intel",
+          "run_id": 37927134639,
+          "state": "failure",
+          "url": "https://github.com/99percentgrip/agent-vesper/actions/runs/37927134639/job/113808672548",
+          "workflow_id": 324058986,
+          "workflow_name": "five-target-foundation"
+        },
+        {
+          "attempt": 1,
+          "failed_step": "Run eligible foundational tests",
+          "job_id": 113808672596,
+          "job_name": "windows-x86_64",
+          "platform": "windows-2025",
+          "run_id": 37927134639,
+          "state": "failure",
+          "url": "https://github.com/99percentgrip/agent-vesper/actions/runs/37927134639/job/113808672596",
+          "workflow_id": 324058986,
+          "workflow_name": "five-target-foundation"
+        },
+        {
+          "attempt": 1,
+          "failed_step": null,
+          "job_id": 113808672677,
+          "job_name": "linux-arm64",
+          "platform": "ubuntu-24.04-arm",
+          "run_id": 37927134639,
+          "state": "success",
+          "url": "https://github.com/99percentgrip/agent-vesper/actions/runs/37927134639/job/113808672677",
+          "workflow_id": 324058986,
+          "workflow_name": "five-target-foundation"
+        }
+      ],
+      "name": "five-target-foundation",
+      "run_attempt": 1,
+      "run_id": 37927134639,
+      "run_state": "failure",
+      "url": "https://github.com/99percentgrip/agent-vesper/actions/runs/37927134639"
+    },
+    {
+      "head_sha": "251e89ce9d6122b785d45de87e289cf63d144778",
+      "jobs": [
+        {
+          "attempt": 1,
+          "failed_step": null,
+          "job_id": 113808672092,
+          "job_name": "rust-1-88",
+          "platform": "ubuntu-24.04",
+          "run_id": 37927134577,
+          "state": "success",
+          "url": "https://github.com/99percentgrip/agent-vesper/actions/runs/37927134577/job/113808672092",
+          "workflow_id": 324058985,
+          "workflow_name": "msrv"
+        }
+      ],
+      "name": "msrv",
+      "run_attempt": 1,
+      "run_id": 37927134577,
+      "run_state": "success",
+      "url": "https://github.com/99percentgrip/agent-vesper/actions/runs/37927134577"
+    },
+    {
+      "head_sha": "251e89ce9d6122b785d45de87e289cf63d144778",
+      "jobs": [
+        {
+          "attempt": 1,
+          "failed_step": null,
+          "job_id": 113808671861,
+          "job_name": "Contained browser linux-x86_64",
+          "platform": "ubuntu-24.04",
+          "run_id": 37927134512,
+          "state": "success",
+          "url": "https://github.com/99percentgrip/agent-vesper/actions/runs/37927134512/job/113808671861",
+          "workflow_id": 351737017,
+          "workflow_name": "web-driver"
+        },
+        {
+          "attempt": 1,
+          "failed_step": null,
+          "job_id": 113808672102,
+          "job_name": "Native namespace Hive",
+          "platform": "ubuntu-22.04",
+          "run_id": 37927134512,
+          "state": "success",
+          "url": "https://github.com/99percentgrip/agent-vesper/actions/runs/37927134512/job/113808672102",
+          "workflow_id": 351737017,
+          "workflow_name": "web-driver"
+        },
+        {
+          "attempt": 1,
+          "failed_step": null,
+          "job_id": 113808672175,
+          "job_name": "Contained browser linux-aarch64",
+          "platform": "ubuntu-24.04-arm",
+          "run_id": 37927134512,
+          "state": "success",
+          "url": "https://github.com/99percentgrip/agent-vesper/actions/runs/37927134512/job/113808672175",
+          "workflow_id": 351737017,
+          "workflow_name": "web-driver"
+        }
+      ],
+      "name": "web-driver",
+      "run_attempt": 1,
+      "run_id": 37927134512,
+      "run_state": "success",
+      "url": "https://github.com/99percentgrip/agent-vesper/actions/runs/37927134512"
+    }
+  ],
+  "failures": [
+    {
+      "attempt": 1,
+      "causal_excerpt": "2026-10-09T12:03:30.9120405Z    Compiling agent-vesper-acp v0.24.12 (D:\\a\\agent-vesper\\agent-vesper\\apps\\agent-vesper-acp)\n2026-10-09T12:04:24.3371636Z error[E0599]: `&mut std::io::BufReader<std::process::ChildStdout>` is not an iterator\n2026-10-09T12:04:24.3372208Z    --> apps\\agent-vesper-tui\\src\\voice.rs:957:37\n2026-10-09T12:04:24.3372790Z     |\n2026-10-09T12:04:24.3373092Z 957 |                 match (&mut reader).take(65_537).read_until(b'\\n', &mut line) {",
+      "class": "compile_failure",
+      "confidence": "strongly_supported",
+      "exists_on_last_green": false,
+      "fingerprint": "f8ff0ea6af4b90d3bc7629f63a9faa9feb2c1ef6ec8a62a0c319dd9b9a4d2373",
+      "job_id": 113808673100,
+      "job_name": "windows-installer",
+      "observed_at": "2026-10-09T12:30:27.084994245Z",
+      "other_platforms_passed": true,
+      "platform": "windows-2025",
+      "related_source_touched": true,
+      "run_id": 37927134776,
+      "source_commit": "251e89ce9d6122b785d45de87e289cf63d144778",
+      "step_name": "Build exact-candidate Windows release executables",
+      "workflow_id": 324058982,
+      "workflow_name": "pull-request-validation"
+    },
+    {
+      "attempt": 1,
+      "causal_excerpt": "2026-10-09T12:02:17.4332730Z    Compiling agent-vesper-acp v0.24.12 (/Users/runner/work/agent-vesper/agent-vesper/apps/agent-vesper-acp)\n2026-10-09T12:02:22.3702290Z error[E0599]: `&mut std::io::BufReader<std::process::ChildStdout>` is not an iterator\n2026-10-09T12:02:22.3773480Z    --> apps/agent-vesper-tui/src/voice.rs:957:37\n2026-10-09T12:02:22.3776770Z     |\n2026-10-09T12:02:22.3781620Z 957 |                 match (&mut reader).take(65_537).read_until(b'\\n', &mut line) {",
+      "class": "compile_failure",
+      "confidence": "strongly_supported",
+      "exists_on_last_green": false,
+      "fingerprint": "5dc68ce809fa9dc186e45927daa8ab3dc2d3a4d9a8ee6461bb3e3d0927036342",
+      "job_id": 113808672284,
+      "job_name": "macos-apple-silicon",
+      "observed_at": "2026-10-09T12:30:32.372677574Z",
+      "other_platforms_passed": true,
+      "platform": "macos-15",
+      "related_source_touched": true,
+      "run_id": 37927134639,
+      "source_commit": "251e89ce9d6122b785d45de87e289cf63d144778",
+      "step_name": "Run eligible foundational tests",
+      "workflow_id": 324058986,
+      "workflow_name": "five-target-foundation"
+    },
+    {
+      "attempt": 1,
+      "causal_excerpt": "2026-10-09T12:06:23.5434180Z    Compiling agent-vesper-acp v0.24.12 (/Users/runner/work/agent-vesper/agent-vesper/apps/agent-vesper-acp)\n2026-10-09T12:06:26.3986280Z error[E0599]: `&mut std::io::BufReader<std::process::ChildStdout>` is not an iterator\n2026-10-09T12:06:26.4652970Z    --> apps/agent-vesper-tui/src/voice.rs:957:37\n2026-10-09T12:06:26.5657680Z     |\n2026-10-09T12:06:26.6659630Z 957 |                 match (&mut reader).take(65_537).read_until(b'\\n', &mut line) {",
+      "class": "compile_failure",
+      "confidence": "strongly_supported",
+      "exists_on_last_green": false,
+      "fingerprint": "d9565679ab463fe9636234ecf1a058586236f0ede684be2b232ce3436023c1b7",
+      "job_id": 113808672548,
+      "job_name": "macos-intel",
+      "observed_at": "2026-10-09T12:30:37.378023879Z",
+      "other_platforms_passed": true,
+      "platform": "macos-15-intel",
+      "related_source_touched": true,
+      "run_id": 37927134639,
+      "source_commit": "251e89ce9d6122b785d45de87e289cf63d144778",
+      "step_name": "Run eligible foundational tests",
+      "workflow_id": 324058986,
+      "workflow_name": "five-target-foundation"
+    },
+    {
+      "attempt": 1,
+      "causal_excerpt": "2026-10-09T12:05:36.1178718Z warning: `agent-vesper-acp` (test \"process_blockers\") generated 1 warning\n2026-10-09T12:05:41.8112543Z error[E0599]: `&mut std::io::BufReader<std::process::ChildStdout>` is not an iterator\n2026-10-09T12:05:41.8138831Z    --> apps\\agent-vesper-tui\\src\\voice.rs:957:37\n2026-10-09T12:05:41.8238709Z     |\n2026-10-09T12:05:41.8320027Z 957 |                 match (&mut reader).take(65_537).read_until(b'\\n', &mut line) {",
+      "class": "compile_failure",
+      "confidence": "strongly_supported",
+      "exists_on_last_green": false,
+      "fingerprint": "ac56cd560283a5b079e3bc088b8a454de6b3bf3709080ee063ab3d4d84ec8f64",
+      "job_id": 113808672596,
+      "job_name": "windows-x86_64",
+      "observed_at": "2026-10-09T12:30:42.502339577Z",
+      "other_platforms_passed": true,
+      "platform": "windows-2025",
+      "related_source_touched": true,
+      "run_id": 37927134639,
+      "source_commit": "251e89ce9d6122b785d45de87e289cf63d144778",
+      "step_name": "Run eligible foundational tests",
+      "workflow_id": 324058986,
+      "workflow_name": "five-target-foundation"
+    }
+  ],
+  "retry_budget": {
+    "full_gate_limit": 1,
+    "full_gate_used": 0,
+    "infrastructure_limit": 1,
+    "infrastructure_used": 0,
+    "repair_attempt_limit_per_family": 2,
+    "targeted_diagnostic_limit": 2,
+    "targeted_diagnostic_used": 0
+  },
+  "repair_attempts": [],
+  "metrics": {
+    "ci_wait_millis": 1620000,
+    "model_active_millis": 7832,
+    "repeated_fingerprints_blocked": 0,
+    "retries_rejected": 0,
+    "speculative_reruns_prevented": 0
+  },
+  "mutation": {
+    "candidate_committed": true,
+    "candidate_pushed": true,
+    "final_candidate_commit": "251e89ce9d6122b785d45de87e289cf63d144778",
+    "tag_name": null,
+    "tag_object": null,
+    "tag_pushed": false,
+    "publication_run_id": null,
+    "publication_verified": false,
+    "in_flight_operation": "ClassifyingFailure",
+    "repair_admissions": {
+      "3f6d3bcc3df97e7e3d69c61825fd4ff3c7ac052af4699a33b8e09390c7f98a8d": 1,
+      "4a86fc415b7e9be574a1fb2360610fda8c567a72795ff3a2a1b08c85678ef9df": 1,
+      "6277bed235daa1cbf5373fb4d004d847ab1a976486cea22cb6daf696439d4d79": 1,
+      "f2e360be68ef03661bd2ac59ea611e0fb560280d4cb747cb144ef465f0604ce3": 1
+    }
+  },
+  "liveness": {
+    "state": "failed",
+    "detail": "release mutation blocked: previous release operation did not settle; reconcile receipts before retry",
+    "observed_at": "2026-10-09T15:03:34.117382250Z"
+  },
+  "scope": "Historical failed candidate; read-only export before corrective source adoption. Not current release proof.",
+  "incident_milestones": [
+    {
+      "at": "2026-10-09T12:31:06.173172728Z",
+      "phase": "failure_diagnosis",
+      "sequence": 35,
+      "summary": "invalid release recovery input: GLM request failed [category=QuotaOrRate, HTTP=429, retry=Never, retry-after-ms=None]"
+    },
+    {
+      "at": "2026-10-09T15:03:34.117475075Z",
+      "phase": "failure_diagnosis",
+      "sequence": 36,
+      "summary": "release mutation blocked: previous release operation did not settle; reconcile receipts before retry"
+    }
+  ]
+}

@@ -36,6 +36,15 @@ Z.ai and Playwright MCP server descriptors.
   Only a newly diagnosed local verification failure proceeds into repair. Repair
   dispatch errors must settle as persisted liveness failures with their redacted
   cause; an existing diagnosis must never swallow them or imply an idle success.
+  A returned isolated source-repair error settles its classification journal only
+  after complete native Git evidence proves the exact pushed candidate is clean
+  and unchanged, with no tag/publication state. A failed-owner restart requires
+  typed settled-error liveness metadata and the same proof under the owner lock.
+  Missing legacy metadata, mutation-blocked errors and controller panics remain
+  uncertain; repeated blocked requests cannot manufacture settlement authority.
+  Preserve failed sibling worktrees, causal
+  evidence and reserved repair admissions; uncertain writes, infrastructure
+  reruns, cancellation and changed candidates remain fenced.
   Promotion requires an observed mutation, explicit hypothesis, native focused
   re-verification after the final edit, a nonempty patch and full local gates.
   Pin the repair's complete Git status, full patch and index tree before native
@@ -387,7 +396,9 @@ Z.ai and Playwright MCP server descriptors.
   and hashes before execution; healthy components are reused. Administrator/tool
   prompts stay explicit. No model tools, provider calls, credential access or
   voice preference writes are introduced. `examples/voice_setup_receipt.rs` is
-  guarded disposable-runner acceptance, never an installed tool.
+  guarded disposable-runner acceptance, never an installed tool. It emits the
+  verified Python/phonemizer paths for the native recognition fixture; CI must
+  exercise the production persistent sidecar, not infer recognition from imports.
 
 - `lens_tools` owns shared native artifact-review and planning-interview tools:
   bounded question validation, workspace confinement, real Lens invocation and
