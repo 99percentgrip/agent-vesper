@@ -1,0 +1,40 @@
+{
+  "logs": [
+    {
+      "name": "vesper-rrc-prepared-repair-resource-final-green.log",
+      "sha256": "b5ab47b1a61508ef7ae1371d67b06cc36a385dd7e280f9f03c4365620fbe903e",
+      "bytes": 750,
+      "scope": "local actual result; not native Windows/Mac proof"
+    },
+    {
+      "name": "vesper-rrc-controller-stop-final-green.log",
+      "sha256": "61d26653e5a97ebbe90d187adbabc0e341b8352880716a9aace357b6f43e1bfd",
+      "bytes": 511,
+      "scope": "local actual result; not native Windows/Mac proof"
+    },
+    {
+      "name": "vesper-rrc-prepared-repair-resource-red.log",
+      "sha256": "c935c5824aa9758f2cc5909526bd90f42a939a8d9d68c1ad33a3e9eb437ecdea",
+      "bytes": 1820,
+      "scope": "local actual result; not native Windows/Mac proof"
+    },
+    {
+      "name": "vesper-rrc-controller-stop-exact-red.log",
+      "sha256": "5c4157afbf5749910145dfacbf8068dacae8a5d986216f4825c078523a1b52b7",
+      "bytes": 1109,
+      "scope": "local actual result; not native Windows/Mac proof"
+    },
+    {
+      "name": "vesper-native-voice-windows-interpreter-final-green.log",
+      "sha256": "95b0a18d3b435d3a0701aa87bc2d84a162f400becc436f8640cfde6825a464be",
+      "bytes": 4325,
+      "scope": "local actual result; not native Windows/Mac proof"
+    },
+    {
+      "name": "vesper-native-voice-kokoro-pack-budget-final-green.log",
+      "sha256": "31bad84d4460925ecd40d0f1c50b34662adb7f6e91f2ea55285e57b60a340d03",
+      "bytes": 1216,
+      "scope": "local actual result; not native Windows/Mac proof"
+    }
+  ]
+}

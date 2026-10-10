@@ -580,6 +580,10 @@ pub struct LocalGateRecord {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ResourceDeferredRecord {
     pub gate_name: String,
+    /// Absent in older/local-gate records. Repair verification returns to its
+    /// existing diagnosis without admitting another model dispatch.
+    #[serde(default)]
+    pub resume_state: Option<ReleaseRecoveryState>,
     pub deferred_at: DateTime<Utc>,
     pub last_observed_at: DateTime<Utc>,
     pub telemetry: ResourceTelemetry,
@@ -1138,15 +1142,23 @@ impl ReleaseRecoveryRecord {
                 ),
             },
             ReleaseRecoveryState::ResourceDeferred => {
-                let gate = self
+                if self
                     .resource_deferred
                     .as_ref()
-                    .map(|deferred| deferred.gate_name.as_str())
-                    .unwrap_or("next local gate");
-                format!(
-                    "Paused — resource pressure · Local verification {completed_local_gates}/{} · {gate} waiting",
-                    self.mutation.local_gates.len()
-                )
+                    .is_some_and(|deferred| deferred.resume_state.is_some())
+                {
+                    "Paused — resource pressure · prepared repair verification waiting".into()
+                } else {
+                    let gate = self
+                        .resource_deferred
+                        .as_ref()
+                        .map(|deferred| deferred.gate_name.as_str())
+                        .unwrap_or("next local gate");
+                    format!(
+                        "Paused — resource pressure · Local verification {completed_local_gates}/{} · {gate} waiting",
+                        self.mutation.local_gates.len()
+                    )
+                }
             }
             ReleaseRecoveryState::CandidateReady => {
                 "Local verification passed; pushing the exact candidate".into()
@@ -2610,7 +2622,17 @@ pub fn legal_transition(from: ReleaseRecoveryState, to: ReleaseRecoveryState) ->
                 S::LocalVerification,
                 S::ResourceDeferred | S::DiagnosingLocalFailure | S::CandidateReady
             )
-            | (S::ResourceDeferred, S::LocalVerification)
+            | (
+                S::ResourceDeferred,
+                S::LocalVerification
+                    | S::ClassifyingFailure
+                    | S::DiagnosingRepair
+                    | S::DiagnosingLocalFailure
+            )
+            | (
+                S::ClassifyingFailure | S::DiagnosingRepair | S::DiagnosingLocalFailure,
+                S::ResourceDeferred
+            )
             | (
                 S::DiagnosingLocalFailure,
                 S::LocalVerification | S::Escalated | S::NeedMoreEvidence

@@ -6,6 +6,15 @@ Own evidence and decisions that close the pre-workspace blockers identified by r
 
 ## Ownership
 
+- `2026-10-10-rrc-prepared-repair-resource-recovery.md` and its failure receipt
+  own native repair resource interruption, unchanged-proof active recovery and
+  controller-stop refusal. Owner-loss fences/device acceptance stay explicit.
+
+- `2026-10-10-native-voice-foundation-ci-repair.md` owns the bounded RRC repair
+  of the Windows interpreter-precedence fixture and the shared ARM/Intel macOS
+  retained-pack budget assertion. Local focused proof does not replace fresh
+  exact-SHA native jobs or hardware acceptance.
+
 - `2026-10-09-native-voice-ci-and-rrc-recovery.md` and its receipt companions own the failed exact voice
   candidate, shared-reader portability correction, failed isolated-repair journal
   settlement and unchanged-version corrective release receipts. Hardware parity

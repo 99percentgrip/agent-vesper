@@ -1,5 +1,9 @@
 # PRD — VRO-17: The Voice Oracle Extraction (Real-Time Bidirectional Voice Interface)
 
+The [native fixture and RRC resource recovery](foundation/2026-10-10-rrc-prepared-repair-resource-recovery.md)
+retains the current Windows/Mac failures and unchanged-version repair. Earlier
+Linux acceptance does not certify fresh native or original-laptop voice behavior.
+
 Status: **OPEN — but see the [final completion audit](foundation/voice-vro17-final-completion-audit.md)
 for the current requirement matrix and the 2026-09-23 approved scope
 amendments.** The historical staged gates landed (PR-0…PR-4); the

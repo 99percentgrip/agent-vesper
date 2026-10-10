@@ -2245,6 +2245,21 @@ fn acceptance_verify() -> Result<(), String> {
         (
             "vesper-harness",
             &["--lib"],
+            "release_executor::tests::prepared_repair_resource_recovery_preserves_proof_and_admissions",
+        ),
+        (
+            "vesper-harness",
+            &["--lib"],
+            "release_executor::tests::prepared_repair_control_stops_preserve_failed_proof_boundary",
+        ),
+        (
+            "vesper-harness",
+            &["--lib"],
+            "release_executor::tests::isolated_repair_controller_stops_do_not_record_failed_hypotheses",
+        ),
+        (
+            "vesper-harness",
+            &["--lib"],
             "release_executor::tests::live_progress_uses_durable_milestones_without_losing_case_counts",
         ),
         (

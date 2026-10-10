@@ -1,5 +1,9 @@
 # Foundation Evidence Index
 
+- [RRC prepared repair resource recovery](2026-10-10-rrc-prepared-repair-resource-recovery.md) — retains native resource-interrupted repair, preserves proof/admission during active recovery and separates controller stops from disproven source hypotheses; fresh native release proof pending.
+
+- [Native voice five-target foundation repair](2026-10-10-native-voice-foundation-ci-repair.md) — Windows-native interpreter fixture construction and the shared ARM/Intel macOS retained-pack assertion are corrected as two causal families; focused local proof is reported at delivery and fresh exact-SHA native CI remains pending.
+
 - [Native voice CI and RRC recovery](2026-10-09-native-voice-ci-and-rrc-recovery.md) — complete failed v0.24.12 matrix, shared-reader compile correction and narrowly proved failed-source journal recovery; corrective release and device receipts remain separate.
 
 - [Native voice platform parity repair](2026-10-09-native-voice-platform-parity-repair.md) — approved Windows/macOS audio and guided setup repair, measured official runtime packages, real Linux signal and pending exact-source native/hardware acceptance.

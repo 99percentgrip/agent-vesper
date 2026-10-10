@@ -18866,14 +18866,15 @@ mod tests {
         assert_eq!(interp, "python3");
         assert!(!from_env);
 
-        // 2. GLM_VENV_PATH pointing at a dir that contains bin/python wins
-        //    over the default.
-        let temp =
-            std::env::temp_dir().join(format!("vesper-py-interp-test-{}", std::process::id()));
-        std::fs::create_dir_all(temp.join("bin")).unwrap();
-        let python_file = agent_vesper_tui::platform_voice::venv_python(&temp);
+        // 2. GLM_VENV_PATH pointing at a dir that contains the native venv
+        //    interpreter (bin/python or Scripts/python.exe) wins over the
+        //    default.
+        let temp = tempfile::tempdir().expect("tempdir");
+        let python_file = agent_vesper_tui::platform_voice::venv_python(temp.path());
+        std::fs::create_dir_all(python_file.parent().expect("interpreter parent")).unwrap();
         std::fs::write(&python_file, "#!/bin/sh\necho hi\n").unwrap();
-        let (interp, from_env) = vesper_python_interpreter_from(none, vesp(temp.to_str().unwrap()));
+        let (interp, from_env) =
+            vesper_python_interpreter_from(none, Some(temp.path().as_os_str()));
         assert_eq!(interp, python_file.to_string_lossy());
         assert!(from_env);
 
@@ -18882,24 +18883,22 @@ mod tests {
         //    configured path instead of silently falling back).
         let (interp, from_env) = vesper_python_interpreter_from(
             vesp("/opt/exotic-venv/bin/python"),
-            vesp(temp.to_str().unwrap()),
+            Some(temp.path().as_os_str()),
         );
         assert_eq!(interp, "/opt/exotic-venv/bin/python");
         assert!(from_env);
 
         // 4. Empty VESPER_PYTHON_PATH is ignored, GLM_VENV_PATH still wins.
         let (interp, from_env) =
-            vesper_python_interpreter_from(vesp(""), vesp(temp.to_str().unwrap()));
+            vesper_python_interpreter_from(vesp(""), Some(temp.path().as_os_str()));
         assert_eq!(interp, python_file.to_string_lossy());
         assert!(from_env);
 
-        // 5. GLM_VENV_PATH with no bin/python falls through to python3.
+        // 5. GLM_VENV_PATH with no native interpreter falls through to python3.
         let (interp, from_env) =
             vesper_python_interpreter_from(none, vesp("/nonexistent-venv-root"));
         assert_eq!(interp, "python3");
         assert!(!from_env);
-
-        let _ = std::fs::remove_dir_all(&temp);
     }
 
     #[test]

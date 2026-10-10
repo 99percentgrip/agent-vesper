@@ -92,6 +92,10 @@ architecture, MSRV, and source-oracle checks.
   while preserving the next permission refusal; OwnerExited, legacy and uncertain
   mutation journals remain fenced through repeated requests. This case also runs
   on every native target.
+  Prepared-repair resource recovery, controller-stop classification and the
+  two-provider isolated canonical-stop case are mandatory on every target.
+  Resource pauses preserve proof, source evidence and admissions; cancellation,
+  permission, watchdog and uncertain-mutation outcomes cannot disprove a repair.
 
 - `xtask` may depend on `vesper-testkit`; production crates may not depend on it.
 - Commands must not call providers or mutate source/user state.

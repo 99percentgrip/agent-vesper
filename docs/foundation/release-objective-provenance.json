@@ -2,10 +2,11 @@
   "version": 1,
   "objective_id": "native-voice-platform-implementation-20261009",
   "objective_label": "Native Windows/macOS voice backends and guided local dependency setup",
-  "variant_label": "Local 162-case acceptance, strict Clippy, Rust 1.88, production recognition and restart guard proof passed; exact-source native CI and hardware acceptance remain required",
-  "variant_id": "native-voice-ci-rrc-recovery-verified-20261009",
+  "variant_label": "Resource/control-stop red-green regressions and native fixture corrections; full native release gates and hardware acceptance pending",
+  "variant_id": "native-voice-prepared-repair-resource-recovery-20261010",
   "canonical_release_source": true,
   "supersedes": [
+    "native-voice-ci-rrc-recovery-verified-20261009",
     "native-voice-platform-implementation-verified-20261009",
     "windows-native-auth-rrc-proof-isolation-integrated-20261008",
     "windows-native-auth-rrc-platform-proof-continuation-integrated-20261008",
@@ -29,9 +30,11 @@
     "rrc-autonomy-prd-audit-20261006"
   ],
   "evidence_reports": [
+    "docs/foundation/2026-10-10-rrc-prepared-repair-resource-recovery.md",
+    "docs/foundation/2026-10-10-native-voice-foundation-ci-repair.md",
     "docs/foundation/2026-10-09-native-voice-ci-and-rrc-recovery.md",
     "docs/foundation/2026-10-09-native-voice-platform-parity-repair.md",
     "docs/foundation/2026-10-09-windows-voice-parity-verification.md"
   ],
-  "completed_at": "2026-10-09T16:20:29.494573+00:00"
+  "completed_at": "2026-10-10T12:13:15.954021+00:00"
 }

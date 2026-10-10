@@ -18,8 +18,8 @@
 //! (overwrite-rename) only after the flip so a partial staging can never
 //! read as Ready. Integrity is verified on every read (cached by
 //! size+mtime; digests only re-run when that identity changes) — the pack
-//! is ~86 MiB, so hashing on every readiness call would be a redraw
-//! hazard (directive §8).
+//! is target-dependent (roughly 105–128 MiB across supported targets), so
+//! hashing on every readiness call would be a redraw hazard (directive §8).
 //!
 //! Provenance: assets come from the pinned immutable revision of the
 //! upstream ONNX export; licenses are Apache-2.0 (model, voices, export)
@@ -799,11 +799,10 @@ mod tests {
     fn budgets_headroom_is_honest() {
         const _: () = assert!(RETAINED_PACK_BYTES < RETAINED_BUDGET_BYTES);
         const _: () = assert!(PEAK_SETUP_BYTES < PEAK_BUDGET_BYTES);
-        // Honest band (measured from the pinned sources): retained
-        // ≈ 106.2 MiB (model + voices + vocab + extracted runtime +
-        // licenses); peak ≈ 114.9 MiB (adds the briefly-staged archive).
-        const _: () = assert!(RETAINED_PACK_BYTES > 100 * 1024 * 1024);
-        const _: () = assert!(RETAINED_PACK_BYTES < 120 * 1024 * 1024);
+        // Retained size varies with the pinned platform runtime (about
+        // 104.5 MiB on Windows through 127.3 MiB on Intel macOS). The
+        // authoritative ceiling is RETAINED_BUDGET_BYTES; a narrow
+        // host-specific band would reject valid native manifests.
         const _: () = assert!(PEAK_SETUP_BYTES > RETAINED_PACK_BYTES);
         const _: () = assert!(PEAK_SETUP_BYTES - RETAINED_PACK_BYTES == RUNTIME_ASSET.size);
     }

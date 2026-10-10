@@ -1838,6 +1838,14 @@ fn controller_stop_is_not_source_failure(error: &RrcError) -> bool {
     )
 }
 
+fn repair_verification_is_control_stop(error: &RrcError) -> bool {
+    controller_stop_is_not_source_failure(error)
+        || matches!(
+            error,
+            RrcError::ResourceConstrained(_) | RrcError::MutationBlocked(_)
+        )
+}
+
 fn repair_watchdog_error(
     cancelled: bool,
     inactive_for: Duration,
@@ -2091,6 +2099,7 @@ fn defer_local_resources(
     let now = Utc::now();
     record.resource_deferred = Some(ResourceDeferredRecord {
         gate_name: gate.name.clone(),
+        resume_state: None,
         deferred_at: now,
         last_observed_at: now,
         telemetry,
@@ -2974,8 +2983,24 @@ fn apply_resource_watch_observation(
         .active_commit()
         .map(str::to_owned)
         .ok_or_else(|| RrcError::Invalid("resource recovery has no active commit".into()))?;
+    let resume_state = record
+        .resource_deferred
+        .as_ref()
+        .and_then(|deferred| deferred.resume_state)
+        .unwrap_or(ReleaseRecoveryState::LocalVerification);
+    if !matches!(
+        resume_state,
+        ReleaseRecoveryState::LocalVerification
+            | ReleaseRecoveryState::ClassifyingFailure
+            | ReleaseRecoveryState::DiagnosingRepair
+            | ReleaseRecoveryState::DiagnosingLocalFailure
+    ) {
+        return Err(RrcError::MutationBlocked(
+            "invalid resource recovery destination".into(),
+        ));
+    }
     record.transition(
-        ReleaseRecoveryState::LocalVerification,
+        resume_state,
         &commit,
         format!("Host capacity recovered — continuing {gate}."),
         vec!["local:resource-recovered".into()],
@@ -2990,7 +3015,7 @@ fn watch_resource_deferred(
     ledger: &ReleaseLedger,
     executor: &NativeReleaseExecutor,
     cancelled: &Arc<AtomicBool>,
-    activity: &Arc<Mutex<ReleaseWorkerActivity>>,
+    activity: Option<&Arc<Mutex<ReleaseWorkerActivity>>>,
 ) -> Result<(), RrcError> {
     loop {
         let delay = record
@@ -3008,7 +3033,9 @@ fn watch_resource_deferred(
         let (safe, telemetry) = executor.reevaluate_expensive_resources()?;
         let recovered = apply_resource_watch_observation(record, telemetry, safe)?;
         ledger.save(record)?;
-        update_release_activity(activity, record);
+        if let Some(activity) = activity {
+            update_release_activity(activity, record);
+        }
         if recovered {
             return Ok(());
         }
@@ -3175,7 +3202,7 @@ fn run_release_worker(
         ledger.save_for_scheduling(&record)?;
         update_release_activity(activity, &record);
         if record.state == ReleaseRecoveryState::ResourceDeferred {
-            watch_resource_deferred(&mut record, &ledger, &executor, &cancelled, activity)?;
+            watch_resource_deferred(&mut record, &ledger, &executor, &cancelled, Some(activity))?;
             update_release_activity(activity, &record);
         }
         let before = record.state;
@@ -6290,6 +6317,144 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn prepared_repair_resource_recovery_preserves_proof_and_admissions() {
+        for state in [
+            ReleaseRecoveryState::ClassifyingFailure,
+            ReleaseRecoveryState::DiagnosingRepair,
+            ReleaseRecoveryState::DiagnosingLocalFailure,
+        ] {
+            let (_root, ledger, mut record, executor) = failed_source_repair_fixture();
+            record.state = state;
+            ledger.save(&record).unwrap();
+            let budget = record.retry_budget.clone();
+            let admissions = record.mutation.repair_admissions.clone();
+            let failures = record.failures.clone();
+            fs::write(executor.workspace.join("source.txt"), "prepared repair\n").unwrap();
+            executor.checked("git", &["add", "source.txt"]).unwrap();
+            let snapshot = executor.repair_snapshot().unwrap();
+            let executions = std::cell::Cell::new(0);
+            let observations = std::cell::Cell::new(0);
+            verify_repair_with_resource_recovery(
+                &mut record,
+                &ledger,
+                &executor,
+                || {
+                    executor.require_repair_snapshot(&snapshot)?;
+                    executions.set(executions.get() + 1);
+                    if executions.get() == 1 {
+                        Err(RrcError::ResourceConstrained(
+                            "fixture critical swap growth".into(),
+                        ))
+                    } else {
+                        Ok(())
+                    }
+                },
+                |record| {
+                    assert_eq!(record.state, ReleaseRecoveryState::ResourceDeferred);
+                    let restored = ledger.load()?.unwrap();
+                    assert_eq!(
+                        restored.resource_deferred.as_ref().unwrap().resume_state,
+                        Some(state)
+                    );
+                    assert_eq!(restored.mutation.repair_admissions, admissions);
+                    assert!(restored.repair_attempts.is_empty());
+                    let telemetry = ResourceTelemetry {
+                        pressure: ResourcePressure::Normal,
+                        ..Default::default()
+                    };
+                    // A normal-looking snapshot with insufficient admission cannot resume.
+                    assert!(!apply_resource_watch_observation(
+                        record,
+                        telemetry.clone(),
+                        false
+                    )?);
+                    for index in 0..3 {
+                        observations.set(observations.get() + 1);
+                        assert_eq!(
+                            apply_resource_watch_observation(record, telemetry.clone(), true)?,
+                            index == 2
+                        );
+                    }
+                    ledger.save(record)
+                },
+            )
+            .unwrap();
+            assert_eq!(executions.get(), 2);
+            assert_eq!(observations.get(), 3);
+            assert_eq!(record.state, state);
+            assert!(record.resource_deferred.is_none());
+            assert!(record.repair_attempts.is_empty());
+            assert_eq!(record.mutation.repair_admissions, admissions);
+            assert_eq!(record.retry_budget, budget);
+            assert_eq!(record.failures, failures);
+            executor.require_repair_snapshot(&snapshot).unwrap();
+        }
+    }
+
+    #[test]
+    fn prepared_repair_control_stops_preserve_failed_proof_boundary() {
+        for error in [
+            RrcError::Cancelled,
+            RrcError::AuthorizationBlocked("fixture permission".into()),
+            RrcError::MutationBlocked("fixture uncertain mutation".into()),
+            RrcError::ResourceConstrained("fixture resource discovery".into()),
+            RrcError::WatchdogStalled {
+                operation: "fixture verification".into(),
+                limit_seconds: 1,
+            },
+            RrcError::WatchdogDeadline {
+                operation: "fixture verification".into(),
+                limit_seconds: 1,
+            },
+        ] {
+            assert!(repair_verification_is_control_stop(&error));
+        }
+        assert!(!repair_verification_is_control_stop(&RrcError::Invalid(
+            "native compiler regression".into()
+        )));
+        let (_root, ledger, mut record, executor) = failed_source_repair_fixture();
+        let admissions = record.mutation.repair_admissions.clone();
+        let executions = std::cell::Cell::new(0);
+        let error = verify_repair_with_resource_recovery(
+            &mut record,
+            &ledger,
+            &executor,
+            || {
+                executions.set(executions.get() + 1);
+                Err(RrcError::ResourceConstrained(
+                    "fixture resource stop".into(),
+                ))
+            },
+            |record| {
+                assert_eq!(record.state, ReleaseRecoveryState::ResourceDeferred);
+                Err(RrcError::Cancelled)
+            },
+        )
+        .unwrap_err();
+        assert!(matches!(error, RrcError::Cancelled));
+        assert_eq!(executions.get(), 1);
+        assert!(record.repair_attempts.is_empty());
+        assert_eq!(record.mutation.repair_admissions, admissions);
+        // Unknown destinations cannot manufacture tag/publication authority.
+        record.resource_deferred.as_mut().unwrap().resume_state =
+            Some(ReleaseRecoveryState::Tagging);
+        let telemetry = ResourceTelemetry {
+            pressure: ResourcePressure::Normal,
+            ..Default::default()
+        };
+        for _ in 0..2 {
+            assert!(
+                !apply_resource_watch_observation(&mut record, telemetry.clone(), true).unwrap()
+            );
+        }
+        assert!(matches!(
+            apply_resource_watch_observation(&mut record, telemetry, true),
+            Err(RrcError::MutationBlocked(_))
+        ));
+        assert!(!record.mutation.tag_pushed);
+    }
+
+    #[test]
     fn failed_source_repair_journal_settles_only_with_clean_exact_candidate() {
         let (_root, ledger, mut record, executor) = failed_source_repair_fixture();
         let budget = record.retry_budget.clone();
@@ -8541,6 +8706,13 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn isolated_repair_controller_stops_do_not_record_failed_hypotheses() {
+        for stop in ["cancelled", "permission", "watchdog", "uncertain"] {
+            assert_isolated_repair_promotion(Some(stop));
+        }
+    }
+
+    #[test]
     fn repair_verification_changes_cannot_be_promoted_as_verified() {
         for change in ["tracked", "index", "untracked"] {
             assert_isolated_repair_promotion(Some(change));
@@ -8773,6 +8945,23 @@ pub(crate) mod tests {
                     );
                     executor.checked("cargo", &["test", "--offline"])?;
                     match verification_change {
+                        Some("cancelled") => return Err(RrcError::Cancelled),
+                        Some("permission") => {
+                            return Err(RrcError::AuthorizationBlocked(
+                                "fixture permission denial".into(),
+                            ));
+                        }
+                        Some("watchdog") => {
+                            return Err(RrcError::WatchdogStalled {
+                                operation: "fixture canonical verification".into(),
+                                limit_seconds: 1,
+                            });
+                        }
+                        Some("uncertain") => {
+                            return Err(RrcError::MutationBlocked(
+                                "fixture uncertain verification".into(),
+                            ));
+                        }
                         Some("tracked" | "index") => {
                             fs::write(
                                 executor.workspace.join("src/lib.rs"),
@@ -8789,7 +8978,7 @@ pub(crate) mod tests {
                     }
                     Ok(())
                 };
-                run_bounded_repair_agent_with_verification(
+                let outcome = run_bounded_repair_agent_with_verification(
                     &workspace,
                     &mut record,
                     &ledger,
@@ -8800,8 +8989,30 @@ pub(crate) mod tests {
                         governor: None,
                         verify: &verify_fixture_gates,
                     },
-                )
-                .unwrap();
+                );
+                if matches!(
+                    verification_change,
+                    Some("cancelled" | "permission" | "watchdog" | "uncertain")
+                ) {
+                    assert!(repair_verification_is_control_stop(&outcome.unwrap_err()));
+                    assert!(record.repair_attempts.is_empty());
+                    assert_eq!(session.requests().len(), 3);
+                    assert_eq!(
+                        fs::read_to_string(workspace.join("src/lib.rs")).unwrap(),
+                        broken
+                    );
+                    assert_eq!(record.active_commit(), Some(base.as_str()));
+                    assert!(
+                        record
+                            .mutation
+                            .repair_admissions
+                            .values()
+                            .all(|count| *count == 1)
+                    );
+                    assert_eq!(record.retry_budget.full_gate_used, 0);
+                    continue;
+                }
+                outcome.unwrap();
                 assert_eq!(
                     gates_observed.load(Ordering::SeqCst),
                     if verification_change == Some("ignored") {
@@ -10264,6 +10475,72 @@ fn reserve_repair_dispatch(
     Ok(())
 }
 
+/// Retry only verification of the frozen repair, never its model turn. The
+/// caller repeats its native snapshot guards around every proof execution.
+fn verify_repair_with_resource_recovery(
+    record: &mut ReleaseRecoveryRecord,
+    ledger: &ReleaseLedger,
+    executor: &NativeReleaseExecutor,
+    mut verify: impl FnMut() -> Result<(), RrcError>,
+    mut wait: impl FnMut(&mut ReleaseRecoveryRecord) -> Result<(), RrcError>,
+) -> Result<(), RrcError> {
+    loop {
+        if executor.cancelled.load(Ordering::Acquire) {
+            return Err(RrcError::Cancelled);
+        }
+        match verify() {
+            Err(RrcError::ResourceConstrained(detail)) => {
+                let resume_state = record.state;
+                if !matches!(
+                    resume_state,
+                    ReleaseRecoveryState::ClassifyingFailure
+                        | ReleaseRecoveryState::DiagnosingRepair
+                        | ReleaseRecoveryState::DiagnosingLocalFailure
+                ) {
+                    return Err(RrcError::MutationBlocked(
+                        "repair resource defer has no safe diagnosis stage".into(),
+                    ));
+                }
+                let now = Utc::now();
+                let mut telemetry = executor.latest_resource_telemetry().unwrap_or_default();
+                if telemetry.action == "resource telemetry not sampled" {
+                    telemetry.pressure = ResourcePressure::Pressure;
+                    telemetry.pressure_reason =
+                        "repair verification deferred by resource governor".into();
+                    telemetry.action = detail;
+                }
+                record.resource_deferred = Some(ResourceDeferredRecord {
+                    gate_name: "prepared repair verification".into(),
+                    resume_state: Some(resume_state),
+                    deferred_at: now,
+                    last_observed_at: now,
+                    telemetry,
+                    consecutive_normal_observations: 0,
+                    unchanged_observations: 0,
+                    next_check_seconds: RESOURCE_WATCH_INITIAL_INTERVAL.as_secs(),
+                });
+                let commit = record
+                    .active_commit()
+                    .ok_or_else(|| {
+                        RrcError::Invalid("repair resource defer has no exact candidate".into())
+                    })?
+                    .to_owned();
+                record.transition(ReleaseRecoveryState::ResourceDeferred, &commit,
+                    "Repair verification paused safely — host resource pressure; prepared patch retained",
+                    vec!["repair:resource-deferred".into()], None)?;
+                ledger.save(record)?;
+                wait(record)?;
+                if record.state != resume_state || record.resource_deferred.is_some() {
+                    return Err(RrcError::MutationBlocked(
+                        "repair verification resumed without safe resource observations".into(),
+                    ));
+                }
+            }
+            result => return result,
+        }
+    }
+}
+
 fn run_bounded_repair_agent_with_verification(
     workspace: &Path,
     record: &mut ReleaseRecoveryRecord,
@@ -10572,21 +10849,48 @@ fn run_bounded_repair_agent_with_verification(
         ));
     }
     let focused_words = focused_command.split_whitespace().collect::<Vec<_>>();
-    let verification = (|| {
-        repair_executor.require_repair_mutations_indexed(&history)?;
-        for admitted in &failures {
-            run_focused_verification(&repair_executor, &focused_words, admitted)?;
+    let verification = verify_repair_with_resource_recovery(
+        record,
+        ledger,
+        &repair_executor,
+        || {
+            // Recovery must never replace the frozen bytes with a fresh baseline.
             repair_executor.require_repair_snapshot(&verified_baseline)?;
-        }
-        (verification.verify)(&repair_executor)?;
-        repair_executor.require_repair_snapshot(&verified_baseline)?;
-        repair_executor.checked(
-            "git",
-            &["diff", "--cached", "--check", baseline_tree.trim()],
-        )?;
-        Ok::<_, RrcError>(())
-    })();
+            repair_executor.require_repair_mutations_indexed(&history)?;
+            for admitted in &failures {
+                run_focused_verification(&repair_executor, &focused_words, admitted)?;
+                repair_executor.require_repair_snapshot(&verified_baseline)?;
+            }
+            (verification.verify)(&repair_executor)?;
+            repair_executor.require_repair_snapshot(&verified_baseline)?;
+            repair_executor.checked(
+                "git",
+                &["diff", "--cached", "--check", baseline_tree.trim()],
+            )?;
+            Ok::<_, RrcError>(())
+        },
+        |record| {
+            let activity = active_workers().lock().ok().and_then(|workers| {
+                workers
+                    .get(&record.repo_identity)
+                    .map(|worker| Arc::clone(&worker.activity))
+            });
+            if let Some(activity) = activity.as_ref() {
+                update_release_activity(activity, record);
+            }
+            watch_resource_deferred(
+                record,
+                ledger,
+                &repair_executor,
+                &cancelled,
+                activity.as_ref(),
+            )
+        },
+    );
     if let Err(error) = verification {
+        if repair_verification_is_control_stop(&error) {
+            return Err(error);
+        }
         let repair = crate::release_recovery::RepairAttempt {
             fingerprint: failure.fingerprint.clone(),
             causal_family: family,

@@ -11,6 +11,26 @@
 
 ---
 
+## 2026-10-10 bounded native foundation continuation
+
+The [prepared repair resource recovery](foundation/2026-10-10-rrc-prepared-repair-resource-recovery.md)
+records the autonomous repair and governor interruption incorrectly treated as
+a failed hypothesis. Active recovery retains the prepared patch/admission and
+repeats guarded verification after three safe observations, without another
+model turn. Controller stops are not source proof failures; owner-loss journals
+remain fenced.
+
+The [native voice five-target foundation repair](foundation/2026-10-10-native-voice-foundation-ci-repair.md)
+clusters the admitted matrix into two causal families: a Windows-only test
+fixture that created the POSIX venv parent instead of the native interpreter
+parent, and one stale retained-pack size band shared by ARM and Intel macOS.
+The correction preserves production interpreter precedence, pinned pack bytes
+and the authoritative retained/peak budgets. Focused local proof is reported at
+delivery; a fresh complete exact-SHA native matrix remains required and no
+release action is claimed.
+
+---
+
 ## 1. Executive Summary
 
 Agent Vesper can build, test, tag, and publish software, but its current release behavior is still primarily an **agent prompt executed through the normal AgentLoop**. That is insufficient for reliable autonomous release engineering.

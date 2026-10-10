@@ -1,5 +1,9 @@
 # Persistent push-to-talk control
 
+Current [native fixture and RRC resource recovery](foundation/2026-10-10-rrc-prepared-repair-resource-recovery.md)
+retains the failed Windows/Mac matrix and unchanged-version repair. Fresh native
+speech and real-device acceptance remain separate from local regression proof.
+
 Status: Linux implementation retained; Windows/macOS parity repair under native validation. Real-device acceptance remains separate. Scope: native terminal voice input.
 
 ## Objective

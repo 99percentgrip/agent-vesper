@@ -60,6 +60,14 @@ Z.ai and Playwright MCP server descriptors.
   staged tree; ignored new inputs cannot supply proof for a patch that omits them.
   Failed verification retains bounded redacted diagnostic text and includes it in
   the next attempt's untrusted prior evidence, alongside its existing digest.
+  Resource pressure during native repair verification retains the frozen patch
+  and proof in the same active admission, persists a typed passive defer, and
+  retries verification only after three safe observations. Recheck the frozen
+  native snapshot before each retry; never dispatch another model or record a
+  disproven hypothesis for a resource pause. Cancellation, authorization denial,
+  watchdog stops and mutation uncertainty propagate as controller stops. Owner
+  loss during an unfinished repair remains fail-closed; a resume destination alone
+  cannot settle or replay its mutation journal.
   A cancelled checkpoint is authoritative: late worker-error settlement must not
   relabel it, replace its evidence or change its retry admissions.
   Cargo test proof must execute tests and include an identifiable failing test,

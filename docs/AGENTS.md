@@ -37,6 +37,9 @@ Own durable project documentation and evidence-backed engineering records.
   than repeating implementation diaries or unverified capability claims.
 - `recon/` owns the frozen Python-harness reconnaissance and Rust migration design.
 - `foundation/` owns blocker-resolution evidence, compatibility decisions, fixture contracts, and disposable-spike verdicts.
+  `foundation/2026-10-10-native-voice-foundation-ci-repair.md` owns the bounded
+  Windows interpreter-fixture and shared macOS retained-pack assertion repair;
+  fresh exact-SHA native CI remains separate.
 - `vro19/` owns the adopted VRO-19 Google subscription/native-API planning bundle, its current G0 scope decision, retained source excerpts and unapproved delegated-agent architecture proposal. VRO-19 is on hold and reference-only: no further research, PRD revision, implementation, live acceptance or API-only substitute is authorized unless Alex explicitly resumes it.
 - `architecture/` owns read-only external-repository pattern reconnaissance mapped to Vesper primitives for future features.
 - Root PRD `advanced-hive-governance-prd.md` (VRO-16) owns the ratified requirements for task-level HITL gates (`YieldToHost`/`HostCommand`/`Suspended`), PIVOT/REFINE decision loops with judge separation, and deterministic verification gates; its upstreams are referenced exclusively as `governance alpha`/`governance beta` (naming-guard tokens land with its PR-1).
