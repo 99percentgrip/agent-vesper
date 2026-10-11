@@ -1311,3 +1311,5 @@ remain fenced. Focused evidence is distinct from corrected native release closeo
 and live-model effectiveness.
 
 [Native ConPTY cleanup repair](foundation/2026-10-11-native-conpty-cleanup-race-repair.md) records the complete failed capacity candidate, deterministic verified-cleanup repair and pending fresh native acceptance.
+
+[Native download and owner-release repair](foundation/2026-10-11-native-voice-download-and-owner-release-repair.md) records the complete failed ConPTY candidate, actual Windows recognition/reuse and corrective download/ownership/diagnosis proof; fresh platform acceptance remains required.

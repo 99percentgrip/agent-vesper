@@ -6,6 +6,8 @@ Own evidence and decisions that close the pre-workspace blockers identified by r
 
 ## Ownership
 
+- `2026-10-11-native-voice-download-and-owner-release-repair.md` and companions own the complete ConPTY-candidate matrix, Windows recognition proof, download-helper portability and deterministic duplicated-owner release repair.
+
 - `2026-10-11-native-conpty-cleanup-race-repair.md` and its receipt companions own the Windows terminal cleanup race, complete failed matrix, bounded verification and pending native release acceptance.
 
 - `2026-10-11-native-voice-capacity-directory-repair.md` owns the Windows

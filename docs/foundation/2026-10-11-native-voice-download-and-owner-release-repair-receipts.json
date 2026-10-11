@@ -1,0 +1,79 @@
+{
+  "logs": [
+    {
+      "name": "vesper-owner-duplicate-red.log",
+      "sha256": "0a1845bb9ef0d250fad448042eeac35cecb10ecafb18160ff46db572ba59c0d3"
+    },
+    {
+      "name": "vesper-native-helper-classification-red.log",
+      "sha256": "c2c33d080853b0a8b595ceef92a4ca7006e13e90343839af14e37d9d6ad49bf0"
+    },
+    {
+      "name": "vesper-native-download-program-red.log",
+      "sha256": "a55d2866b6713154f0aafa17b99896939c4762de5fb96f13e44a64ceb64fb40b"
+    },
+    {
+      "name": "vesper-native-owner-helper-green.log",
+      "sha256": "6e3873c866c021fe01f53cfef5cb56b7baebd9ce470f6fd79118103179ed1f1c"
+    },
+    {
+      "name": "vesper-native-download-program-green.log",
+      "sha256": "419dc314f77f92a5379cf398ebbda300d249f61a4d0de4292cddbc7ba4e879f0"
+    },
+    {
+      "name": "vesper-native-download-owner-clippy.log",
+      "sha256": "b1ef52c56a1cd4946b11bae44cf903924d627807d589e94336e1cc3f648e8e26"
+    },
+    {
+      "name": "vesper-native-download-owner-bare.log",
+      "sha256": "16b1a42179321e9c9c2b28522c8cfe78660086e8f3ca2213b01198fe6bc74d87"
+    },
+    {
+      "name": "vesper-voice-dd-linux-arm.log",
+      "sha256": "ae26ba1638422f705bbf9152aa10ed86f9c0c3dbb9f0933a5973b5cf5cde146e"
+    },
+    {
+      "name": "vesper-voice-dd-windows.log",
+      "sha256": "85b56eb6d2bc2999dee1d24bb8298c8418a7d5a38f4aa288ba0c49bae9ca0947"
+    },
+    {
+      "name": "vesper-rrc-historical-incremental-snapshot-cleanup-conpty-20261011.json",
+      "sha256": "fe17c3fb6c58f3419d2f6d8a0e6bcb9cd8347150063eba62ca0c9aa0aa49fd33"
+    },
+    {
+      "name": "vesper-native-helper-echo-red.log",
+      "sha256": "33df00a2a566209e505bee6e882a4760140e28a6fa3af3ef6c65e5113bef282d"
+    },
+    {
+      "name": "vesper-native-owner-helper-final-green.log",
+      "sha256": "8b84753d226e37732ad3cef1c52fd2bf304f2bb87f245aa154102c1930f422e7"
+    },
+    {
+      "name": "vesper-native-helper-exact-green.log",
+      "sha256": "2e403afe2dd94e327704783f18fe4a076d36c2b3c97f89e58e8792e9f39dd129"
+    },
+    {
+      "name": "vesper-native-owner-helper-current-green.log",
+      "sha256": "b5da817a184e35fc163228309a5e52bfca88a4969a2a7f0bc66ecc8301e53834"
+    },
+    {
+      "name": "vesper-native-download-owner-current-clippy.log",
+      "sha256": "8d62b9100a62b1d4e2ea8bc6642ad4867a2b3061eb024bc49c16cf4ab4d04a0e"
+    }
+  ],
+  "red_cases": 4,
+  "rrc_tests_passed": 104,
+  "kokoro_tests_passed": 45,
+  "bare_tests_passed": 9,
+  "clippy_exit": 0,
+  "version": "0.24.12",
+  "native_candidate_acceptance": "pending",
+  "hardware_acceptance": "unexecuted",
+  "failed_full_rerun": {
+    "passed": 103,
+    "failed": 1,
+    "log": "vesper-native-owner-helper-final-green.log"
+  },
+  "final_rrc_log": "vesper-native-owner-helper-current-green.log",
+  "final_clippy_log": "vesper-native-download-owner-current-clippy.log"
+}

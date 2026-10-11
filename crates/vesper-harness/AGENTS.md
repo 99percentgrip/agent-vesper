@@ -558,6 +558,8 @@ Z.ai and Playwright MCP server descriptors.
 
 ## Local Contracts
 
+- Controller owner guards explicitly unlock before closing the file so duplicated/inherited open descriptions cannot extend a settled owner lease. The exact native voice-pack missing-download-helper diagnostic admits dependency diagnosis; generic exits and unknown storage failures still require evidence.
+
 - Shared live release snapshots project same-epoch persisted milestones and gate
   settlement immediately, retaining trusted live acceptance-case counts. A blocking
   gate must not freeze TUI/ACP progress at its preceding milestone. Controller

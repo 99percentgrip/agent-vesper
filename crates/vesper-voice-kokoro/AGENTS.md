@@ -39,6 +39,8 @@ as the verified inference runtime.
 
 ## Local Contracts
 
+- Pack downloads select `curl.exe` on Windows and `/usr/bin/curl` on Unix. Preserve HTTPS-only redirects, transfer bounds, immutable size/hash verification and private resumable staging on both paths.
+
 - Alex requests native NPU STT and TTS with separate acceptance gates and CPU
   still usable. This adapter currently implements CPU Kokoro only; AMD device,
   XRT/FLM presence and stack validation do not establish Kokoro NPU offload.

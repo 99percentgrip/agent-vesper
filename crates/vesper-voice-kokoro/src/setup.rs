@@ -616,7 +616,7 @@ async fn download_to(
         on_bytes(existing);
         return Ok(());
     }
-    let mut command = Command::new("/usr/bin/curl");
+    let mut command = Command::new(download_program(cfg!(windows)));
     command
         .args([
             "--fail",
@@ -691,6 +691,10 @@ async fn spawn_and_wait(
             }
         }
     }
+}
+
+fn download_program(windows: bool) -> &'static str {
+    if windows { "curl.exe" } else { "/usr/bin/curl" }
 }
 
 /// Extracts exactly the pinned members from the verified archive into
@@ -959,6 +963,12 @@ fn now_ms() -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn download_program_matches_native_platform() {
+        assert_eq!(download_program(false), "/usr/bin/curl");
+        assert_eq!(download_program(true), "curl.exe");
+    }
 
     #[test]
     fn plan_reports_pinned_sizes_and_space_gate() {

@@ -2852,7 +2852,11 @@ pub fn classify_failure(
     let class = if dependency_index_timeout(excerpt)
         || normalized.contains("e: failed to fetch")
         || normalized.contains("e: unable to fetch")
-    {
+        || matches!(
+            normalized.as_str(),
+            "voice pack storage error: could not start the download (entity not found)"
+                | "setup failed: voice pack storage error: could not start the download (entity not found)"
+        ) {
         ReleaseFailureClass::DependencyFailure
     } else if normalized.contains("panicked at")
         || normalized.contains("assertion")
@@ -3004,6 +3008,19 @@ pub fn first_causal_excerpt(log: &str) -> String {
         }
     }
     redact_secrets(&lines[start..end].join("\n"))
+}
+
+/// The controller releases its flock explicitly before closing its handle.
+/// A forked process or duplicated description must not prolong ownership after
+/// the controller has settled, even while a descendant has yet to exec.
+pub(crate) struct ReleaseOwner {
+    file: std::fs::File,
+}
+
+impl Drop for ReleaseOwner {
+    fn drop(&mut self) {
+        let _ = FileExt::unlock(&self.file);
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -3244,7 +3261,7 @@ impl ReleaseLedger {
         Ok(())
     }
 
-    pub(crate) fn acquire_owner(&self) -> Result<std::fs::File, RrcError> {
+    pub(crate) fn acquire_owner(&self) -> Result<ReleaseOwner, RrcError> {
         let file = OpenOptions::new()
             .create(true)
             .truncate(false)
@@ -3252,7 +3269,7 @@ impl ReleaseLedger {
             .write(true)
             .open(self.root.join(format!("{}.owner", self.repo_key)))?;
         file.try_lock_exclusive().map_err(|_| RrcError::Busy)?;
-        Ok(file)
+        Ok(ReleaseOwner { file })
     }
 }
 
@@ -8351,6 +8368,56 @@ mod tests {
         assert_eq!(r.required_gates, old.required_gates);
         assert_eq!(r.state, old.state);
         assert_eq!(r.retry_budget, old.retry_budget);
+    }
+
+    #[test]
+    fn controller_owner_drop_releases_duplicate_description() {
+        let temp = tempfile::tempdir().unwrap();
+        let first = ReleaseLedger::open(temp.path().to_path_buf(), "repo").unwrap();
+        let second = ReleaseLedger::open(temp.path().to_path_buf(), "repo").unwrap();
+        let owner = first.acquire_owner().unwrap();
+        let inherited = owner.file.try_clone().unwrap();
+        assert!(matches!(second.acquire_owner(), Err(RrcError::Busy)));
+        drop(owner);
+        assert!(second.acquire_owner().is_ok());
+        drop(inherited);
+    }
+
+    #[test]
+    fn native_missing_download_helper_admits_dependency_diagnosis() {
+        let log = "##[group]Run echo 'Voice pack storage error: could not start the download (entity not found)'\n##[endgroup]\nSETUP FAILED: Voice pack storage error: could not start the download (entity not found)\nerror: process didn't exit successfully: real_setup_receipt (exit code: 3)";
+        assert_eq!(
+            classify_failure(&first_causal_excerpt(log), Some("windows-2025")),
+            (
+                ReleaseFailureClass::DependencyFailure,
+                EvidenceConfidence::StronglySupported
+            )
+        );
+        let echo_only = "##[group]Run echo 'Voice pack storage error: could not start the download (entity not found)'\n##[endgroup]\n##[error]Process completed with exit code 1";
+        assert_eq!(
+            classify_failure(&first_causal_excerpt(echo_only), None),
+            (ReleaseFailureClass::Unknown, EvidenceConfidence::Unknown)
+        );
+        for unknown in [
+            "RuntimeError: native voice command failed (3): cargo",
+            "Voice pack storage error: could not start the download (other error)",
+            "could not start the download (entity not found)",
+        ] {
+            assert_eq!(
+                classify_failure(unknown, None),
+                (ReleaseFailureClass::Unknown, EvidenceConfidence::Unknown)
+            );
+        }
+        assert_eq!(
+            classify_failure(
+                "Voice pack storage error: could not start the download (permission denied)",
+                None
+            ),
+            (
+                ReleaseFailureClass::CredentialOrPermissionFailure,
+                EvidenceConfidence::StronglySupported
+            )
+        );
     }
 
     #[test]

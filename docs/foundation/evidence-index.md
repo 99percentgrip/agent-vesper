@@ -2233,3 +2233,5 @@ v0.21.6 release notes own the final run links, image IDs and local-install recei
   five-target credential proof and native release closeout remain pending.
 
 [Native ConPTY cleanup repair](2026-10-11-native-conpty-cleanup-race-repair.md) records the complete failed capacity candidate, deterministic verified-cleanup repair and pending fresh native acceptance.
+
+[Native download and owner-release repair](2026-10-11-native-voice-download-and-owner-release-repair.md) records the complete failed ConPTY candidate, actual Windows recognition/reuse and corrective download/ownership/diagnosis proof; fresh platform acceptance remains required.
