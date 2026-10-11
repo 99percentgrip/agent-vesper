@@ -6,6 +6,10 @@ Own evidence and decisions that close the pre-workspace blockers identified by r
 
 ## Ownership
 
+- `2026-10-11-native-voice-capacity-directory-repair.md` owns the Windows
+  missing-descendant/file-ancestor capacity defect, portable production repair,
+  exact local receipts and pending native candidate acceptance.
+
 - `2026-10-10-native-voice-readiness-oracle-portability-repair.md` owns the
   shared Windows/macOS native-audio versus Linux `aplay` test-oracle correction
   for both admitted macOS pack failures and the Windows F9-parity failure.

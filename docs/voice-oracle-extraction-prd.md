@@ -1,5 +1,10 @@
 # PRD — VRO-17: The Voice Oracle Extraction (Real-Time Bidirectional Voice Interface)
 
+The [capacity directory repair](foundation/2026-10-11-native-voice-capacity-directory-repair.md)
+rejects pack roots that are files or descend beneath files, including Windows
+missing-path classification. Local red/green proof does not replace native CI
+or microphone/speaker acceptance.
+
 The [native readiness-oracle portability repair](foundation/2026-10-10-native-voice-readiness-oracle-portability-repair.md)
 aligns the pack and F9 parity tests with the production playback boundary:
 Windows/macOS use native audio while Linux alone requires `aplay`. It retains

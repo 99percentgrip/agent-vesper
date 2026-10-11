@@ -1,0 +1,50 @@
+{
+  "base_commit": "565de71f08827169026babb22e9bd8cd5191298f",
+  "scope": "Linux local focused production capacity correction; fresh native release and hardware acceptance separate",
+  "environment": {
+    "CARGO_BUILD_JOBS": "1",
+    "RUST_TEST_THREADS": "1",
+    "CARGO_INCREMENTAL": "0",
+    "target": "controller-managed cache"
+  },
+  "archive": "2026-10-11-native-voice-capacity-directory-repair-receipts.tar.gz",
+  "archive_sha256": "56c2d171fad37df8f288c8b584f929a7aafb277f1367d8f518ec2977d7ef802c",
+  "checks": [
+    {
+      "check": "red",
+      "command": "cargo test --locked -p vesper-voice-kokoro --features ort,mock-synthesis setup::tests::native_capacity_handles_missing_descendants_and_refuses_invalid_paths -- --exact",
+      "exit_code": 101,
+      "asserted_log_marker": "0 passed; 1 failed",
+      "member": "red.log",
+      "sha256": "a15fa71f66a61d2f98ab65a49e780fec798f36564b1d08d7e2aac65b17090210",
+      "bytes": 1637
+    },
+    {
+      "check": "green",
+      "command": "cargo test --locked -p vesper-voice-kokoro --features ort,mock-synthesis",
+      "exit_code": 0,
+      "asserted_log_marker": "44 passed; 0 failed",
+      "member": "green.log",
+      "sha256": "c8dcddd08d5bd0d2b194b5f517f60dd53656a170fae6873243b66e4ee8fc78a1",
+      "bytes": 3837
+    },
+    {
+      "check": "bare",
+      "command": "cargo test --locked -p vesper-voice-kokoro",
+      "exit_code": 0,
+      "asserted_log_marker": "9 passed; 0 failed",
+      "member": "bare.log",
+      "sha256": "cde7f2c291611fbf8532510570d03b7532af83c5fbc522c8e0a069857af96f0f",
+      "bytes": 1287
+    },
+    {
+      "check": "clippy",
+      "command": "cargo clippy --locked -p vesper-voice-kokoro --all-targets --all-features -- -D warnings",
+      "exit_code": 0,
+      "asserted_log_marker": "Finished `dev` profile",
+      "member": "clippy.log",
+      "sha256": "d3e76a48fc6f1a2d6b1945f37f54cde3fbab732a041c2d683d1a9a720d3ab07b",
+      "bytes": 1414
+    }
+  ]
+}

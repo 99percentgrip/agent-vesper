@@ -66,7 +66,10 @@ as the verified inference runtime.
   ndarray`. No build-time native linking and no build-script downloads:
   the binary launches without the pack and offers setup.
   Optional `fs2` under the same feature measures actual destination capacity;
-  unknown capacity refuses setup before transfer. Runtime archives and each
+  unknown capacity refuses setup before transfer. Capacity probing may ascend
+  only through missing descendants and must stop at a non-directory ancestor;
+  an existing file or a path beneath it cannot authorize a pack installation.
+  Runtime archives and each
   extracted library/license/notice have separate platform-specific size/hash
   pins for all five release targets. Windows uses `onnxruntime.dll`, macOS dylibs
   and Linux `.so`; extraction accepts only fixed archive members. Intel macOS

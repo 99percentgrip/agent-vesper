@@ -1,5 +1,11 @@
 # Agent Vesper — Release Recovery Controller PRD
 
+The [capacity directory repair](foundation/2026-10-11-native-voice-capacity-directory-repair.md)
+records the later Windows production defect after native RRC repaired the stale
+audio assertions. The persisted full-matrix retry limit remains enforced;
+corrective source work and canonical-candidate reconciliation must preserve the
+previous epoch's evidence rather than clearing its ledger or budgets.
+
 **Document status:** Implementation-ready draft
 **Priority:** P0 reliability / autonomy
 **Working name:** Release Recovery Controller (RRC)

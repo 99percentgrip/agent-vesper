@@ -787,7 +787,10 @@ fn free_bytes(path: &Path) -> Option<u64> {
     let mut probe = path;
     loop {
         match std::fs::metadata(probe) {
-            Ok(_) => return fs2::available_space(probe).ok(),
+            // Windows reports a descendant of a file as NotFound. Walking to
+            // that file must not authorize a pack directory beneath it.
+            Ok(metadata) if metadata.is_dir() => return fs2::available_space(probe).ok(),
+            Ok(_) => return None,
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => probe = probe.parent()?,
             Err(_) => return None,
         }
@@ -992,12 +995,17 @@ mod tests {
         assert!(free_bytes(&missing).is_some_and(|bytes| bytes > 0));
         let file = dir.path().join("file");
         std::fs::write(&file, b"fixture").unwrap();
-        let invalid = file.join("child");
-        assert!(free_bytes(&invalid).is_none());
-        assert!(matches!(
-            VoicePackSetup::new(invalid).plan(),
-            Err(SetupError::Storage { .. })
-        ));
+        for invalid in [
+            file.clone(),
+            file.join("child"),
+            file.join("child").join("pack"),
+        ] {
+            assert!(free_bytes(&invalid).is_none(), "{invalid:?}");
+            assert!(matches!(
+                VoicePackSetup::new(invalid).plan(),
+                Err(SetupError::Storage { .. })
+            ));
+        }
     }
 
     #[test]

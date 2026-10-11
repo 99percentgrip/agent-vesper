@@ -1,0 +1,155 @@
+{
+  "observed_at": "2026-10-11T06:05:53.285918+00:00",
+  "candidate": "565de71f08827169026babb22e9bd8cd5191298f",
+  "required_workflows": [
+    {
+      "id": 38114213471,
+      "name": "five-target-foundation",
+      "head_sha": "565de71f08827169026babb22e9bd8cd5191298f",
+      "status": "completed",
+      "conclusion": "failure",
+      "html_url": "https://github.com/99percentgrip/agent-vesper/actions/runs/38114213471",
+      "jobs": [
+        {
+          "id": 114395755277,
+          "name": "linux-arm64",
+          "status": "completed",
+          "conclusion": "success",
+          "html_url": "https://github.com/99percentgrip/agent-vesper/actions/runs/38114213471/job/114395755277"
+        },
+        {
+          "id": 114395755378,
+          "name": "linux-x86_64",
+          "status": "completed",
+          "conclusion": "success",
+          "html_url": "https://github.com/99percentgrip/agent-vesper/actions/runs/38114213471/job/114395755378"
+        },
+        {
+          "id": 114395755400,
+          "name": "macos-apple-silicon",
+          "status": "completed",
+          "conclusion": "success",
+          "html_url": "https://github.com/99percentgrip/agent-vesper/actions/runs/38114213471/job/114395755400"
+        },
+        {
+          "id": 114395755412,
+          "name": "macos-intel",
+          "status": "completed",
+          "conclusion": "success",
+          "html_url": "https://github.com/99percentgrip/agent-vesper/actions/runs/38114213471/job/114395755412"
+        },
+        {
+          "id": 114395755459,
+          "name": "windows-x86_64",
+          "status": "completed",
+          "conclusion": "failure",
+          "html_url": "https://github.com/99percentgrip/agent-vesper/actions/runs/38114213471/job/114395755459"
+        }
+      ]
+    },
+    {
+      "id": 38114213449,
+      "name": "msrv",
+      "head_sha": "565de71f08827169026babb22e9bd8cd5191298f",
+      "status": "completed",
+      "conclusion": "success",
+      "html_url": "https://github.com/99percentgrip/agent-vesper/actions/runs/38114213449",
+      "jobs": [
+        {
+          "id": 114395755178,
+          "name": "rust-1-88",
+          "status": "completed",
+          "conclusion": "success",
+          "html_url": "https://github.com/99percentgrip/agent-vesper/actions/runs/38114213449/job/114395755178"
+        }
+      ]
+    },
+    {
+      "id": 38114213455,
+      "name": "pull-request-validation",
+      "head_sha": "565de71f08827169026babb22e9bd8cd5191298f",
+      "status": "completed",
+      "conclusion": "success",
+      "html_url": "https://github.com/99percentgrip/agent-vesper/actions/runs/38114213455",
+      "jobs": [
+        {
+          "id": 114395755373,
+          "name": "quality",
+          "status": "completed",
+          "conclusion": "success",
+          "html_url": "https://github.com/99percentgrip/agent-vesper/actions/runs/38114213455/job/114395755373"
+        },
+        {
+          "id": 114395755399,
+          "name": "supply-chain",
+          "status": "completed",
+          "conclusion": "success",
+          "html_url": "https://github.com/99percentgrip/agent-vesper/actions/runs/38114213455/job/114395755399"
+        },
+        {
+          "id": 114395755424,
+          "name": "windows-installer",
+          "status": "completed",
+          "conclusion": "success",
+          "html_url": "https://github.com/99percentgrip/agent-vesper/actions/runs/38114213455/job/114395755424"
+        }
+      ]
+    },
+    {
+      "id": 38114213442,
+      "name": "web-driver",
+      "head_sha": "565de71f08827169026babb22e9bd8cd5191298f",
+      "status": "completed",
+      "conclusion": "success",
+      "html_url": "https://github.com/99percentgrip/agent-vesper/actions/runs/38114213442",
+      "jobs": [
+        {
+          "id": 114395755175,
+          "name": "Native namespace Hive",
+          "status": "completed",
+          "conclusion": "success",
+          "html_url": "https://github.com/99percentgrip/agent-vesper/actions/runs/38114213442/job/114395755175"
+        },
+        {
+          "id": 114395755314,
+          "name": "Contained browser linux-aarch64",
+          "status": "completed",
+          "conclusion": "success",
+          "html_url": "https://github.com/99percentgrip/agent-vesper/actions/runs/38114213442/job/114395755314"
+        },
+        {
+          "id": 114395755327,
+          "name": "Contained browser linux-x86_64",
+          "status": "completed",
+          "conclusion": "success",
+          "html_url": "https://github.com/99percentgrip/agent-vesper/actions/runs/38114213442/job/114395755327"
+        }
+      ]
+    }
+  ],
+  "native_rrc": {
+    "epoch_id": "20261010T121603.536085205Z-498e49f66c8a",
+    "state": "classifying_failure",
+    "liveness": {
+      "detail": "retry blocked: full-gate budget exhausted; further repair promotion forbidden",
+      "observed_at": "2026-10-11T06:05:09.862925630Z",
+      "operation": "focused repair agent",
+      "owner_pid": 1044963,
+      "settled_error": true,
+      "state": "failed"
+    },
+    "retry_budget": {
+      "full_gate_limit": 1,
+      "full_gate_used": 1,
+      "infrastructure_limit": 1,
+      "infrastructure_used": 0,
+      "repair_attempt_limit_per_family": 2,
+      "targeted_diagnostic_limit": 2,
+      "targeted_diagnostic_used": 0
+    },
+    "in_flight_operation": null,
+    "tag_pushed": false,
+    "published": false,
+    "successful_repairs": 3
+  }
+}
