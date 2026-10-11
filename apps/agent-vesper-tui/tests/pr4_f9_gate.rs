@@ -249,7 +249,7 @@ fn settings_panel_and_f9_share_one_assessment() {
         path.interpreter(),
         Some(path.as_search()),
     );
-    if cfg!(target_os = "macos") {
+    if cfg!(any(windows, target_os = "macos")) {
         assert!(
             checks
                 .iter()

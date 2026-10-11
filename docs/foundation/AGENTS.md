@@ -6,6 +6,11 @@ Own evidence and decisions that close the pre-workspace blockers identified by r
 
 ## Ownership
 
+- `2026-10-10-native-voice-readiness-oracle-portability-repair.md` owns the
+  shared Windows/macOS native-audio versus Linux `aplay` test-oracle correction
+  for both admitted macOS pack failures and the Windows F9-parity failure.
+  Focused local proof does not replace fresh native exact-SHA jobs or devices.
+
 - `2026-10-10-rrc-prepared-repair-resource-recovery.md` and its failure receipt
   own native repair resource interruption, unchanged-proof active recovery and
   controller-stop refusal. Owner-loss fences/device acceptance stay explicit.

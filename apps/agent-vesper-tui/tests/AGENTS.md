@@ -53,7 +53,10 @@ Verify terminal interaction through the production TUI binary with isolated stat
   Canonicalize the parent root before setting child paths; macOS `/var`
   aliases `/private/var`. Child identity assertions must compare that canonical
   root after canonicalizing the child cwd too (Windows adds a `\\?\` prefix),
-  not reject a safe symlink alias. The host-construction case explicitly selects neural speech against an empty
+  not reject a safe symlink alias. Readiness assertions follow the production
+  playback split: native audio on Windows/macOS and `aplay` only on Linux; an
+  available native backend still says device acceptance occurs on activation.
+  The host-construction case explicitly selects neural speech against an empty
   fixture pack; all children must be reaped before temporary roots are removed.
 
 - `voice_speech_pipeline.rs` isolates PATH/HOME in a test subprocess and uses
@@ -102,7 +105,9 @@ Verify terminal interaction through the production TUI binary with isolated stat
 
 - `pr4_f9_gate.rs` allocates fixture roots with a process-local atomic identity;
   parallel tests must never use wall-clock resolution as their uniqueness
-  boundary or overwrite another case's saved voice scope.
+  boundary or overwrite another case's saved voice scope. Its shared-assessment
+  case expects native audio readiness on Windows/macOS and an `aplay` blocker
+  only on Linux, matching the production playback boundary.
 
 - `voice_flm_route.rs` also pins the transport failure-classification contract
   (2026-09-23 Verify-read repair): a reset from a dying server reports

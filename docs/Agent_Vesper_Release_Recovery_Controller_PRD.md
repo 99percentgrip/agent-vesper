@@ -13,6 +13,13 @@
 
 ## 2026-10-10 bounded native foundation continuation
 
+The [native voice readiness-oracle portability repair](foundation/2026-10-10-native-voice-readiness-oracle-portability-repair.md)
+clusters two macOS pack-test failures and one Windows F9-parity failure into one
+corroborated stale-oracle family: Windows/macOS production playback is native,
+while `aplay` is Linux-only. Both tests now follow that production boundary and
+retain the explicit device-acceptance limitation. Focused local proof cannot
+replace fresh native exact-SHA jobs.
+
 The [prepared repair resource recovery](foundation/2026-10-10-rrc-prepared-repair-resource-recovery.md)
 records the autonomous repair and governor interruption incorrectly treated as
 a failed hypothesis. Active recovery retains the prepared patch/admission and

@@ -37,6 +37,9 @@ Own durable project documentation and evidence-backed engineering records.
   than repeating implementation diaries or unverified capability claims.
 - `recon/` owns the frozen Python-harness reconnaissance and Rust migration design.
 - `foundation/` owns blocker-resolution evidence, compatibility decisions, fixture contracts, and disposable-spike verdicts.
+  `foundation/2026-10-10-native-voice-readiness-oracle-portability-repair.md`
+  owns the shared Windows/macOS native-audio versus Linux `aplay` test-oracle
+  correction; focused Linux proof does not replace fresh native exact-SHA jobs.
   `foundation/2026-10-10-native-voice-foundation-ci-repair.md` owns the bounded
   Windows interpreter-fixture and shared macOS retained-pack assertion repair;
   fresh exact-SHA native CI remains separate.

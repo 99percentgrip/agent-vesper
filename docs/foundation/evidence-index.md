@@ -1,5 +1,7 @@
 # Foundation Evidence Index
 
+- [Native voice readiness-oracle portability repair](2026-10-10-native-voice-readiness-oracle-portability-repair.md) — clusters both macOS pack failures and the Windows F9-parity failure into one stale Linux-only assertion family, aligns both tests with native Windows/macOS playback versus Linux `aplay`, retains the device-acceptance limitation, and leaves fresh native exact-SHA proof pending.
+
 - [RRC prepared repair resource recovery](2026-10-10-rrc-prepared-repair-resource-recovery.md) — retains native resource-interrupted repair, preserves proof/admission during active recovery and separates controller stops from disproven source hypotheses; fresh native release proof pending.
 
 - [Native voice five-target foundation repair](2026-10-10-native-voice-foundation-ci-repair.md) — Windows-native interpreter fixture construction and the shared ARM/Intel macOS retained-pack assertion are corrected as two causal families; focused local proof is reported at delivery and fresh exact-SHA native CI remains pending.

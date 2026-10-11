@@ -1,5 +1,11 @@
 # PRD — VRO-17: The Voice Oracle Extraction (Real-Time Bidirectional Voice Interface)
 
+The [native readiness-oracle portability repair](foundation/2026-10-10-native-voice-readiness-oracle-portability-repair.md)
+aligns the pack and F9 parity tests with the production playback boundary:
+Windows/macOS use native audio while Linux alone requires `aplay`. It retains
+the distinction between static readiness and device acceptance; fresh native
+exact-SHA jobs remain pending.
+
 The [native fixture and RRC resource recovery](foundation/2026-10-10-rrc-prepared-repair-resource-recovery.md)
 retains the current Windows/Mac failures and unchanged-version repair. Earlier
 Linux acceptance does not certify fresh native or original-laptop voice behavior.

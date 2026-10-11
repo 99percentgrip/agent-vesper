@@ -376,7 +376,16 @@ fn pack_success_does_not_imply_device_acceptance() {
     let checks = agent_vesper_tui::voice_readiness::voice_readiness();
     // The baseline checks still exist unchanged (F5/shared-STT parity).
     assert!(checks.iter().any(|check| check.name.contains("espeak-ng")));
-    assert!(checks.iter().any(|check| check.name.contains("aplay")));
+    if cfg!(any(windows, target_os = "macos")) {
+        let native_audio = checks
+            .iter()
+            .find(|check| check.name.contains("native audio"))
+            .expect("native audio readiness check present");
+        assert!(native_audio.ok);
+        assert!(native_audio.name.contains("device checked on activation"));
+    } else {
+        assert!(checks.iter().any(|check| check.name.contains("aplay")));
+    }
     let _ = pack;
 }
 
