@@ -6,6 +6,8 @@ Own durable project documentation and evidence-backed engineering records.
 
 ## Ownership
 
+- `foundation/2026-10-11-native-conpty-cleanup-race-repair.md` owns the complete capacity-candidate matrix and verified ConPTY cleanup race correction; mock cleanup proof does not replace native Windows acceptance.
+
 - `voice-control-prd.md` owns the requested persistent red microphone toggle,
   recorder state projection, responsive lifecycle and terminal acceptance.
   Voice parity requires capture, recognition, pack/runtime, playback and Settings

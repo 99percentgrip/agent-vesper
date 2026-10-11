@@ -2,10 +2,11 @@
   "version": 1,
   "objective_id": "native-voice-platform-implementation-20261009",
   "objective_label": "Native Windows/macOS voice backends and guided local dependency setup",
-  "variant_label": "Portable capacity directory red-green proof; corrective exact-SHA native release gates and hardware acceptance pending",
-  "variant_id": "native-voice-capacity-directory-verified-20261011",
+  "variant_label": "Verified ConPTY cleanup race guards; fresh native Windows speech acceptance and release pending",
+  "variant_id": "native-voice-conpty-cleanup-verified-20261011",
   "canonical_release_source": true,
   "supersedes": [
+    "native-voice-capacity-directory-verified-20261011",
     "native-voice-prepared-repair-resource-recovery-20261010",
     "native-voice-ci-rrc-recovery-verified-20261009",
     "native-voice-platform-implementation-verified-20261009",
@@ -31,6 +32,7 @@
     "rrc-autonomy-prd-audit-20261006"
   ],
   "evidence_reports": [
+    "docs/foundation/2026-10-11-native-conpty-cleanup-race-repair.md",
     "docs/foundation/2026-10-11-native-voice-capacity-directory-repair.md",
     "docs/foundation/2026-10-10-native-voice-readiness-oracle-portability-repair.md",
     "docs/foundation/2026-10-10-rrc-prepared-repair-resource-recovery.md",
@@ -39,5 +41,5 @@
     "docs/foundation/2026-10-09-native-voice-platform-parity-repair.md",
     "docs/foundation/2026-10-09-windows-voice-parity-verification.md"
   ],
-  "completed_at": "2026-10-11T05:52:28.902702+00:00"
+  "completed_at": "2026-10-11T09:06:31.017472+00:00"
 }

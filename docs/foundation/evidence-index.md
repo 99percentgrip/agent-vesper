@@ -2231,3 +2231,5 @@ v0.21.6 release notes own the final run links, image IDs and local-install recei
   The corrected source passed 159 exact acceptance cases, five shared-cache
   repetitions, strict Clippy and eight refreshed Linux process cases; fresh
   five-target credential proof and native release closeout remain pending.
+
+[Native ConPTY cleanup repair](2026-10-11-native-conpty-cleanup-race-repair.md) records the complete failed capacity candidate, deterministic verified-cleanup repair and pending fresh native acceptance.

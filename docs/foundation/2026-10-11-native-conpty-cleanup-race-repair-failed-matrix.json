@@ -1,0 +1,347 @@
+{
+  "epoch_id": "20261011T061021.160806114Z-9c5378131f30",
+  "state": "need_more_evidence",
+  "release_commit": "9c5378131f308ea1396ccf93be0860bdffc711b7",
+  "required_gates": [
+    {
+      "head_sha": "9c5378131f308ea1396ccf93be0860bdffc711b7",
+      "jobs": [
+        {
+          "attempt": 1,
+          "failed_step": null,
+          "job_id": 114422218564,
+          "job_name": "rust-1-88",
+          "platform": "ubuntu-24.04",
+          "run_id": 38123265424,
+          "state": "success",
+          "url": "https://github.com/99percentgrip/agent-vesper/actions/runs/38123265424/job/114422218564",
+          "workflow_id": 324058985,
+          "workflow_name": "msrv"
+        }
+      ],
+      "name": "msrv",
+      "run_attempt": 1,
+      "run_id": 38123265424,
+      "run_state": "success",
+      "url": "https://github.com/99percentgrip/agent-vesper/actions/runs/38123265424"
+    },
+    {
+      "head_sha": "9c5378131f308ea1396ccf93be0860bdffc711b7",
+      "jobs": [
+        {
+          "attempt": 1,
+          "failed_step": null,
+          "job_id": 114422218494,
+          "job_name": "Contained browser linux-aarch64",
+          "platform": "ubuntu-24.04-arm",
+          "run_id": 38123265390,
+          "state": "success",
+          "url": "https://github.com/99percentgrip/agent-vesper/actions/runs/38123265390/job/114422218494",
+          "workflow_id": 351737017,
+          "workflow_name": "web-driver"
+        },
+        {
+          "attempt": 1,
+          "failed_step": null,
+          "job_id": 114422218699,
+          "job_name": "Contained browser linux-x86_64",
+          "platform": "ubuntu-24.04",
+          "run_id": 38123265390,
+          "state": "success",
+          "url": "https://github.com/99percentgrip/agent-vesper/actions/runs/38123265390/job/114422218699",
+          "workflow_id": 351737017,
+          "workflow_name": "web-driver"
+        },
+        {
+          "attempt": 1,
+          "failed_step": null,
+          "job_id": 114422218757,
+          "job_name": "Native namespace Hive",
+          "platform": "ubuntu-22.04",
+          "run_id": 38123265390,
+          "state": "success",
+          "url": "https://github.com/99percentgrip/agent-vesper/actions/runs/38123265390/job/114422218757",
+          "workflow_id": 351737017,
+          "workflow_name": "web-driver"
+        }
+      ],
+      "name": "web-driver",
+      "run_attempt": 1,
+      "run_id": 38123265390,
+      "run_state": "success",
+      "url": "https://github.com/99percentgrip/agent-vesper/actions/runs/38123265390"
+    },
+    {
+      "head_sha": "9c5378131f308ea1396ccf93be0860bdffc711b7",
+      "jobs": [
+        {
+          "attempt": 1,
+          "failed_step": null,
+          "job_id": 114422218576,
+          "job_name": "macos-intel",
+          "platform": "macos-15-intel",
+          "run_id": 38123265388,
+          "state": "success",
+          "url": "https://github.com/99percentgrip/agent-vesper/actions/runs/38123265388/job/114422218576",
+          "workflow_id": 324058986,
+          "workflow_name": "five-target-foundation"
+        },
+        {
+          "attempt": 1,
+          "failed_step": null,
+          "job_id": 114422218676,
+          "job_name": "macos-apple-silicon",
+          "platform": "macos-15",
+          "run_id": 38123265388,
+          "state": "success",
+          "url": "https://github.com/99percentgrip/agent-vesper/actions/runs/38123265388/job/114422218676",
+          "workflow_id": 324058986,
+          "workflow_name": "five-target-foundation"
+        },
+        {
+          "attempt": 1,
+          "failed_step": null,
+          "job_id": 114422218683,
+          "job_name": "linux-arm64",
+          "platform": "ubuntu-24.04-arm",
+          "run_id": 38123265388,
+          "state": "success",
+          "url": "https://github.com/99percentgrip/agent-vesper/actions/runs/38123265388/job/114422218683",
+          "workflow_id": 324058986,
+          "workflow_name": "five-target-foundation"
+        },
+        {
+          "attempt": 1,
+          "failed_step": "Verify clean native first launch and provider Settings",
+          "job_id": 114422218694,
+          "job_name": "windows-x86_64",
+          "platform": "windows-2025",
+          "run_id": 38123265388,
+          "state": "failure",
+          "url": "https://github.com/99percentgrip/agent-vesper/actions/runs/38123265388/job/114422218694",
+          "workflow_id": 324058986,
+          "workflow_name": "five-target-foundation"
+        },
+        {
+          "attempt": 1,
+          "failed_step": null,
+          "job_id": 114422218700,
+          "job_name": "linux-x86_64",
+          "platform": "ubuntu-24.04",
+          "run_id": 38123265388,
+          "state": "success",
+          "url": "https://github.com/99percentgrip/agent-vesper/actions/runs/38123265388/job/114422218700",
+          "workflow_id": 324058986,
+          "workflow_name": "five-target-foundation"
+        }
+      ],
+      "name": "five-target-foundation",
+      "run_attempt": 1,
+      "run_id": 38123265388,
+      "run_state": "failure",
+      "url": "https://github.com/99percentgrip/agent-vesper/actions/runs/38123265388"
+    },
+    {
+      "head_sha": "9c5378131f308ea1396ccf93be0860bdffc711b7",
+      "jobs": [
+        {
+          "attempt": 1,
+          "failed_step": null,
+          "job_id": 114422218628,
+          "job_name": "quality",
+          "platform": "ubuntu-24.04",
+          "run_id": 38123265387,
+          "state": "success",
+          "url": "https://github.com/99percentgrip/agent-vesper/actions/runs/38123265387/job/114422218628",
+          "workflow_id": 324058982,
+          "workflow_name": "pull-request-validation"
+        },
+        {
+          "attempt": 1,
+          "failed_step": null,
+          "job_id": 114422218735,
+          "job_name": "windows-installer",
+          "platform": "windows-2025",
+          "run_id": 38123265387,
+          "state": "success",
+          "url": "https://github.com/99percentgrip/agent-vesper/actions/runs/38123265387/job/114422218735",
+          "workflow_id": 324058982,
+          "workflow_name": "pull-request-validation"
+        },
+        {
+          "attempt": 1,
+          "failed_step": null,
+          "job_id": 114422218807,
+          "job_name": "supply-chain",
+          "platform": "ubuntu-24.04",
+          "run_id": 38123265387,
+          "state": "success",
+          "url": "https://github.com/99percentgrip/agent-vesper/actions/runs/38123265387/job/114422218807",
+          "workflow_id": 324058982,
+          "workflow_name": "pull-request-validation"
+        }
+      ],
+      "name": "pull-request-validation",
+      "run_attempt": 1,
+      "run_id": 38123265387,
+      "run_state": "success",
+      "url": "https://github.com/99percentgrip/agent-vesper/actions/runs/38123265387"
+    }
+  ],
+  "failures": [
+    {
+      "attempt": 1,
+      "causal_excerpt": "2026-10-11T08:49:31.1386431Z                              output=stdout, stderr=stderr)\n2026-10-11T08:49:31.1387448Z subprocess.CalledProcessError: Command '['taskkill', '/PID', '7136', '/T', '/F']' returned non-zero exit status 255.\n2026-10-11T08:49:31.1521359Z ##[error]Process completed with exit code 1.\n2026-10-11T08:49:31.1982335Z Post job cleanup.\n2026-10-11T08:49:31.9206552Z ##[group]Get human-readable stats",
+      "class": "unknown",
+      "confidence": "unknown",
+      "exists_on_last_green": null,
+      "fingerprint": "187091a724d39af713a2686718738668179bb86756a57cde308a30eee13ea283",
+      "job_id": 114422218694,
+      "job_name": "windows-x86_64",
+      "observed_at": "2026-10-11T08:59:38.613722857Z",
+      "other_platforms_passed": true,
+      "platform": "windows-2025",
+      "related_source_touched": null,
+      "run_id": 38123265388,
+      "source_commit": "9c5378131f308ea1396ccf93be0860bdffc711b7",
+      "step_name": "Verify clean native first launch and provider Settings",
+      "workflow_id": 324058986,
+      "workflow_name": "five-target-foundation"
+    }
+  ],
+  "retry_budget": {
+    "full_gate_limit": 1,
+    "full_gate_used": 0,
+    "infrastructure_limit": 1,
+    "infrastructure_used": 0,
+    "repair_attempt_limit_per_family": 2,
+    "targeted_diagnostic_limit": 2,
+    "targeted_diagnostic_used": 0
+  },
+  "repair_attempts": [],
+  "liveness": {
+    "detail": "",
+    "observed_at": null,
+    "operation": "",
+    "owner_pid": null,
+    "settled_error": false,
+    "state": "idle"
+  },
+  "mutation": {
+    "base_sha": "9c5378131f308ea1396ccf93be0860bdffc711b7",
+    "candidate_committed": true,
+    "candidate_push_ref": "origin/main@9c5378131f308ea1396ccf93be0860bdffc711b7",
+    "candidate_pushed": true,
+    "canonical_release_source": true,
+    "closeout_receipt": null,
+    "closeout_registry": null,
+    "final_candidate_commit": "9c5378131f308ea1396ccf93be0860bdffc711b7",
+    "in_flight_operation": null,
+    "intended_commits": [],
+    "intended_diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "local_gates": [
+      {
+        "command": "cargo check --workspace --all-targets",
+        "evidence_ref": "local:version-preparation",
+        "name": "version-preparation",
+        "state": "succeeded"
+      },
+      {
+        "command": "cargo xtask verify",
+        "evidence_ref": "local:workspace-verify:f7380ecdfbbf13c30e84539bdbcb5aaa61291c2b16370dc868ad6f91ddb41e95",
+        "name": "workspace-verify",
+        "state": "succeeded"
+      },
+      {
+        "command": "cargo xtask acceptance",
+        "evidence_ref": "local:acceptance:0aa849d7a111ee0ac3e191cbb96fd177b3faa9c6745b99235dee2d8387fec2e9",
+        "name": "acceptance",
+        "state": "succeeded"
+      },
+      {
+        "command": "cargo xtask architecture",
+        "evidence_ref": "local:architecture:6b9b737d10b13c6b3580725f13fe9a46e2eed6b8ba90117c3be0df46b373b43d",
+        "name": "architecture",
+        "state": "succeeded"
+      },
+      {
+        "command": "cargo xtask msrv",
+        "evidence_ref": "local:msrv:2b66a02e2f66f2e4e7510527fb3f9cc41672d8616fcc6d97306f384476a9c3ca",
+        "name": "msrv",
+        "state": "succeeded"
+      },
+      {
+        "command": "cargo deny --all-features check",
+        "evidence_ref": "local:supply-chain-policy:f1a0fca39d4280363937aabd77783990ea6480bd9ca257816de3b68fc8efa845",
+        "name": "supply-chain-policy",
+        "state": "succeeded"
+      },
+      {
+        "command": "cargo audit",
+        "evidence_ref": "local:advisories:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "name": "advisories",
+        "state": "succeeded"
+      },
+      {
+        "command": "cargo build --locked --release --package agent-vesper-acp --package agent-vesper-tui --package vesper-web-fetch --package vesper-sandbox --features agent-vesper-acp/docker,agent-vesper-tui/docker,agent-vesper-acp/swarm,agent-vesper-tui/swarm,agent-vesper-acp/bridge,agent-vesper-tui/bridge,agent-vesper-tui/voice-kokoro,agent-vesper-tui/voice-flm",
+        "evidence_ref": "local:release-build:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "name": "release-build",
+        "state": "succeeded"
+      }
+    ],
+    "objective_evidence_reports": [
+      "docs/foundation/2026-10-11-native-voice-capacity-directory-repair.md",
+      "docs/foundation/2026-10-10-native-voice-readiness-oracle-portability-repair.md",
+      "docs/foundation/2026-10-10-rrc-prepared-repair-resource-recovery.md",
+      "docs/foundation/2026-10-10-native-voice-foundation-ci-repair.md",
+      "docs/foundation/2026-10-09-native-voice-ci-and-rrc-recovery.md",
+      "docs/foundation/2026-10-09-native-voice-platform-parity-repair.md",
+      "docs/foundation/2026-10-09-windows-voice-parity-verification.md"
+    ],
+    "objective_id": "native-voice-platform-implementation-20261009",
+    "objective_label": "Native Windows/macOS voice backends and guided local dependency setup",
+    "publication_read_retries": 0,
+    "publication_run_id": null,
+    "publication_verified": false,
+    "publication_watch_millis": 0,
+    "published_asset_names": [],
+    "release_workspace": "/home/Alex/.local/state/agent-vesper/release-recovery/worktrees/abde39a508845675/20261011T061020357Z-9c5378131f30",
+    "repair_admissions": {},
+    "repair_files": [],
+    "source_commit": "9c5378131f308ea1396ccf93be0860bdffc711b7",
+    "source_variant_id": "native-voice-capacity-directory-verified-20261011",
+    "source_variant_label": "Portable capacity directory red-green proof; corrective exact-SHA native release gates and hardware acceptance pending",
+    "source_workspace": "/home/Alex/Projects/agent-vesper/.worktrees/native-voice-capacity-repair-20261011",
+    "supersedes": [
+      "native-voice-prepared-repair-resource-recovery-20261010",
+      "native-voice-ci-rrc-recovery-verified-20261009",
+      "native-voice-platform-implementation-verified-20261009",
+      "windows-native-auth-rrc-proof-isolation-integrated-20261008",
+      "windows-native-auth-rrc-platform-proof-continuation-integrated-20261008",
+      "windows-native-auth-rrc-cache-observation-integrated-20261008",
+      "windows-native-auth-rrc-session-and-ownership-integrated-20261008",
+      "windows-native-auth-and-rrc-current-session-integrated-20261008",
+      "windows-native-records-auth-nonzero-acceptance-integrated-20261008",
+      "windows-native-records-and-auth-persistence-integrated-20261008",
+      "native-first-launch-rrc-fixture-diagnosis-integrated-20261008",
+      "native-first-launch-and-cross-platform-rrc-20261008",
+      "native-first-launch-and-rrc-integrated-20261008",
+      "rrc-publication-and-windows-portable-package-20261008",
+      "rrc-windows-package-causal-diagnosis-integrated-20261008",
+      "rrc-publication-windows-package-integrated-20261008",
+      "rrc-publication-observation-recovery-20261007",
+      "rrc-publication-recovery-integrated-20261007",
+      "rrc-native-permission-and-windows-installer-20261007",
+      "rrc-permission-windows-integrated-20261007",
+      "windows-powershell-51-installer-hosted-20261007",
+      "windows-ps51-installer-hosted-20261007",
+      "rrc-autonomy-prd-audit-20261006"
+    ],
+    "tag_name": null,
+    "tag_object": null,
+    "tag_pushed": false,
+    "version_after": "0.24.12",
+    "version_before": "0.24.12",
+    "version_files": []
+  }
+}

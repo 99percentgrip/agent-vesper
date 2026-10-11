@@ -49,9 +49,21 @@ class WindowsChild:
 
     def close(self):
         if self.poll() is None:
-            subprocess.run(["taskkill", "/PID", str(self.pid), "/T", "/F"],
-                           check=True, capture_output=True, timeout=10)
-            self.wait(10)
+            try:
+                subprocess.run(["taskkill", "/PID", str(self.pid), "/T", "/F"],
+                               check=True, capture_output=True, timeout=10)
+            except subprocess.CalledProcessError as error:
+                # The child can exit between poll() and taskkill. A nonzero
+                # kill result is benign only after the owned child is dead.
+                try:
+                    self.wait(10)
+                except subprocess.TimeoutExpired as timeout:
+                    raise AssertionError(
+                        "ConPTY child did not exit after failed taskkill "
+                        f"(exit {error.returncode})"
+                    ) from timeout
+            else:
+                self.wait(10)
         self.terminal.pty.cancel_io()
         self.terminal.fileobj.close()
         self.terminal._server.close()

@@ -6,6 +6,8 @@ Own evidence and decisions that close the pre-workspace blockers identified by r
 
 ## Ownership
 
+- `2026-10-11-native-conpty-cleanup-race-repair.md` and its receipt companions own the Windows terminal cleanup race, complete failed matrix, bounded verification and pending native release acceptance.
+
 - `2026-10-11-native-voice-capacity-directory-repair.md` owns the Windows
   missing-descendant/file-ancestor capacity defect, portable production repair,
   exact local receipts and pending native candidate acceptance.

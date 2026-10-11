@@ -230,6 +230,8 @@ Verify terminal interaction through the production TUI binary with isolated stat
 
 ## Local Contracts
 
+- Windows ConPTY cleanup accepts a failed taskkill only after bounded owned-child exit verification; live children, command timeouts and unsettled readers remain failures. `test_windows_child_cleanup.py` covers the race and refusal paths without native devices.
+
 - Use temporary HOME, workspace and global data roots plus synthetic credentials.
 - Resolve executable arguments against the caller directory before changing child
   cwd. Terminal receipts use UTF-8 even under redirected Windows code pages; ACP

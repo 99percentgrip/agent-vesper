@@ -1086,3 +1086,5 @@ do not close microphone/speaker, OS authorization or original-laptop acceptance.
 retains the failed native compilation, shared-reader correction and narrow source
 repair journal recovery. Corrected full native CI and device acceptance remain
 required; Linux-only or fixture success cannot close those gates.
+
+[Native ConPTY cleanup repair](foundation/2026-10-11-native-conpty-cleanup-race-repair.md) records the complete failed capacity candidate, deterministic verified-cleanup repair and pending fresh native acceptance.

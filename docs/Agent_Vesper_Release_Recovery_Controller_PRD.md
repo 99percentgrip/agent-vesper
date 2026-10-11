@@ -1309,3 +1309,5 @@ candidate to remain clean/unchanged with no tag/publication state, preserving
 failure evidence and reserved admissions. Unknown owner exits and uncertain writes
 remain fenced. Focused evidence is distinct from corrected native release closeout
 and live-model effectiveness.
+
+[Native ConPTY cleanup repair](foundation/2026-10-11-native-conpty-cleanup-race-repair.md) records the complete failed capacity candidate, deterministic verified-cleanup repair and pending fresh native acceptance.
