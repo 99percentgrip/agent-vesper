@@ -285,3 +285,29 @@ and status digests remain unchanged.
 real provider timing and live delegated VRO/ReAct proof remain listed above.
 No user installation, publication, RRC release or VRO-19 execution is authorized
 or performed. This work unit stops after its local commit and delivery.
+
+## Authorized release final audit
+
+Alex subsequently authorized one release after the mandatory final audit. The
+implementation commit is `ca6eac7977262f066a8847cd98eb95ffdb9bc665`; canonical
+`origin/main` remains `1253ff8bfb89e23195557a6397783d36ed4209df`. The candidate
+was clean before recording this authorization; no automatic rebase occurred.
+All nine source/test digests and seven executed gate-log digests match the
+committed receipts. Source review rechecked journal admission/promotion, runtime
+settlement, interruption pause, persistence rollback/recovery, bounded rendering
+and explicit steering. No additional production defect was identified.
+
+The 26-behavior evidence map remains scoped to its actual proof. Queue terminal
+acceptance runs on Unix with an integration-only loopback adapter; the existing
+five-target first-launch/authentication/RRC tests do not certify Windows queue
+interaction. Windows/macOS queue interaction and live delegated timing remain
+outstanding user acceptance, not inferred from unrelated platform gates.
+
+Latest publication is v0.24.12; v0.24.13 has no remote tag or release at admission.
+Release preparation, conservative sequential verification, exact-SHA CI, immutable
+tag/assets and existing registry PR #539 closeout belong to the native RRC.
+The invoking native host must remain attached through completion; no disposable
+ACP driver with independent permissions substitutes for that route. Release
+publication is pending, and no installed application replacement is authorized.
+Owning DOX contracts were checked: this record and provenance update change no
+subtree, message ownership or workflow contract, so those DOX files remain unchanged.
