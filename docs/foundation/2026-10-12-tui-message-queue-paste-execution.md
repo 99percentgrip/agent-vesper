@@ -22,7 +22,10 @@ Read root/apps/TUI DOX and documentation/foundation contracts. Traced `Event::Pa
 
 ## Status / readiness
 
-Implementation is complete and locally verified. **READY FOR LIVE ACCEPTANCE: YES.**
+Initial implementation was locally verified at `ca6eac79`. The subsequent release
+final audit found and corrected command-boundary regressions. The final source
+passed all seven mandatory gates and 35 scoped regressions.
+**READY FOR LIVE ACCEPTANCE: YES.** Native publication remains pending.
 All seven mandatory gates passed sequentially on the final frozen source, with
 31 focused regressions passing. Native Windows/macOS and live-provider proofs
 remain explicitly unexecuted; this is not universal platform certification.
@@ -248,7 +251,7 @@ The existing image-path regression keeps all its assertions and is renamed
 `native_clipboard_text_queues_existing_image_path_without_touching_composer` to
 identify the preserved route accurately. No regression is deleted or weakened.
 
-## Final verification and readiness
+## Initial implementation verification and readiness
 
 [Machine-readable receipts](2026-10-12-tui-message-queue-paste-receipts.json)
 record commands, results, log digests/tails, frozen source hashes, focused test
@@ -281,10 +284,13 @@ The conversation delivery records the final commit SHA without a self-referentia
 report hash. No source drift was observed at final fetch. Primary tracked-content
 and status digests remain unchanged.
 
-**READY_FOR_LIVE_ACCEPTANCE: YES.** Outstanding native Windows/macOS interaction,
+**Initial READY_FOR_LIVE_ACCEPTANCE: YES**, superseded by the correction below.
+Outstanding native Windows/macOS interaction,
 real provider timing and live delegated VRO/ReAct proof remain listed above.
-No user installation, publication, RRC release or VRO-19 execution is authorized
-or performed. This work unit stops after its local commit and delivery.
+At initial implementation delivery, no user installation, publication, RRC
+release or VRO-19 execution was performed. Subsequent release authorization and
+its interrupted audit attempt are recorded below; installation and VRO-19 remain
+out of scope.
 
 ## Authorized release final audit
 
@@ -295,7 +301,8 @@ was clean before recording this authorization; no automatic rebase occurred.
 All nine source/test digests and seven executed gate-log digests match the
 committed receipts. Source review rechecked journal admission/promotion, runtime
 settlement, interruption pause, persistence rollback/recovery, bounded rendering
-and explicit steering. No additional production defect was identified.
+and explicit steering. That pass missed the native-command defects identified
+in the continued audit below; its readiness assessment is superseded.
 
 The 26-behavior evidence map remains scoped to its actual proof. Queue terminal
 acceptance runs on Unix with an integration-only loopback adapter; the existing
@@ -311,3 +318,88 @@ ACP driver with independent permissions substitutes for that route. Release
 publication is pending, and no installed application replacement is authorized.
 Owning DOX contracts were checked: this record and provenance update change no
 subtree, message ownership or workflow contract, so those DOX files remain unchanged.
+
+## Continued final audit: native command correction
+
+The initial final-audit pass missed an unintended RRC routing change. During an
+active turn, the new ordinary-message predicate admitted plain release imperatives
+as queued provider work. Queue promotion called the normal coding pathway without
+native release classification. Separately, Tab could acknowledge an unknown slash
+command when its completion menu was empty. Both violate the command boundary.
+
+A focused test extracted the exact production predicate into its live helper and
+failed on `release patch` during an active turn (one test, exit 101). The correction
+restores native natural-language admission during active turns, rejects commands
+at both queue admission paths, and fences command-shaped persisted entries at
+promotion with retained payload/ID and a pause. It also classifies slash authority
+from the typed prefix before the first attachment so slash-containing literal
+pastes and later typed paths cannot accidentally become commands. The promotion
+fence runs only after the existing runtime/approval/pause guards, preventing
+repeated persistence or payload classification on ordinary frames.
+
+The original native candidate was cancelled with `/release cancel`, then `/quit`,
+while local verification was incomplete. Candidate push and tag flags are false;
+no publication occurred. The prepared 0.24.13 version remains only in that isolated
+controller workspace. No journal clearing, retry-budget reset, manual release
+mutation, installation or primary-checkout cleanup occurred. This operator audit
+correction does not claim autonomous RRC source repair.
+
+Red receipt: `/tmp/vesper-queue-native-route-red.log`. Current focused correction:
+22 lifecycle tests pass; a real PTY proves command draft retention, native
+non-Git admission instead of a provider POST, original FIFO/paste/approval and
+crash/cancel/error behavior. The strengthened unknown-command Enter assertion passed, and the complete
+sequential ladder passed on the final frozen source before commit and renewed
+release admission. Earlier receipts remain historical and are not
+used to certify these later changes.
+
+DOX: nearest TUI/tests contracts, user guide and owning PRD record this command
+classification boundary. Parent ownership and child indexes are unchanged.
+
+## Corrective final verification and release readiness
+
+[Corrective machine-readable receipts](2026-10-12-tui-message-queue-paste-native-command-receipts.json)
+retain the red reproduction, exact final-source digests, 35 green scoped
+regressions, strengthened real Linux PTY proof and all seven gate logs/digests.
+Original implementation receipts remain historical. No test was weakened.
+
+| Final-source gate | Exit | Seconds |
+| --- | --- | --- |
+| `cargo xtask acceptance` | 0 | 331.82 |
+| `cargo xtask verify` | 0 | 1276.25 |
+| `cargo xtask msrv` | 0 | 1061.16 |
+| `cargo deny --all-features check` | 0 | 1.4 |
+| `cargo audit` | 0 | 2.4 |
+| `cargo fmt --all -- --check` | 0 | 1.75 |
+| `git diff --check` | 0 | 0.02 |
+
+The ladder ran sequentially with `CARGO_BUILD_JOBS=2 RUST_TEST_THREADS=2`
+and the existing RRC-owned target cache. Acceptance executed 165 cases;
+workspace verification and Rust 1.88 MSRV both passed the real terminal test.
+All nine source/test hashes still match the frozen candidate. Existing ignored
+tests are retained in the receipt and are not completion evidence.
+
+Final source review rechecked canonical payload ownership, ordered paste ranges,
+FIFO and one-active dispatch, command/steering separation, all terminal outcomes,
+approval guards, admission/promotion rollback, persisted IDs/recovery, compact
+rendering, and absence of unrelated provider/RRC source changes. No further
+confirmed defect remains in this mission audit. This is scoped automated proof,
+not a claim of universal absence of bugs or completed native Windows/macOS/live
+provider acceptance. Those proofs remain explicitly outstanding.
+
+The invoking native RRC will prepare the same unused v0.24.13 after this correction
+is committed. Its prior attempt was unpublished and cancelled during audit.
+Postpublication receipts remain local; no separate documentation push or user
+installation is authorized. Parent DOX ownership/indexes remain unchanged;
+nearest TUI/tests contracts, guide, PRD and evidence index are updated together.
+
+**READY_FOR_LIVE_ACCEPTANCE: YES.** Publication still requires complete native
+local gates, four exact-SHA hosted workflows, tag/assets and registry closeout.
+
+Release capacity preparation removed 3,352 obsolete generated ELF executables
+from the stopped RRC-owned `debug/deps` cache (timestamps before 2026-10-12),
+raising available space from 108.83 to 150.70 GiB. Source, libraries, current
+binaries, preserved host archives, journals, evidence and the dirty primary
+checkout were retained. The detailed cleanup receipt is hashed in the corrective
+receipt; resource thresholds and retry budgets were unchanged. Earlier retained
+host archives and obsolete incremental-snapshot cleanup remain separate capacity
+actions, not source repairs or verification proof.

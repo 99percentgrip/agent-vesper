@@ -2566,13 +2566,7 @@ async fn drive_loop(
                         continue;
                     }
                 };
-                let classified = if !snapshot.pastes.is_empty()
-                    && !session.input.trim_start().starts_with('/')
-                {
-                    CommandIntent::Prompt(snapshot.text.clone())
-                } else {
-                    CommandIntent::parse(&snapshot.text)
-                };
+                let classified = composer_message_intent(&snapshot);
                 if session.approval_command_backup.is_some()
                     && !approval_command_supported(&registry_commands.resolve(
                         &classified,
@@ -2584,16 +2578,12 @@ async fn drive_loop(
                     session.state.status = Some("Tool approval pending: queue and informational commands only; Esc returns to approval. Nothing was queued.".into());
                     continue;
                 }
-                let ordinary = matches!(classified, CommandIntent::Prompt(_))
-                    && (session.agent_running || session.state.phase() == PlanPhase::Normal)
-                    && (session.agent_running
-                        || !snapshot.pastes.is_empty()
-                        || matches!(
-                            vesper_harness::release_recovery::classify_release_intent(
-                                &snapshot.text
-                            ),
-                            vesper_harness::release_recovery::ReleaseIntentDecision::NotRelease
-                        ));
+                let ordinary = conversational_submission(
+                    &classified,
+                    &snapshot,
+                    session.agent_running,
+                    session.state.phase(),
+                );
                 if ordinary {
                     if let Err(error) = admit_composer_message(snapshot, session) {
                         session.state.status = Some(error);
@@ -3200,8 +3190,7 @@ async fn drive_loop(
                 }
                 let workflow_prompt = session.state.pending_prompt.take();
                 let mut prompt_to_spawn = workflow_prompt.or(prompt_text);
-                if !session.agent_running
-                    && let Some(objective) = prompt_to_spawn.as_deref()
+                if let Some(objective) = prompt_to_spawn.as_deref()
                     && !matches!(
                         vesper_harness::release_recovery::classify_release_intent(objective),
                         vesper_harness::release_recovery::ReleaseIntentDecision::NotRelease
@@ -6008,6 +5997,9 @@ fn admit_composer_message(
                 .into(),
         );
     }
+    if message_needs_command_plane(&message) {
+        return Err("Native commands cannot be queued; press Enter to use the command plane. Draft retained.".into());
+    }
     message.images = session.pending_images.clone();
     let id = session.message_journal.admit(message)?;
     if let Err(error) = persist_tui_conversation(session) {
@@ -6037,6 +6029,14 @@ fn admit_composer_message(
 
 fn admit_plain_message(text: String, session: &mut TuiSession) {
     let mut message = agent_vesper_tui::messages::Message::plain(text);
+    if message_needs_command_plane(&message) {
+        if session.input.is_empty() {
+            session.input = message.text;
+            session.state.preferences.composer_cursor = session.input.len();
+        }
+        session.state.status = Some("Native commands cannot be queued; press Enter to use the command plane. Draft retained.".into());
+        return;
+    }
     message.images = session.pending_images.clone();
     match session.message_journal.admit(message) {
         Ok(id) => {
@@ -6067,6 +6067,24 @@ fn promote_pending_message(session: &mut TuiSession) -> Option<String> {
     let id = session
         .message_journal
         .promote(session.agent_running, session.pending_approval.is_some())?;
+    if message_needs_command_plane(session.message_journal.get(&id).expect("promoted message")) {
+        let reason = format!(
+            "Pending native command {id} cannot run as a coding turn. Use /queue drop {id}, then submit it through the native command plane. Payload retained."
+        );
+        session.message_journal.active = None;
+        session.message_journal.pending.push_front(id.clone());
+        session
+            .message_journal
+            .messages
+            .iter_mut()
+            .find(|message| message.id == id)
+            .expect("promoted message")
+            .state = agent_vesper_tui::messages::MessageState::Pending;
+        session.message_journal.pause(&reason);
+        persist_message_transition(session);
+        session.state.status = Some(reason);
+        return None;
+    }
     let message = session.message_journal.get(&id).expect("promoted message");
     let text = message.text.clone();
     let previously_displayed = message.transcript_committed;
@@ -6397,6 +6415,44 @@ fn ingest_terminal_pasted_text(text: &str, session: &mut TuiSession) {
         session.pending_text_pastes.insert(index, paste);
     } else {
         insert_composer_text(text, session);
+    }
+}
+
+fn conversational_submission(
+    intent: &CommandIntent,
+    message: &agent_vesper_tui::messages::Message,
+    running: bool,
+    phase: PlanPhase,
+) -> bool {
+    matches!(intent, CommandIntent::Prompt(_))
+        && (running || phase == PlanPhase::Normal)
+        && !message_needs_command_plane(message)
+}
+
+fn message_slash_prefix(message: &agent_vesper_tui::messages::Message) -> bool {
+    // Only the typed prefix before the first attachment can introduce a command.
+    // A slash inside literal pasted material never becomes command authority.
+    let prefix_end = message
+        .pastes
+        .first()
+        .map_or(message.text.len(), |p| p.start);
+    message.text[..prefix_end].trim_start().starts_with('/')
+}
+
+fn message_needs_command_plane(message: &agent_vesper_tui::messages::Message) -> bool {
+    message_slash_prefix(message)
+        || (message.pastes.is_empty()
+            && !matches!(
+                vesper_harness::release_recovery::classify_release_intent(&message.text),
+                vesper_harness::release_recovery::ReleaseIntentDecision::NotRelease
+            ))
+}
+
+fn composer_message_intent(message: &agent_vesper_tui::messages::Message) -> CommandIntent {
+    if !message.pastes.is_empty() && !message_slash_prefix(message) {
+        CommandIntent::Prompt(message.text.clone())
+    } else {
+        CommandIntent::parse(&message.text)
     }
 }
 
@@ -22471,6 +22527,83 @@ mod message_queue_tests {
         assert_eq!(value["message_journal"]["pending"][0], "m1");
         assert_eq!(value["message_journal"]["messages"][0]["text"], "future");
         assert!(promote_pending_message(&mut s).is_none());
+    }
+    #[test]
+    fn native_release_command_stays_on_command_plane_during_an_active_turn() {
+        let message = agent_vesper_tui::messages::Message::plain("release patch".into());
+        let intent = CommandIntent::Prompt(message.text.clone());
+        for running in [false, true] {
+            assert!(
+                !conversational_submission(&intent, &message, running, PlanPhase::Normal),
+                "native release request must never become a queued coding prompt"
+            );
+        }
+    }
+    #[test]
+    fn queue_shortcut_rejects_commands_without_losing_the_draft() {
+        for text in ["release patch", "/unregistered-command", "/queue"] {
+            let mut s = session();
+            s.agent_running = true;
+            insert_composer_text(text, &mut s);
+            let message = agent_vesper_tui::messages::compose(&s.input, &[]).unwrap();
+            assert!(
+                admit_composer_message(message, &mut s)
+                    .unwrap_err()
+                    .contains("press Enter")
+            );
+            assert_eq!(s.input, text);
+            assert!(s.message_journal.pending.is_empty());
+            assert!(s.message_journal.messages.is_empty());
+        }
+    }
+    #[test]
+    fn persisted_command_entry_is_retained_and_never_promoted_to_provider_work() {
+        for text in ["release patch", "/unregistered-command"] {
+            let mut s = session();
+            let id = s
+                .message_journal
+                .admit(agent_vesper_tui::messages::Message::plain(text.into()))
+                .unwrap();
+            assert!(promote_pending_message(&mut s).is_none());
+            assert_eq!(s.message_journal.pending.front(), Some(&id));
+            assert_eq!(s.message_journal.get(&id).unwrap().text, text);
+            assert!(s.message_journal.active.is_none());
+            assert!(s.message_journal.paused.is_some());
+            assert!(s.agent_rx.is_none());
+            let path = s
+                .test_session_root
+                .path()
+                .join(format!("{}.json", s.session_id));
+            let saved_at = std::fs::metadata(&path).unwrap().modified().unwrap();
+            for _ in 0..100 {
+                assert!(promote_pending_message(&mut s).is_none());
+            }
+            assert_eq!(
+                std::fs::metadata(path).unwrap().modified().unwrap(),
+                saved_at
+            );
+        }
+    }
+    #[test]
+    fn pasted_commands_remain_literal_even_with_a_slash_in_later_typed_text() {
+        let mut s = session();
+        ingest_terminal_pasted_text("/release\nreference material", &mut s);
+        insert_composer_text(" /some/path", &mut s);
+        let message =
+            agent_vesper_tui::messages::compose(&s.input, &s.pending_text_pastes).unwrap();
+        let intent = composer_message_intent(&message);
+        assert!(matches!(intent, CommandIntent::Prompt(_)));
+        assert!(conversational_submission(
+            &intent,
+            &message,
+            true,
+            PlanPhase::Normal
+        ));
+        admit_composer_message(message, &mut s).unwrap();
+        assert_eq!(
+            s.message_journal.messages[0].text,
+            "/release\nreference material /some/path"
+        );
     }
     #[test]
     fn failed_admission_retains_draft_and_does_not_acknowledge_queue() {

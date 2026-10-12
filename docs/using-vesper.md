@@ -40,6 +40,10 @@ Press **Enter** to queue a separate future turn while the agent is running.
 Messages run in submission order after successful completion. Use `/steer <text>`
 (or the Steer footer action) for explicit guidance to the current turn.
 
+Native commands use Enter, including plain release requests. Tab never queues a
+slash command or release imperative and keeps the draft when refusing one.
+Commands written inside a folded paste remain literal reference content.
+
 - `/queue` shows pending IDs and bounded previews; `/queue page <n>` shows more.
 - `/queue drop <id>` removes one pending turn; `/queue clear` removes all pending turns.
 - Cancellation or error preserves future messages and pauses dispatch. After

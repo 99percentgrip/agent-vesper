@@ -13,6 +13,9 @@ Verify terminal interaction through the production TUI binary with isolated stat
   and crash recovery requiring explicit future-turn resume without replay.
   A hosted-tool fixture verifies Ctrl+P queue management during pending approval,
   original draft restoration and tool-heavy completion before FIFO promotion.
+  Active-turn Enter routes a plain release imperative to native admission in a
+  private non-Git workspace, never a model POST. Tab refuses native/unknown slash
+  commands without losing the draft; Enter reports unknown commands immediately.
   `message_queue_pty.rs` enrolls it under Unix `integration-test-harness` using
   `VESPER_TEST_PYTHON` or Python 3. State and credentials are synthetic/private;
   it changes no invoking RRC state. Native Windows/macOS proof is reported

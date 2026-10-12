@@ -131,6 +131,24 @@ def run(binary):
             command(host, "/queue")
             host.wait("2 pending")
             assert len(Handler.requests) == 1, "queued text steered or ran concurrently"
+            for text in ["/unregistered-command", "release patch"]:
+                host.key(text)
+                host.key("\t")
+                host.wait("Native commands cannot be queued")
+                assert text in host.text(), "queue shortcut lost rejected command draft"
+                assert len(Handler.requests) == 1, "command shortcut reached the provider"
+                if text == "release patch":
+                    # The private workspace has no Git repository. Native RRC
+                    # admission must reject it without touching invoking state.
+                    host.key("\r")
+                    host.wait("release admission failed")
+                    assert len(Handler.requests) == 1, "active native release fell through to provider work"
+                else:
+                    host.key("\r")
+                    host.wait("Unknown command")
+                    assert len(Handler.requests) == 1, "unknown slash command reached the provider"
+            command(host, "/queue")
+            host.wait("2 pending")
             command(host, "/paste p1")
             host.wait("SPEC_START")
             host.key("\x1b")
@@ -298,7 +316,7 @@ def run(binary):
             server.shutdown()
             server.server_close()
             thread.join(5)
-    print("PASS: real PTY mixed paste ordering, Enter queue, FIFO, command bypass, drop, full inspection, compact transcript, stable persistence, real tool approval command access and draft restoration, tool-heavy settlement, cancellation/error pauses, crash recovery and explicit safe resume")
+    print("PASS: real PTY mixed paste ordering, Enter queue, FIFO, native release and unknown slash command bypass, Tab command draft retention, drop, full inspection, compact transcript, stable persistence, real tool approval command access and draft restoration, tool-heavy settlement, cancellation/error pauses, crash recovery and explicit safe resume")
 
 
 if __name__ == "__main__":

@@ -155,18 +155,12 @@ and composes the existing bounded atomic session writer.
   env var (surfaced as a screen hint) — moving it to the OS credential store is
   the security follow-up.
 - `src/commands.rs` — slash-command parsing, registry, and resolution
-  against the active provider's superpowers. `/release` resolves to a typed
-  shared RRC operation (start/status/resume/cancel/evidence/retry), never a
-  free-form AgentLoop workflow. If the controller admits a bounded isolated
-  repair, the TUI supplies current operating/permission modes and its ordinary
-  approval port to both native release stages and repair; controller state never
-  bypasses permission. `/ci` appends the same persisted RRC status shown by ACP.
-  The terminal owns presentation only.
   against the active provider's superpowers. `/release` accepts `patch`, `minor`,
   `major`, or a stable exact `X.Y.Z` target (optional input `vX.Y.Z`) and resolves
   to a typed shared RRC operation (start/status/resume/cancel/evidence/retry),
   never a free-form AgentLoop workflow. If the controller admits a bounded isolated
-  repair, the TUI supplies its ordinary approval port; controller state never
+  repair, the TUI supplies current operating/permission modes and its ordinary
+  approval port to native release stages and repair; controller state never
   bypasses permission. `/ci` appends the same persisted RRC status shown by ACP.
   The terminal owns presentation only.
   Release headers use shared controller ownership: ownerless/failed epochs show
@@ -210,7 +204,7 @@ and composes the existing bounded atomic session writer.
   acceptance test must fail if either child stream inherits the terminal.
   Tier C Phase 7 (ADR 0010): the
   registry now covers the complete Python oracle surface plus Vesper-native
-  commands (102 entries, or 103 with `swarm`, including `/export last`). The
+  commands (including `/export last`). The
   `ORACLE_COMMAND_SURFACE` const table is the single source of truth for the
   migration matrix. `chat-only` (the `/chat-only` palette twin of the F11
   keybinding) resolves to `UiAction::ToggleChatOnly`; like every registry
@@ -387,7 +381,12 @@ and composes the existing bounded atomic session writer.
   While an agent turn runs, Enter submits a distinct future turn. Tab retains
   the queue shortcut when no command palette is open. `/steer <guidance>` and
   its footer action explicitly use the existing steering inbox at a safe boundary;
-  they never enqueue implicitly. Slash commands remain command-plane operations.
+  they never enqueue implicitly. Slash commands and plain natural-language release
+  imperatives remain command-plane operations, including during active turns.
+  Tab rejects command-shaped submissions visibly and retains the draft; Enter
+  uses native command routing. A command-shaped persisted queue entry is retained
+  paused and never forwarded as provider work. Literal attached paste text cannot
+  introduce a command; only the typed prefix before its first attachment can.
   `/queue [drop <id>|clear|resume|page <n>]` controls pending IDs; active work uses
   normal cancellation. Informational commands and `/usage` remain immediate.
   Durably acknowledge admission before clearing the submitted draft. Persist the

@@ -6,8 +6,9 @@ Implement the 2026-10-12 user mission in terminal input, composer, command
 classification, submission, normal/direct/ReAct/VRO settlement, transcript and
 session recovery. Reuse the existing agent pathways and atomic session writer.
 Source is canonical `1253ff8bfb89e23195557a6397783d36ed4209df`, in a fresh isolated
-worktree. No push, tag, release, installation, RRC-state mutation, VRO-19 work,
-primary-checkout cleanup or automatic rebase is authorized.
+worktree. Initial implementation excluded publication. Alex subsequently
+authorized release after the final audit, through native RRC and exact-SHA gates.
+Installation, VRO-19, primary-checkout cleanup and automatic rebase remain excluded.
 
 ## Responsibility and data contracts
 
@@ -108,7 +109,8 @@ Focused unit/channel and real PTY/event-loop evidence precede sequential
 with two Cargo jobs/two Rust test threads. Environmental blockers mean NOT READY.
 Final audit must cover ownership, steering, queue loss, cancel/error loops,
 serialization, uncertain replay, rendering costs and unrelated changes.
-Commit only after all required gates pass. No push or release follows this mission.
+Commit only after all required gates pass. The later release authorization requires
+native RRC admission and complete exact-SHA hosted gates before publication.
 
 While a tool approval is waiting, **Ctrl+P Commands** opens queue management,
 content inspection and informational commands without granting approval.
@@ -120,9 +122,26 @@ Use the native clipboard image route or `/image` to attach an image explicitly.
 
 ## Current acceptance status
 
-Locally implemented and ready for live acceptance: all seven required gates pass,
-including 165 exact acceptance cases and 31 focused queue/paste/terminal checks.
+Initial implementation passed seven gates, 165 exact acceptance cases and 31
+focused checks. The subsequent audit found native-command regressions; the corrected final source passed all seven mandatory gates and 35 scoped
+regressions, including the strengthened real terminal interaction test.
+READY FOR LIVE ACCEPTANCE: YES; publication remains pending native exact-SHA gates.
 The execution report maps the 26 required behaviors to current automated evidence.
 Native Windows/macOS and live-provider/delegated acceptance remain unexecuted;
 local readiness does not claim those live proofs. Source, methods, failures and
 verification receipts are retained in the linked execution report.
+
+## Native command boundary
+
+Ordinary conversational turns enter the queue. Plain native release imperatives
+and slash commands retain their existing command-plane routes while a turn runs.
+Enter invokes native admission; Tab refuses to queue commands and retains the
+draft. A persisted command-shaped entry remains pending and paused with an
+explicit drop/resubmit instruction; it never reaches the provider. Literal
+attachment contents cannot introduce a command, including when later typed text
+begins with a slash. Classification uses the typed prefix before the first paste.
+
+The authorized release final audit found and reproduced this boundary regression
+after initial local acceptance. Its corrective verification supersedes the prior
+readiness claim. All required local gates passed on the corrected source;
+publication remains pending native release and complete exact-SHA hosted gates.
