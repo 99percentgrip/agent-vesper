@@ -1,5 +1,12 @@
 # Agent Vesper — Release Recovery Controller PRD
 
+The [advisory-fetch read recovery](foundation/2026-10-12-rrc-advisory-fetch-read-recovery.md)
+records a measured native release blocker. The exact security-advisory gate may
+collect one persisted read-only diagnostic after an identified Git transport
+failure; successful audit output is required, original failure evidence remains,
+and security findings, permissions, other gates and release writes are ineligible.
+Verification and native publication remain explicit in the report.
+
 The [capacity directory repair](foundation/2026-10-11-native-voice-capacity-directory-repair.md)
 records the later Windows production defect after native RRC repaired the stale
 audio assertions. The persisted full-matrix retry limit remains enforced;

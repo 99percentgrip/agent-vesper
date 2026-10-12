@@ -2,14 +2,15 @@
   "version": 1,
   "objective_id": "tui-message-queue-paste-20261012",
   "objective_label": "Reliable TUI message queue and collapsible pasted content",
-  "variant_id": "tui-message-queue-paste-native-command-audited-20261012",
-  "variant_label": "Final command-boundary audit reproduced and corrected; seven local gates green; native publication pending",
+  "variant_id": "tui-message-queue-paste-advisory-read-audited-20261012",
+  "variant_label": "Final queue/command and bounded advisory-read audit; seven gates green; native publication pending",
   "canonical_release_source": true,
   "supersedes": [
-    "tui-message-queue-paste-final-audited-20261012"
+    "tui-message-queue-paste-native-command-audited-20261012"
   ],
   "evidence_reports": [
-    "docs/foundation/2026-10-12-tui-message-queue-paste-execution.md"
+    "docs/foundation/2026-10-12-tui-message-queue-paste-execution.md",
+    "docs/foundation/2026-10-12-rrc-advisory-fetch-read-recovery.md"
   ],
-  "completed_at": "2026-10-12T05:15:13.851643+00:00"
+  "completed_at": "2026-10-12T07:15:21.056364+00:00"
 }

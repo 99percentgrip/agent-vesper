@@ -558,6 +558,14 @@ Z.ai and Playwright MCP server descriptors.
 
 ## Local Contracts
 
+- The exact `advisories` / `cargo audit` gate may collect one read-only diagnostic
+  after an identified advisory-database Git transport failure. Persist the
+  per-epoch counter and targeted-diagnostic budget before dispatch, retain original
+  causal evidence, and require actual successful audit output before settlement.
+  Repeated failure stops; security findings, TLS/certificate/auth failures, other
+  gates and controller stops never use this route. Neither host grants new authority,
+  resets budgets or claims a service outage from this observation.
+
 - Controller owner guards explicitly unlock before closing the file so duplicated/inherited open descriptions cannot extend a settled owner lease. The exact native voice-pack missing-download-helper diagnostic admits dependency diagnosis; generic exits and unknown storage failures still require evidence.
 
 - Shared live release snapshots project same-epoch persisted milestones and gate

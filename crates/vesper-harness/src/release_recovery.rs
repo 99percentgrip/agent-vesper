@@ -700,6 +700,9 @@ pub struct ReleaseMutationRecord {
     /// Cumulative read-only publication timeout recovery attempts for this epoch.
     #[serde(default)]
     pub publication_read_retries: u8,
+    /// At most one diagnostic re-read of an identified advisory-fetch transport failure.
+    #[serde(default)]
+    pub local_advisory_read_retries: u8,
     /// Measured active publication observation/wait time; excludes idle host time.
     #[serde(default)]
     pub publication_watch_millis: u64,

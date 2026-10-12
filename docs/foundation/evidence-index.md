@@ -1,5 +1,6 @@
 # Foundation Evidence Index
 
+- [Native RRC advisory-fetch read recovery](2026-10-12-rrc-advisory-fetch-read-recovery.md) — measured release blocker, one persisted read diagnostic, retained causal evidence and pending final-source release verification.
 - [Reliable TUI message queue and pasted content](2026-10-12-tui-message-queue-paste-execution.md) — source-grounded audit, ordered composition, durable FIFO, interruption-safe recovery and reproduced native command-boundary correction; current verification and readiness remain in the report.
 
 - [Native voice capacity directory repair](2026-10-11-native-voice-capacity-directory-repair.md) — rejects files and descendants beneath files during pack capacity probing; retains the Windows failure and portable local red/green proof, with native release acceptance separate.

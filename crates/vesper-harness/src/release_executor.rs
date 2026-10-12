@@ -2134,12 +2134,45 @@ fn defer_local_resources(
     Ok(())
 }
 
-fn record_local_gate_failure(
+fn advisory_fetch_transport_failure(gate: &LocalGateRecord, error: &RrcError) -> bool {
+    if gate.name != "advisories" || gate.command != "cargo audit" {
+        return false;
+    }
+    let RrcError::Invalid(message) = error else {
+        return false;
+    };
+    let text = message.to_ascii_lowercase();
+    text.contains("couldn't fetch advisory database")
+        && text.contains("git operation failed")
+        && [
+            "an io error occurred when talking to the server",
+            "error sending request for url",
+            "connection reset",
+            "connection timed out",
+            "failed to resolve address",
+        ]
+        .iter()
+        .any(|needle| text.contains(needle))
+        && ![
+            "permission denied",
+            "unauthorized",
+            "forbidden",
+            "403",
+            "404",
+            "certificate",
+            "ssl",
+            "tls",
+            "vulnerabilit",
+        ]
+        .iter()
+        .any(|needle| text.contains(needle))
+}
+
+fn retain_local_gate_failure_evidence(
     record: &mut ReleaseRecoveryRecord,
-    ledger: &ReleaseLedger,
     index: usize,
     error: &RrcError,
-) -> Result<(), RrcError> {
+) {
     let gate = record.mutation.local_gates[index].clone();
     let excerpt = crate::release_recovery::first_causal_excerpt(&error.to_string());
     let (class, confidence) = crate::release_recovery::classify_failure(&excerpt, None);
@@ -2172,6 +2205,16 @@ fn record_local_gate_failure(
             exists_on_last_green: None,
             related_source_touched: None,
         });
+}
+
+fn record_local_gate_failure(
+    record: &mut ReleaseRecoveryRecord,
+    ledger: &ReleaseLedger,
+    index: usize,
+    error: &RrcError,
+) -> Result<(), RrcError> {
+    let gate = record.mutation.local_gates[index].clone();
+    retain_local_gate_failure_evidence(record, index, error);
     record.mutation.local_gates[index].state = SettlementState::Failed;
     record.mutation.local_gates[index].evidence_ref = Some("local:failed".into());
     record.note_progress_milestone(format!(
@@ -2387,7 +2430,28 @@ pub fn advance_release(
                     gate.name
                 ));
                 ledger.save_for_scheduling(record)?;
-                let outcome = executor.run_local_gate(&gate);
+                let mut outcome = executor.run_local_gate(&gate);
+                let mut advisory_diagnostic = false;
+                if let Err(error) = &outcome
+                    && advisory_fetch_transport_failure(&gate, error)
+                    && record.mutation.local_advisory_read_retries == 0
+                    && record.retry_budget.targeted_diagnostic_used
+                        < record.retry_budget.targeted_diagnostic_limit
+                    && !cancelled.load(Ordering::Acquire)
+                {
+                    // This is a bounded new read observation, never a source repair
+                    // or replay of a release mutation. Preserve the causal failure
+                    // and charge both durable limits before executing the diagnostic.
+                    retain_local_gate_failure_evidence(record, index, error);
+                    record.mutation.local_advisory_read_retries = 1;
+                    record.retry_budget.targeted_diagnostic_used += 1;
+                    record.note_progress_milestone(
+                        "Advisory database transport failed — read-only diagnostic recovery 1/1; original failure retained",
+                    );
+                    ledger.save(record)?;
+                    advisory_diagnostic = true;
+                    outcome = executor.run_local_gate(&gate);
+                }
                 if let Some(latest) = ledger.load()?
                     && latest.state == ReleaseRecoveryState::Cancelled
                 {
@@ -2396,6 +2460,14 @@ pub fn advance_release(
                 }
                 match outcome {
                     Ok(output) => {
+                        if advisory_diagnostic {
+                            record.state_changes.push(RelevantStateChange {
+                                kind: RelevantStateChangeKind::DependencyOrToolchain,
+                                description: "Security advisory fetch and audit now complete on the same versioned lock; original transport failure retained".into(),
+                                evidence_refs: vec![format!("local:advisories:{}", digest(output.as_bytes()))],
+                                observed_at: Utc::now(),
+                            });
+                        }
                         record.mutation.local_gates[index].state = SettlementState::Succeeded;
                         record.mutation.local_gates[index].evidence_ref =
                             Some(format!("local:{}:{}", gate.name, digest(output.as_bytes())));
@@ -7551,6 +7623,300 @@ pub(crate) mod tests {
         );
         assert!(persisted.failures.is_empty());
         assert!(!persisted.mutation.candidate_pushed);
+    }
+
+    struct ScriptedAudit {
+        outcomes: Mutex<VecDeque<Result<String, RrcError>>>,
+        calls: std::sync::atomic::AtomicUsize,
+        checkpoint_root: PathBuf,
+    }
+    impl ReleaseExecutionPort for ScriptedAudit {
+        fn prepare_version_bump(
+            &self,
+            bump: &str,
+            admission: &ReleaseMutationAdmission,
+        ) -> Result<VersionBumpReceipt, RrcError> {
+            FakeRelease.prepare_version_bump(bump, admission)
+        }
+        fn run_local_gate(&self, _gate: &LocalGateRecord) -> Result<String, RrcError> {
+            if self.calls.fetch_add(1, Ordering::SeqCst) > 0 {
+                let saved = ReleaseLedger::open(&self.checkpoint_root, "repo")
+                    .unwrap()
+                    .load()
+                    .unwrap()
+                    .unwrap();
+                assert_eq!(saved.mutation.local_advisory_read_retries, 1);
+                assert!(saved.retry_budget.targeted_diagnostic_used > 0);
+                assert_eq!(saved.failures.len(), 1);
+            }
+            self.outcomes
+                .lock()
+                .unwrap()
+                .pop_front()
+                .expect("no unbounded audit dispatch")
+        }
+        fn commit_candidate(
+            &self,
+            version: &str,
+            admission: &ReleaseMutationAdmission,
+        ) -> Result<String, RrcError> {
+            FakeRelease.commit_candidate(version, admission)
+        }
+        fn push_candidate(&self, admission: &ReleaseMutationAdmission) -> Result<String, RrcError> {
+            FakeRelease.push_candidate(admission)
+        }
+        fn create_and_push_tag(
+            &self,
+            version: &str,
+            commit: &str,
+            admission: &ReleaseMutationAdmission,
+        ) -> Result<(String, String), RrcError> {
+            FakeRelease.create_and_push_tag(version, commit, admission)
+        }
+        fn publication(
+            &self,
+            repo: &str,
+            tag: &str,
+            commit: &str,
+        ) -> Result<Option<PublicationReceipt>, RrcError> {
+            FakeRelease.publication(repo, tag, commit)
+        }
+    }
+    fn advisory_fetch_fixture_error() -> RrcError {
+        RrcError::Invalid("cargo audit failed with status exit status: 1: error: couldn't fetch advisory database: git operation failed: failed to prepare fetch\nCaused by: An IO error occurred when talking to the server; error sending request for url (https://github.com/RustSec/advisory-db.git/info/refs?service=git-upload-pack)".into())
+    }
+    #[test]
+    fn advisory_fetch_transport_recovers_with_one_persisted_read_diagnostic() {
+        let root = tempfile::tempdir().unwrap();
+        let ledger = ReleaseLedger::open(root.path(), "repo").unwrap();
+        let mut record =
+            crate::release_recovery::start_release("repo", "patch", "main", "abcdef123456")
+                .unwrap();
+        record.mutation.version_after = Some("0.24.13".into());
+        record.mutation.local_gates = vec![LocalGateRecord {
+            name: "advisories".into(),
+            command: "cargo audit".into(),
+            state: SettlementState::NotStarted,
+            evidence_ref: None,
+        }];
+        let fixture = ScriptedAudit {
+            outcomes: Mutex::new(VecDeque::from([
+                Err(advisory_fetch_fixture_error()),
+                Ok("Loaded security advisories; scanning Cargo.lock; no vulnerabilities".into()),
+            ])),
+            calls: Default::default(),
+            checkpoint_root: root.path().to_owned(),
+        };
+        advance_release(
+            &mut record,
+            ReleaseAdvanceContext {
+                workspace: root.path(),
+                repository: "owner/repo",
+                ledger: &ledger,
+                executor: &fixture,
+                github: &GreenGithub,
+                health: &HealthyStatus,
+                repair_factory: None,
+                cancelled: Arc::new(AtomicBool::new(false)),
+            },
+        )
+        .unwrap();
+        assert_eq!(fixture.calls.load(Ordering::SeqCst), 2);
+        assert_eq!(record.state, ReleaseRecoveryState::LocalVerification);
+        assert_eq!(
+            record.mutation.local_gates[0].state,
+            SettlementState::Succeeded
+        );
+        assert_eq!(
+            record.failures.len(),
+            1,
+            "original fetch failure must remain evidence"
+        );
+        assert_eq!(record.retry_budget.targeted_diagnostic_used, 1);
+        assert_eq!(record.retry_budget.full_gate_used, 0);
+        assert_eq!(record.retry_budget.infrastructure_used, 0);
+        assert!(!record.mutation.candidate_committed);
+        assert_eq!(record.state_changes.len(), 1);
+        assert!(!record.state_changes[0].evidence_refs.is_empty());
+        let persisted = serde_json::to_value(ledger.load().unwrap().unwrap()).unwrap();
+        assert_eq!(persisted["mutation"]["local_advisory_read_retries"], 1);
+    }
+
+    fn audit_failure_fixture(
+        root: &Path,
+        gate: &str,
+        command: &str,
+    ) -> (ReleaseLedger, ReleaseRecoveryRecord) {
+        let ledger = ReleaseLedger::open(root, "repo").unwrap();
+        let mut record =
+            crate::release_recovery::start_release("repo", "patch", "main", "abcdef123456")
+                .unwrap();
+        record.mutation.version_after = Some("0.24.13".into());
+        record.mutation.local_gates = vec![LocalGateRecord {
+            name: gate.into(),
+            command: command.into(),
+            state: SettlementState::NotStarted,
+            evidence_ref: None,
+        }];
+        (ledger, record)
+    }
+    #[test]
+    fn advisory_fetch_repeated_failure_stops_and_reload_preserves_diagnostic_budget() {
+        let root = tempfile::tempdir().unwrap();
+        let (ledger, mut record) = audit_failure_fixture(root.path(), "advisories", "cargo audit");
+        let fixture = ScriptedAudit {
+            outcomes: Mutex::new(VecDeque::from([
+                Err(advisory_fetch_fixture_error()),
+                Err(advisory_fetch_fixture_error()),
+            ])),
+            calls: Default::default(),
+            checkpoint_root: root.path().to_owned(),
+        };
+        let advance = |record: &mut ReleaseRecoveryRecord| {
+            advance_release(
+                record,
+                ReleaseAdvanceContext {
+                    workspace: root.path(),
+                    repository: "owner/repo",
+                    ledger: &ledger,
+                    executor: &fixture,
+                    github: &GreenGithub,
+                    health: &HealthyStatus,
+                    repair_factory: None,
+                    cancelled: Arc::new(AtomicBool::new(false)),
+                },
+            )
+        };
+        assert!(advance(&mut record).is_err());
+        assert_eq!(fixture.calls.load(Ordering::SeqCst), 2);
+        assert_eq!(record.failures.len(), 2);
+        assert_eq!(
+            record.failures[0].fingerprint,
+            record.failures[1].fingerprint
+        );
+        record = ledger.load().unwrap().unwrap();
+        assert_eq!(record.mutation.local_advisory_read_retries, 1);
+        assert_eq!(record.retry_budget.targeted_diagnostic_used, 1);
+        advance(&mut record).unwrap();
+        assert_eq!(record.state, ReleaseRecoveryState::NeedMoreEvidence);
+        assert_eq!(fixture.calls.load(Ordering::SeqCst), 2);
+        assert!(record.state_changes.is_empty());
+    }
+    #[test]
+    fn advisory_read_diagnostic_never_retries_security_findings_or_other_gates() {
+        for (gate, command, error) in [
+            (
+                "advisories",
+                "cargo audit",
+                RrcError::Invalid("error: vulnerable dependency found".into()),
+            ),
+            (
+                "workspace-verify",
+                "cargo xtask verify",
+                advisory_fetch_fixture_error(),
+            ),
+            (
+                "advisories",
+                "cargo audit --ignore vulnerability",
+                advisory_fetch_fixture_error(),
+            ),
+            (
+                "advisories",
+                "cargo audit",
+                RrcError::AuthorizationBlocked("denied".into()),
+            ),
+            ("advisories", "cargo audit", RrcError::Cancelled),
+        ] {
+            let root = tempfile::tempdir().unwrap();
+            let (ledger, mut record) = audit_failure_fixture(root.path(), gate, command);
+            let fixture = ScriptedAudit {
+                outcomes: Mutex::new(VecDeque::from([Err(error)])),
+                calls: Default::default(),
+                checkpoint_root: root.path().to_owned(),
+            };
+            assert!(
+                advance_release(
+                    &mut record,
+                    ReleaseAdvanceContext {
+                        workspace: root.path(),
+                        repository: "owner/repo",
+                        ledger: &ledger,
+                        executor: &fixture,
+                        github: &GreenGithub,
+                        health: &HealthyStatus,
+                        repair_factory: None,
+                        cancelled: Arc::new(AtomicBool::new(false))
+                    }
+                )
+                .is_err()
+            );
+            assert_eq!(fixture.calls.load(Ordering::SeqCst), 1);
+            assert_eq!(record.mutation.local_advisory_read_retries, 0);
+            assert_eq!(record.retry_budget.targeted_diagnostic_used, 0);
+            assert!(!record.mutation.candidate_committed);
+        }
+        let gate = LocalGateRecord {
+            name: "advisories".into(),
+            command: "cargo audit".into(),
+            state: SettlementState::Running,
+            evidence_ref: None,
+        };
+        for suffix in [
+            "certificate verification failed",
+            "permission denied",
+            "unauthorized",
+            "403 Forbidden",
+            "error: 1 vulnerability found",
+        ] {
+            let error = RrcError::Invalid(format!("{}; {suffix}", advisory_fetch_fixture_error()));
+            assert!(!advisory_fetch_transport_failure(&gate, &error));
+        }
+    }
+    #[test]
+    fn advisory_read_diagnostic_exhaustion_and_legacy_loading_fail_closed() {
+        for exhausted_epoch in [false, true] {
+            let root = tempfile::tempdir().unwrap();
+            let (ledger, mut record) =
+                audit_failure_fixture(root.path(), "advisories", "cargo audit");
+            if exhausted_epoch {
+                record.mutation.local_advisory_read_retries = 1;
+            } else {
+                record.retry_budget.targeted_diagnostic_used =
+                    record.retry_budget.targeted_diagnostic_limit;
+            }
+            let fixture = ScriptedAudit {
+                outcomes: Mutex::new(VecDeque::from([Err(advisory_fetch_fixture_error())])),
+                calls: Default::default(),
+                checkpoint_root: root.path().to_owned(),
+            };
+            assert!(
+                advance_release(
+                    &mut record,
+                    ReleaseAdvanceContext {
+                        workspace: root.path(),
+                        repository: "owner/repo",
+                        ledger: &ledger,
+                        executor: &fixture,
+                        github: &GreenGithub,
+                        health: &HealthyStatus,
+                        repair_factory: None,
+                        cancelled: Arc::new(AtomicBool::new(false))
+                    }
+                )
+                .is_err()
+            );
+            assert_eq!(fixture.calls.load(Ordering::SeqCst), 1);
+        }
+        let mut legacy =
+            serde_json::to_value(crate::release_recovery::ReleaseMutationRecord::default())
+                .unwrap();
+        legacy
+            .as_object_mut()
+            .unwrap()
+            .remove("local_advisory_read_retries");
+        let loaded: crate::release_recovery::ReleaseMutationRecord =
+            serde_json::from_value(legacy).unwrap();
+        assert_eq!(loaded.local_advisory_read_retries, 0);
     }
 
     #[test]

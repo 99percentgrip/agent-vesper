@@ -1,0 +1,326 @@
+{
+  "objective": "tui-message-queue-paste-20261012",
+  "canonical_source": "1253ff8bfb89e23195557a6397783d36ed4209df",
+  "parent_source": "8c0f7bd65e53f786e9525c6dec5c272f26bb952e",
+  "source_sha256": {
+    "apps/agent-vesper-tui/src/commands.rs": "004d45686f75cb98c41bcb49e9fb157081f82aa69edc067161588e90bd719381",
+    "apps/agent-vesper-tui/src/dispatch.rs": "7394a16ee039f8238521e8d90affc3429854e7bc8a52df954c8a758dc85ccda8",
+    "apps/agent-vesper-tui/src/lib.rs": "f0e34d28557e932f8875c4e736fe3ef980c1d4dcdca59b27bd9958dc12f1fcf2",
+    "apps/agent-vesper-tui/src/main.rs": "31ac36601c53f918bf119a04aba5999105650864ce4be9727772de8c4f771628",
+    "apps/agent-vesper-tui/src/messages.rs": "3743bdc6269a35bffd538cec40fefe42f2d7eaadf5d29f66abe603f8f3bbff70",
+    "apps/agent-vesper-tui/src/swarm_host.rs": "1e3ef27e7d37fbde681faa562e2b48c5e1155ce2427960c24d2b9d384a7f9cec",
+    "apps/agent-vesper-tui/src/ui.rs": "32a8caa165c2ccad14e891dbb1b0ff277d647eb2f6b969824d3ef9167e86f655",
+    "apps/agent-vesper-tui/tests/message_queue_pty.py": "5dbf5836ec5c6c95a336cba526acb82ec6d31346f7e2f00884d07b9c3ae9ca65",
+    "apps/agent-vesper-tui/tests/message_queue_pty.rs": "87a74fd6f5ffb8ba63e6297151c17dbfd0dfd559b8e7ae60ec4c68838e74d496",
+    "crates/vesper-harness/src/release_executor.rs": "38dd213946781782f39119acdf72f86d3c899b8564c2c986cb3baa86a232da33",
+    "crates/vesper-harness/src/release_recovery.rs": "434766e52d63ef8f791e0830587ad7e492cb739f09c588de151feacb7bd67031"
+  },
+  "mandatory_gates": [
+    {
+      "name": "acceptance",
+      "command": [
+        "cargo",
+        "xtask",
+        "acceptance"
+      ],
+      "exit_code": 0,
+      "elapsed_seconds": 243.06,
+      "log": "/tmp/vesper-queue-advisory-gate-acceptance.log",
+      "log_sha256": "c4e69f21110374fe6df6199b4a3eb0dd9d54066c95be1abda35ba20d7b828424",
+      "log_tail": [
+        "acceptance verified: rrc_child_output_is_captured_sanitized_and_confined_in_a_real_pty",
+        "acceptance progress: 159/165 — rrc_child_output_is_captured_sanitized_and_confined_in_a_real_pty",
+        "acceptance verified: native_release_admission_does_not_wait_for_account_model_discovery",
+        "acceptance progress: 160/165 — native_release_admission_does_not_wait_for_account_model_discovery",
+        "acceptance verified: release_executor::tests::only_newly_classified_local_gate_errors_continue_to_repair",
+        "acceptance progress: 161/165 — release_executor::tests::only_newly_classified_local_gate_errors_continue_to_repair",
+        "acceptance verified: release_executor::tests::local_repair_dispatch_errors_are_retained_as_liveness_failures",
+        "acceptance progress: 162/165 — release_executor::tests::local_repair_dispatch_errors_are_retained_as_liveness_failures",
+        "acceptance verified: tests::release_repair_uses_selected_model_and_effort_before_account_discovery",
+        "acceptance progress: 163/165 — tests::release_repair_uses_selected_model_and_effort_before_account_discovery",
+        "acceptance verified: tests::release_repair_configuration_uses_session_model_and_provider_controls",
+        "acceptance progress: 164/165 — tests::release_repair_configuration_uses_session_model_and_provider_controls",
+        "acceptance verified: ui::tests::recoverable_release_is_not_rendered_as_running_or_ready",
+        "acceptance progress: 165/165 — ui::tests::recoverable_release_is_not_rendered_as_running_or_ready",
+        "Acceptance regression gate: 165 exact cases passed in 242875 ms. Offline fixture model cost: zero; live-model effectiveness is not measured."
+      ]
+    },
+    {
+      "name": "verify",
+      "command": [
+        "cargo",
+        "xtask",
+        "verify"
+      ],
+      "exit_code": 0,
+      "elapsed_seconds": 1034.15,
+      "log": "/tmp/vesper-queue-advisory-gate-verify.log",
+      "log_sha256": "8e05a983491f055498c43c86c2dd6bc17069e4546dbd218f5fac392e09dd39ce",
+      "log_tail": [
+        "acceptance verified: rrc_child_output_is_captured_sanitized_and_confined_in_a_real_pty",
+        "acceptance progress: 159/165 — rrc_child_output_is_captured_sanitized_and_confined_in_a_real_pty",
+        "acceptance verified: native_release_admission_does_not_wait_for_account_model_discovery",
+        "acceptance progress: 160/165 — native_release_admission_does_not_wait_for_account_model_discovery",
+        "acceptance verified: release_executor::tests::only_newly_classified_local_gate_errors_continue_to_repair",
+        "acceptance progress: 161/165 — release_executor::tests::only_newly_classified_local_gate_errors_continue_to_repair",
+        "acceptance verified: release_executor::tests::local_repair_dispatch_errors_are_retained_as_liveness_failures",
+        "acceptance progress: 162/165 — release_executor::tests::local_repair_dispatch_errors_are_retained_as_liveness_failures",
+        "acceptance verified: tests::release_repair_uses_selected_model_and_effort_before_account_discovery",
+        "acceptance progress: 163/165 — tests::release_repair_uses_selected_model_and_effort_before_account_discovery",
+        "acceptance verified: tests::release_repair_configuration_uses_session_model_and_provider_controls",
+        "acceptance progress: 164/165 — tests::release_repair_configuration_uses_session_model_and_provider_controls",
+        "acceptance verified: ui::tests::recoverable_release_is_not_rendered_as_running_or_ready",
+        "acceptance progress: 165/165 — ui::tests::recoverable_release_is_not_rendered_as_running_or_ready",
+        "Acceptance regression gate: 165 exact cases passed in 206853 ms. Offline fixture model cost: zero; live-model effectiveness is not measured."
+      ]
+    },
+    {
+      "name": "msrv",
+      "command": [
+        "cargo",
+        "xtask",
+        "msrv"
+      ],
+      "exit_code": 0,
+      "elapsed_seconds": 893.7,
+      "log": "/tmp/vesper-queue-advisory-gate-msrv.log",
+      "log_sha256": "87c17a1edfc27f9a93ee813b7af5d361765294b3890dc7787adc328b44d79950",
+      "log_tail": [
+        "",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "",
+        "   Doc-tests vesper_web",
+        "",
+        "running 0 tests",
+        "",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "",
+        "   Doc-tests vesper_web_fetch",
+        "",
+        "running 0 tests",
+        "",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        ""
+      ]
+    },
+    {
+      "name": "deny",
+      "command": [
+        "cargo",
+        "deny",
+        "--all-features",
+        "check"
+      ],
+      "exit_code": 0,
+      "elapsed_seconds": 1.78,
+      "log": "/tmp/vesper-queue-advisory-gate-deny.log",
+      "log_sha256": "abddaadac3dd7f3143440c6048c76a4047cd7dde6a572ad62e6ef03b7c0a7fd6",
+      "log_tail": [
+        "    │ ╰────────────────────────────────────────────────────────────────────────────────┘ lock entries",
+        "    │  ",
+        "    ├ windows_x86_64_msvc v0.42.2",
+        "      └── windows-targets v0.42.2",
+        "          └── windows-sys v0.45.0",
+        "              └── jni v0.21.1",
+        "                  └── cpal v0.17.3",
+        "                      └── agent-vesper-tui v0.24.12",
+        "    ├ windows_x86_64_msvc v0.52.6",
+        "      └── windows-targets v0.52.6",
+        "          └── windows-sys v0.52.0",
+        "              └── arboard v3.6.1",
+        "                  └── agent-vesper-tui v0.24.12",
+        "",
+        "advisories ok, bans ok, licenses ok, sources ok"
+      ]
+    },
+    {
+      "name": "audit",
+      "command": [
+        "cargo",
+        "audit"
+      ],
+      "exit_code": 0,
+      "elapsed_seconds": 3.32,
+      "log": "/tmp/vesper-queue-advisory-gate-audit.log",
+      "log_sha256": "fe3268c1d4700767399d43c101668c45ccd627d351568676b39f9924bbf8b6bd",
+      "log_tail": [
+        "    Fetching advisory database from `https://github.com/RustSec/advisory-db.git`",
+        "      Loaded 1296 security advisories (from /home/Alex/.cargo/advisory-db)",
+        "    Updating crates.io index",
+        "    Scanning Cargo.lock for vulnerabilities (554 crate dependencies)"
+      ]
+    },
+    {
+      "name": "fmt",
+      "command": [
+        "cargo",
+        "fmt",
+        "--all",
+        "--",
+        "--check"
+      ],
+      "exit_code": 0,
+      "elapsed_seconds": 1.78,
+      "log": "/tmp/vesper-queue-advisory-gate-fmt.log",
+      "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "log_tail": []
+    },
+    {
+      "name": "whitespace",
+      "command": [
+        "git",
+        "diff",
+        "--check"
+      ],
+      "exit_code": 0,
+      "elapsed_seconds": 0.03,
+      "log": "/tmp/vesper-queue-advisory-gate-whitespace.log",
+      "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "log_tail": []
+    }
+  ],
+  "production_regressions": [
+    "test message_queue_tests::acknowledged_mid_turn_message_is_durable_not_steering_and_draft_clears ... ok",
+    "test message_queue_tests::active_history_load_cannot_replace_acknowledged_queue ... ok",
+    "test message_queue_tests::cancel_retains_future_and_requires_explicit_resume ... ok",
+    "test message_queue_tests::command_dispatch_registers_queue_steer_and_paste_without_user_turns ... ok",
+    "test message_queue_tests::delegated_cancellation_requires_the_host_token_and_retains_output ... ok",
+    "test message_queue_tests::delegated_failure_provider_error_and_disconnected_channel_pause_queue ... ok",
+    "test message_queue_tests::failed_admission_retains_draft_and_does_not_acknowledge_queue ... ok",
+    "test message_queue_tests::failed_promotion_restores_pending_identity_and_pauses ... ok",
+    "test message_queue_tests::failed_queue_mutations_restore_payloads_and_never_drop_active_work ... ok",
+    "test message_queue_tests::full_inspection_collapsed_transcript_and_expanded_resume_are_preserved ... ok",
+    "test message_queue_tests::legacy_folded_history_preserves_activity_and_inspects_original_body ... ok",
+    "test message_queue_tests::native_release_command_stays_on_command_plane_during_an_active_turn ... ok",
+    "test message_queue_tests::old_sessions_load_without_queue_or_schema_regression ... ok",
+    "test message_queue_tests::pasted_commands_remain_literal_even_with_a_slash_in_later_typed_text ... ok",
+    "test message_queue_tests::persisted_command_entry_is_retained_and_never_promoted_to_provider_work ... ok",
+    "test message_queue_tests::preflight_deferral_keeps_one_user_projection_and_the_same_identity ... ok",
+    "test message_queue_tests::production_composer_exact_event_order_and_boundaries ... ok",
+    "test message_queue_tests::production_react_and_vro_bridge_preserves_all_terminal_outcomes ... ok",
+    "test message_queue_tests::queue_inspect_drop_clear_and_explicit_steering_are_distinct ... ok",
+    "test message_queue_tests::queue_shortcut_rejects_commands_without_losing_the_draft ... ok",
+    "test message_queue_tests::successful_normal_and_tool_heavy_settle_before_fifo_promotion ... ok",
+    "test message_queue_tests::terminal_image_path_is_literal_editable_text_and_preserves_line_endings ... ok",
+    "test messages::tests::cancellation_error_recovery_preserve_future_without_replay ... ok",
+    "test messages::tests::collapse_thresholds_unicode_and_newlines ... ok",
+    "test messages::tests::corrupt_paste_identities_and_exhausted_counters_fail_closed ... ok",
+    "test messages::tests::lifecycle_fifo_one_owner_no_redraw_duplicate ... ok",
+    "test messages::tests::mixed_events_preserve_exact_order ... ok",
+    "test messages::tests::persistence_complete_payload_ids_and_uncertain_recovery ... ok",
+    "test messages::tests::queue_drop_clear_and_bounded_paste_projection ... ok",
+    "test queue_approval_test::pending_real_approval_prevents_queue_promotion ... ok",
+    "test release_executor::tests::advisory_fetch_repeated_failure_stops_and_reload_preserves_diagnostic_budget ... ok",
+    "test release_executor::tests::advisory_fetch_transport_recovers_with_one_persisted_read_diagnostic ... ok",
+    "test release_executor::tests::advisory_read_diagnostic_exhaustion_and_legacy_loading_fail_closed ... ok",
+    "test release_executor::tests::advisory_read_diagnostic_never_retries_security_findings_or_other_gates ... ok",
+    "test terminal_message_queue_and_paste_lifecycle ... ok",
+    "test tests::explicit_cancellation_preserves_visible_partial_output ... ok",
+    "test ui::queue_paste_render_tests::inspection_is_an_explicit_overlay_and_normal_frames_stay_compact ... ok",
+    "test ui::queue_paste_render_tests::runtime_and_queue_projection_remain_independent ... ok",
+    "test ui::queue_paste_render_tests::structured_transcript_keeps_each_paste_identity_without_refolding ... ok"
+  ],
+  "focused_and_red": {
+    "red": {
+      "exit_code": 101,
+      "log": "/tmp/vesper-queue-advisory-recovery-red.log",
+      "sha256": "a0424de4cd2b410f90fe8c4e9b3757f0c6429dcf0c089e50297afc2b183929d7",
+      "tail": [
+        "",
+        "thread 'release_executor::tests::advisory_fetch_transport_recovers_with_one_persisted_read_diagnostic' (3856588) panicked at crates/vesper-harness/src/release_executor.rs:7640:10:",
+        "called `Result::unwrap()` on an `Err` value: Invalid(\"cargo audit failed with status exit status: 1: error: couldn't fetch advisory database: git operation failed: failed to prepare fetch\\nCaused by: An IO error occurred when talking to the server; error sending request for url (https://github.com/RustSec/advisory-db.git/info/refs?service=git-upload-pack)\")",
+        "note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace",
+        "",
+        "",
+        "failures:",
+        "    release_executor::tests::advisory_fetch_transport_recovers_with_one_persisted_read_diagnostic",
+        "",
+        "test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 429 filtered out; finished in 0.03s",
+        "",
+        "error: test failed, to rerun pass `-p vesper-harness --lib`"
+      ]
+    },
+    "focused": {
+      "exit_code": 0,
+      "log": "/tmp/vesper-queue-advisory-recovery-focused.log",
+      "sha256": "1016c7dbd4bd3ca0b5b16d5e572b3e7c9e3e34c3f23bd25562f61dd178263141",
+      "tail": [
+        "   Compiling vesper-harness v0.24.12 (/home/Alex/Projects/agent-vesper/.worktrees/tui-message-queue-paste-20261012/crates/vesper-harness)",
+        "    Finished `test` profile [unoptimized + debuginfo] target(s) in 5.54s",
+        "     Running unittests src/lib.rs (/home/Alex/.local/state/agent-vesper/release-recovery/host-resources/targets/abde39a5088456752525d06909d10c51fbafd907be499cb113abf15d9afce206/debug/deps/vesper_harness-1141af194f83c6d9)",
+        "",
+        "running 4 tests",
+        "test release_executor::tests::advisory_fetch_transport_recovers_with_one_persisted_read_diagnostic ... ok",
+        "test release_executor::tests::advisory_fetch_repeated_failure_stops_and_reload_preserves_diagnostic_budget ... ok",
+        "test release_executor::tests::advisory_read_diagnostic_exhaustion_and_legacy_loading_fail_closed ... ok",
+        "test release_executor::tests::advisory_read_diagnostic_never_retries_security_findings_or_other_gates ... ok",
+        "",
+        "test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 429 filtered out; finished in 0.08s",
+        ""
+      ]
+    },
+    "actual_recovered_read": {
+      "exit_code": 0,
+      "log": "/tmp/vesper-queue-native-advisory-fetch-diagnostic.log",
+      "sha256": "fe3268c1d4700767399d43c101668c45ccd627d351568676b39f9924bbf8b6bd",
+      "tail": [
+        "    Fetching advisory database from `https://github.com/RustSec/advisory-db.git`",
+        "      Loaded 1296 security advisories (from /home/Alex/.cargo/advisory-db)",
+        "    Updating crates.io index",
+        "    Scanning Cargo.lock for vulnerabilities (554 crate dependencies)"
+      ]
+    }
+  },
+  "native_failed_snapshot": "docs/foundation/2026-10-12-rrc-advisory-fetch-read-recovery-native-failed.json",
+  "native_failed_snapshot_sha256": "98ef0de349c5356810e3235c3a31b45eb98d270da235c290a68354b6f7dce089",
+  "existing_ignored_cases": [
+    "test native_acp_settings_run_executes_three_workers_and_captures_tool_continuations ... ignored, requires a real local container runtime and selected immutable image",
+    "test swarm_host_tests::native_tui_swarm_settings_task_and_history_round_trip ... ignored, requires real container runtime and bundled Landlock image; all state is isolated",
+    "test microphone_free_voice_lifecycle ... ignored, requires VESPER_TEST_PYTHON pointing to a Python with numpy",
+    "test live_react_loop_calls_ping_then_finishes ... ignored, live integration test — requires LM Studio at localhost:1234",
+    "test live_react_loop_enforces_max_model_calls_against_real_endpoint ... ignored, live integration test — requires LM Studio at localhost:1234",
+    "test live_react_loop_finishes_with_real_lm_studio_endpoint ... ignored, live integration test — requires LM Studio at localhost:1234",
+    "test soak_gvr_loop_runs_50_iterations_without_panic_or_leak ... ignored, VRO-10 §22.4 soak test: 50 iterations; run with --ignored",
+    "test soak_loop_detector_200_call_mixed_workload_bounded_and_deterministic ... ignored, VRO-12 §6 S1 soak test: 200 iterations; run with --ignored",
+    "test soak_mixed_long_session_50_turns_no_state_corruption ... ignored, VRO-10 §22.4 soak test: mixed long session × 50 turns; run with --ignored",
+    "test soak_parallel_executor_runs_20_iterations_without_dangling_tasks ... ignored, VRO-10 §22.4 soak test: parallel fan-out × 20 iterations; run with --ignored",
+    "test soak_rate_limit_tracker_survives_50_record_429_then_clear_cycles ... ignored, VRO-10 §22.4 soak test: rate-limit churn × 50; run with --ignored",
+    "test soak_repair_controller_retains_only_most_recent_signature_across_50_attempts ... ignored, VRO-10 §22.4 soak test: repair signature growth; run with --ignored",
+    "test hosted_native_credential_persistence ... ignored, explicit hosted OS credential-manager acceptance only",
+    "test hosted_native_credential_reload_child ... ignored, spawned only by the explicit hosted native persistence fixture",
+    "test acceptance::enrollment_bounds_tests::real_vesper_bridge_prd_opens_under_the_raised_ceiling ... ignored, workspace-layout probe; run explicitly with --ignored",
+    "test bridge_service::adapter_tests::live_mpris_player_control ... ignored, live: run any MPRIS player first",
+    "test bridge_service::adapter_tests::live_resolve_worker_status_roundtrip ... ignored, live: set VESPER_BRIDGE_RESOLVE_IPC with the worker pasted in Resolve",
+    "test bridge_service::latency_tests::live_product_path_latency_budget ... ignored, live: requires a running MPRIS player",
+    "test dependency_setup::tests::real_dependency_browser_readiness ... ignored, explicit contained runtime acceptance; requires isolated engine storage and a pinned image",
+    "test swarm_sandbox::tests::native_shared_scope_confines_siblings_and_reaps_detached_descendants ... ignored, requires the bundled Landlock image and real enforcing container runtime",
+    "test real_browser_feedback_reaches_native_provider_continuation ... ignored, explicit real browser -> native worker -> captured provider continuation",
+    "test native_container_hive_runs_two_permissioned_commands_per_worker_and_verifies_cleanup ... ignored, requires a real container runtime and explicitly selected local image",
+    "test native_scoped_hive_runs_two_permissioned_commands_per_worker_and_verifies_cleanup ... ignored, requires the real namespace supervisor; fails rather than skips when unavailable",
+    "test native_shared_scope_hive_runs_all_topologies_and_cancellation ... ignored, requires bundled Landlock image and real container isolation",
+    "test native_shared_service_runs_permissioned_workers_with_project_inputs_and_cleanup ... ignored, requires a real container runtime and explicitly selected local image",
+    "test playwright_live_tests::real_playwright_navigation_snapshot_click_isolation_close ... ignored, requires explicitly supplied local Node and Playwright MCP CLI; launches isolated Chrome",
+    "test auth::tests::hosted_device_flow_persists_large_subscription_record ... ignored, explicit hosted synthetic device-flow/native-store acceptance only",
+    "test docker_default_provisions_no_network ... ignored, requires a real Docker daemon; run with DOCKER_AVAILABLE=1",
+    "test docker_resource_limits_are_enforced ... ignored, requires a real Docker daemon; run with DOCKER_AVAILABLE=1",
+    "test docker_run_exec_provisions_workspace_and_teardown_reaps ... ignored, requires a real Docker daemon; run with DOCKER_AVAILABLE=1",
+    "test namespace_security_and_timeout_acceptance ... ignored, requires real namespaces; unavailable isolation fails acceptance",
+    "test clustered_insertion_order_measures_recall_against_exact_cosine ... ignored, explicit adversarial clustered-vector recall measurement",
+    "test high_dimensional_default_capacity_retains_coherent_readers ... ignored, explicit high-dimensional default-capacity measurement",
+    "test one_thousand_retained_admissions_reclaim_capacity_and_keep_reader_generation ... ignored, explicit bounded retention measurement; run with --ignored --nocapture",
+    "test ten_thousand_records_with_retained_generation_and_lossless_reload ... ignored, explicit bounded scale measurement; run with --ignored --nocapture",
+    "test live_headless_pipe_handshake ... ignored, live headless browser required",
+    "test perf::perf_prune_and_convert_hundred_k_nodes ... ignored, release-profile perf gate",
+    "test perf::perf_serialize_five_k_interactables ... ignored, release-profile perf gate",
+    "test browser::live_tests::real_navigation_and_chunked_fetch ... ignored, requires a real image/runtime and explicitly permits public website access",
+    "test browser::live_tests::real_pipe_browser_actions_redaction_and_stale_indices ... ignored, requires VESPER_WEB_TEST_IMAGE and a real container runtime",
+    "test docker_backend_executes_fetch_helper ... ignored, live docker + network required",
+    "test crates/vesper-swarm/src/pool.rs - pool::WorkerPool::heartbeat_interval (line 835) ... ignored",
+    "test crates/vesper-swarm/src/pool.rs - pool::WorkerPool::heartbeat_interval (line 835) ... ignored"
+  ],
+  "live_only_unexecuted": [
+    "Windows ConPTY/macOS queue interaction",
+    "Live provider multi-turn and delegated VRO/ReAct behavior"
+  ],
+  "ready_for_live_acceptance": true
+}

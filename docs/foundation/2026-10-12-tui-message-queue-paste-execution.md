@@ -2,7 +2,7 @@
 
 ## Objective and source
 
-Implement the user-authorized TUI message lifecycle mission without push, release, installation, RRC-state mutation or VRO-19 work. Canonical source: `1253ff8bfb89e23195557a6397783d36ed4209df`. Isolated branch: `feat/tui-message-queue-paste-20261012`. Initial worktree was clean. The dirty primary checkout is excluded.
+Implement the TUI message lifecycle mission. The initial implementation forbade publication; Alex subsequently authorized release after the mandatory final audit. Installation and VRO-19 remain excluded. Canonical source: `1253ff8bfb89e23195557a6397783d36ed4209df`. Isolated branch: `feat/tui-message-queue-paste-20261012`. Initial worktree was clean. The dirty primary checkout is excluded.
 
 ## Initial source-grounded audit (before implementation)
 
@@ -22,14 +22,13 @@ Read root/apps/TUI DOX and documentation/foundation contracts. Traced `Event::Pa
 
 ## Status / readiness
 
-Initial implementation was locally verified at `ca6eac79`. The subsequent release
-final audit found and corrected command-boundary regressions. The final source
-passed all seven mandatory gates and 35 scoped regressions.
+The final audit corrected native-command routing and the measured shared RRC
+advisory-fetch blocker. The current frozen source passed all seven mandatory
+gates and 39 scoped regressions, including real terminal interaction on both
+the current toolchain and Rust 1.88.
 **READY FOR LIVE ACCEPTANCE: YES.** Native publication remains pending.
-All seven mandatory gates passed sequentially on the final frozen source, with
-31 focused regressions passing. Native Windows/macOS and live-provider proofs
-remain explicitly unexecuted; this is not universal platform certification.
-No push, release or installation was performed.
+No task push, tag, publication or installation has occurred. Native Windows/macOS
+queue interaction and live-provider proofs remain explicitly unexecuted.
 
 ## Implementation and ownership
 
@@ -46,8 +45,8 @@ No push, release or installation was performed.
 
 Existing terminal input, atomic session writer, runtime agent pathways, approvals,
 steering inbox, shared provider catalogs, command registry and theme/navigation
-primitives are reused. No provider adapter, ACP runtime, RRC or VRO-19 source is
-changed. ACP clients own composer display and protocol request scheduling; this
+primitives are reused. The queue implementation changes no provider adapter, ACP runtime or VRO-19
+source. The later measured RRC blocker repair is documented separately below. ACP clients own composer display and protocol request scheduling; this
 terminal interaction contract adds no shared slash-command requirement.
 
 ## Queue and content behavior
@@ -355,7 +354,7 @@ used to certify these later changes.
 DOX: nearest TUI/tests contracts, user guide and owning PRD record this command
 classification boundary. Parent ownership and child indexes are unchanged.
 
-## Corrective final verification and release readiness
+## Native-command corrective verification and historical readiness
 
 [Corrective machine-readable receipts](2026-10-12-tui-message-queue-paste-native-command-receipts.json)
 retain the red reproduction, exact final-source digests, 35 green scoped
@@ -392,7 +391,8 @@ Postpublication receipts remain local; no separate documentation push or user
 installation is authorized. Parent DOX ownership/indexes remain unchanged;
 nearest TUI/tests contracts, guide, PRD and evidence index are updated together.
 
-**READY_FOR_LIVE_ACCEPTANCE: YES.** Publication still requires complete native
+**Native-command source READY_FOR_LIVE_ACCEPTANCE: YES**, superseded by the
+later advisory-fetch correction below. Publication still requires complete native
 local gates, four exact-SHA hosted workflows, tag/assets and registry closeout.
 
 Release capacity preparation removed 3,352 obsolete generated ELF executables
@@ -403,3 +403,42 @@ checkout were retained. The detailed cleanup receipt is hashed in the corrective
 receipt; resource thresholds and retry budgets were unchanged. Earlier retained
 host archives and obsolete incremental-snapshot cleanup remain separate capacity
 actions, not source repairs or verification proof.
+
+## Native advisory-fetch blocker and bounded shared correction
+
+The corrected native run passed version preparation, workspace verification,
+165-case acceptance, architecture, Rust 1.88 MSRV and dependency policy. Security
+audit then failed to fetch RustSec and safely stopped to `NeedMoreEvidence`, with
+no push/tag. A fresh exact audit and Git fetch succeeded. The mission's measured
+shared-blocking exception applies; [bounded advisory-read recovery](2026-10-12-rrc-advisory-fetch-read-recovery.md)
+records the red reproduction, provider-neutral correction, four focused proofs,
+persisted diagnostic limits and complete final-source verification. Earlier
+receipts only certify their earlier sources; the new receipt freezes all eleven
+production/test paths and records the current seven green gates.
+No release journal was cleared and no retry budget was reset.
+
+## Final advisory-read audit and readiness
+
+| Final-source gate | Exit | Seconds |
+| --- | --- | --- |
+| `cargo xtask acceptance` | 0 | 243.06 |
+| `cargo xtask verify` | 0 | 1034.15 |
+| `cargo xtask msrv` | 0 | 893.7 |
+| `cargo deny --all-features check` | 0 | 1.78 |
+| `cargo audit` | 0 | 3.32 |
+| `cargo fmt --all -- --check` | 0 | 1.78 |
+| `git diff --check` | 0 | 0.03 |
+
+The [current receipt](2026-10-12-rrc-advisory-fetch-read-recovery-receipts.json)
+records all 39 scoped successes, source/log hashes, existing ignored cases and
+the failed native epoch. The audit rechecked single message ownership, command
+and steering boundaries, terminal settlement, FIFO/approval/cancellation guards,
+durable admission/recovery, bounded rendering and the narrowly scoped RRC read
+diagnostic. Its durable counter and existing diagnostic budget are reserved
+before dispatch; successful fresh audit output is required. No external side
+effect is retried, security finding ignored or release budget reset.
+
+**READY_FOR_LIVE_ACCEPTANCE: YES.** Native release and live-only proofs remain
+distinct. Current canonical main is unchanged; the primary diff/status hashes
+remain identical. Parent DOX ownership/indexes stay unchanged; nearest harness
+and foundation contracts and both owning PRDs are updated in this candidate.

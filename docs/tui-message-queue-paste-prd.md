@@ -65,9 +65,15 @@ the prior pending payloads. Legacy records load without fabricating original pas
 boundaries: available large user bodies are labelled submitted content and remain
 inspectable. Historical composition lost by older versions cannot be reconstructed.
 
+The later authorized release exposed a measured shared RRC blocker. Its bounded
+[advisory-read correction](foundation/2026-10-12-rrc-advisory-fetch-read-recovery.md)
+is the mission's explicit unavoidable-blocking exception; final-source verification
+and publication remain pending.
+
 These composer/inspection gestures are a terminal interaction contract. ACP
 clients own their draft and protocol-request presentation/scheduling; no shared
-slash catalog, provider adapter, RRC or core runtime behavior is changed.
+slash catalog, provider adapter or agent runtime behavior is changed. The measured
+release-only RRC correction is documented above.
 
 ## Required regression ledger
 
@@ -125,7 +131,11 @@ Use the native clipboard image route or `/image` to attach an image explicitly.
 Initial implementation passed seven gates, 165 exact acceptance cases and 31
 focused checks. The subsequent audit found native-command regressions; the corrected final source passed all seven mandatory gates and 35 scoped
 regressions, including the strengthened real terminal interaction test.
-READY FOR LIVE ACCEPTANCE: YES; publication remains pending native exact-SHA gates.
+The later native release exposed an advisory-fetch blocker. Its bounded shared
+correction passed the complete final ladder and four focused recovery tests;
+current verification contains 39 scoped successes on frozen source.
+READY FOR LIVE ACCEPTANCE: YES. Publication remains pending native exact-SHA
+gates and registry/report closeout.
 The execution report maps the 26 required behaviors to current automated evidence.
 Native Windows/macOS and live-provider/delegated acceptance remain unexecuted;
 local readiness does not claim those live proofs. Source, methods, failures and
