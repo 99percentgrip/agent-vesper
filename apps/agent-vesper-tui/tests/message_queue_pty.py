@@ -188,7 +188,7 @@ def run(binary):
             # restore it without replaying settled provider work.
             host.key("\x1b")
             command(host, "/quit")
-            host.child.wait(10)
+            assert host.wait_exit(10) == 0, "normal terminal exit failed"
             host.close()
             host = Host(binary, root, environment)
             host.wait("Start coding")
@@ -201,7 +201,7 @@ def run(binary):
             assert len(Handler.requests) == 3, "session resume replayed settled work"
             host.key("\x1b")
             command(host, "/quit")
-            host.child.wait(10)
+            assert host.wait_exit(10) == 0, "normal terminal exit failed"
             host.close()
             host = None
             owned = root / "approval"
@@ -246,7 +246,7 @@ def run(binary):
             # Original draft remains unsubmitted; clear it explicitly before quit.
             host.key("\x7f" * len("Draft kept after commands."))
             command(host, "/quit")
-            host.child.wait(10)
+            assert host.wait_exit(10) == 0, "normal terminal exit failed"
             host.close()
             host = None
             Handler.tool_next = 0
@@ -308,7 +308,7 @@ def run(binary):
                 assert settled["messages"][0]["state"] == "Interrupted", settled
                 assert settled["messages"][1]["state"] == "Settled", settled
                 command(host, "/quit")
-                host.child.wait(10)
+                assert host.wait_exit(10) == 0, "normal terminal exit failed"
                 host.close()
                 host = None
         finally:

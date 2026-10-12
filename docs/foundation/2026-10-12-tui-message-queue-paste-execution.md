@@ -506,3 +506,65 @@ writes. No CI rerun, tag authority or external-effect replay is introduced.
 release gates from this corrected source. Parent boundaries and child indexes
 are unchanged; nearest owning DOX, PRDs and evidence accompany this candidate.
 Native publication and live-only proofs remain separate. No installation.
+
+## Follow-up macOS normal-exit observer audit
+
+Candidate `2347cc8e4202ebb17617d56d1b28565841edfee1` completed all four
+exact-SHA workflows: ten jobs passed; Intel and Apple Silicon macOS failed at
+`message_queue_pty.py`'s first `host.child.wait(10)` after full-content inspection.
+The earlier writer regression passed on both native architectures. Queue/FIFO,
+exact submitted body, collapsed transcript and persisted identity assertions
+preceding that exit check passed; later resume assertions did not execute there.
+No tag or publication occurred. Native RRC classified both causal failures and
+attempted its admitted repair, but the selected GLM adapter returned HTTP 429
+(category QuotaOrRate, retry Never). The worker stopped; its ledger was preserved
+read-only and its TUI owner exited normally. No budget or journal reset occurred.
+
+The shared terminal observer now drains output during normal exit instead of
+calling blocking `Popen.wait` without reading. The ten-second deadline is
+unchanged, timeout prints the screen/raw tail, and each normal exit must return
+zero. A real PTY child producing terminal output demonstrates undrained exit
+waiting times out while draining permits exit; this establishes the mechanism,
+not independent proof of the macOS root cause. Six Python regressions pass,
+including the bounded exit observer and visible timeout diagnostics. Both Rust
+terminal tests pass against the production Linux binary (42.34 seconds). Native
+macOS exact-SHA rerun remains required; no assertion, lane or timeout was weakened.
+
+Only `tests/settings_pty.py`, `message_queue_pty.py` and
+`test_terminal_writer.py` change executable behavior in this correction. Queue,
+provider, runtime and RRC production semantics are unchanged. The existing
+native failed ledger and complete matrix remain evidence; the same unused
+v0.24.13 target is retained. No installation or second version bump.
+
+The [exit-observer receipt](2026-10-12-tui-message-queue-paste-exit-receipts.json)
+records red/focused evidence, frozen final source and sequential mandatory gates.
+The fresh seven-gate ladder completed successfully on the frozen corrected
+source; exact receipts follow. Native platform/release certification still
+requires new exact-SHA CI.
+
+### Final exit-observer verification
+
+| Mandatory gate | Exit | Seconds |
+| --- | --- | --- |
+| `cargo xtask acceptance` | 0 | 207.98 |
+| `cargo xtask verify` | 0 | 953.12 |
+| `cargo xtask msrv` | 0 | 785.51 |
+| `cargo deny --all-features check` | 0 | 1.29 |
+| `cargo audit` | 0 | 2.69 |
+| `cargo fmt --all -- --check` | 0 | 1.78 |
+| `git diff --check` | 0 | 0.01 |
+
+The focused production Linux terminal lifecycle passed both Rust cases;
+all six Python writer/exit-observer regressions passed. Existing 44 scoped Rust
+regressions remain enrolled. The final audit confirms no production message,
+queue, provider, steering or RRC changes in this follow-up, an unchanged exit
+deadline, preserved complete payload assertions, successful normal-exit checks,
+and visible timeout diagnostics. Prior failed macOS checks, the GLM HTTP 429
+repair stop and unexecuted physical-device/live-provider acceptance remain
+explicit. No release tag, publication, installation, budget reset or second
+version bump occurred during this verification. Parent boundaries and child
+indexes are unchanged; the existing report and nearest tests DOX own this work.
+
+**READY_FOR_LIVE_ACCEPTANCE: YES.** All seven required local gates passed on
+this source. Fresh exact-SHA native macOS gates and the authorized RRC release
+closeout remain required before publication/completion claims.

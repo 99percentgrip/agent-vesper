@@ -1,0 +1,466 @@
+{
+  "source_base": "2347cc8e4202ebb17617d56d1b28565841edfee1",
+  "source_sha256": {
+    "apps/agent-vesper-tui/src/messages.rs": "3743bdc6269a35bffd538cec40fefe42f2d7eaadf5d29f66abe603f8f3bbff70",
+    "apps/agent-vesper-tui/src/lib.rs": "f0e34d28557e932f8875c4e736fe3ef980c1d4dcdca59b27bd9958dc12f1fcf2",
+    "apps/agent-vesper-tui/src/commands.rs": "004d45686f75cb98c41bcb49e9fb157081f82aa69edc067161588e90bd719381",
+    "apps/agent-vesper-tui/src/dispatch.rs": "7394a16ee039f8238521e8d90affc3429854e7bc8a52df954c8a758dc85ccda8",
+    "apps/agent-vesper-tui/src/main.rs": "31ac36601c53f918bf119a04aba5999105650864ce4be9727772de8c4f771628",
+    "apps/agent-vesper-tui/src/ui.rs": "32a8caa165c2ccad14e891dbb1b0ff277d647eb2f6b969824d3ef9167e86f655",
+    "apps/agent-vesper-tui/src/swarm_host.rs": "1e3ef27e7d37fbde681faa562e2b48c5e1155ce2427960c24d2b9d384a7f9cec",
+    "apps/agent-vesper-tui/tests/message_queue_pty.py": "7768a7d2299737895601b85d967f6aa6548ad561cfa8f96d7b53c003e753bed5",
+    "apps/agent-vesper-tui/tests/message_queue_pty.rs": "d459176584725879920f270d2fcd0b0ce38a3d53811dcf7cb47288041235494a",
+    "apps/agent-vesper-tui/tests/settings_pty.py": "0159f050e3840f86c8dacfca5b46acaa70be82ad30760588734f568ab7481445",
+    "apps/agent-vesper-tui/tests/test_terminal_writer.py": "87d45e12d910f850324bfa1713dc3c0e9f589fc41e634fad90b01ceb0ab34cd5",
+    "crates/vesper-harness/src/release_executor.rs": "a48c78ef318da7430a485e9ef6ed134ff52d7074f673f5a184abfcc0cd041fd5",
+    "crates/vesper-harness/src/release_recovery.rs": "e72ff3e492cdae46d5262b877044546585d91d7b0fd172258b27879249dfdefc"
+  },
+  "native_failed_ledger": "/tmp/vesper-queue-matrix-native-repair-provider-failed.json",
+  "native_matrix": "10 passed; macos-intel and macos-apple-silicon normal-exit failure",
+  "red_log": "/tmp/vesper-queue-terminal-exit-red.log",
+  "mechanism_receipt": "/tmp/vesper-queue-terminal-exit-mechanism.json",
+  "focused_log": "/tmp/vesper-queue-terminal-exit-focused.log",
+  "focused": "2 Rust terminal tests pass; 6 Python observer/writer cases pass",
+  "gates": [
+    {
+      "name": "acceptance",
+      "command": [
+        "cargo",
+        "xtask",
+        "acceptance"
+      ],
+      "exit_code": 0,
+      "elapsed_seconds": 207.98,
+      "log": "/tmp/vesper-queue-terminal-exit-gate-acceptance.log",
+      "log_sha256": "a21c76a9069a6b4712b1785dc860f0a635f7c624c2587220a6ea930c9cc663d9"
+    },
+    {
+      "name": "verify",
+      "command": [
+        "cargo",
+        "xtask",
+        "verify"
+      ],
+      "exit_code": 0,
+      "elapsed_seconds": 953.12,
+      "log": "/tmp/vesper-queue-terminal-exit-gate-verify.log",
+      "log_sha256": "f34683c663dfa359c1635d281d0d62ec07c83cd1e7d8658503e134a464b67efe"
+    },
+    {
+      "name": "msrv",
+      "command": [
+        "cargo",
+        "xtask",
+        "msrv"
+      ],
+      "exit_code": 0,
+      "elapsed_seconds": 785.51,
+      "log": "/tmp/vesper-queue-terminal-exit-gate-msrv.log",
+      "log_sha256": "a2b4c8a7154019fabd5aa38fc65e6f2aca7af6764a7ef6a75a4eec855feb230c"
+    },
+    {
+      "name": "deny",
+      "command": [
+        "cargo",
+        "deny",
+        "--all-features",
+        "check"
+      ],
+      "exit_code": 0,
+      "elapsed_seconds": 1.29,
+      "log": "/tmp/vesper-queue-terminal-exit-gate-deny.log",
+      "log_sha256": "27dcd81fb0ccc6e434804166af1073cef6420d126d9460cfc218ceea37f106eb"
+    },
+    {
+      "name": "audit",
+      "command": [
+        "cargo",
+        "audit"
+      ],
+      "exit_code": 0,
+      "elapsed_seconds": 2.69,
+      "log": "/tmp/vesper-queue-terminal-exit-gate-audit.log",
+      "log_sha256": "22c77b408f1d59403adb1f28b7bb426ad9b520dd87156e901a3c05715691da73"
+    },
+    {
+      "name": "fmt",
+      "command": [
+        "cargo",
+        "fmt",
+        "--all",
+        "--",
+        "--check"
+      ],
+      "exit_code": 0,
+      "elapsed_seconds": 1.78,
+      "log": "/tmp/vesper-queue-terminal-exit-gate-fmt.log",
+      "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "whitespace",
+      "command": [
+        "git",
+        "diff",
+        "--check"
+      ],
+      "exit_code": 0,
+      "elapsed_seconds": 0.01,
+      "log": "/tmp/vesper-queue-terminal-exit-gate-whitespace.log",
+      "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  ],
+  "readiness": "READY FOR LIVE ACCEPTANCE: YES; all seven fresh local gates green; exact-SHA macOS certification and publication pending",
+  "native_failure_snapshot": {
+    "epoch_id": "20261012T102341.787048641Z-2347cc8e4202",
+    "state": "classifying_failure",
+    "liveness": {
+      "detail": "invalid release recovery input: GLM request failed [category=QuotaOrRate, HTTP=429, retry=Never, retry-after-ms=None]",
+      "observed_at": "2026-10-12T12:40:52.435594556Z",
+      "operation": "focused repair agent",
+      "owner_pid": 224113,
+      "settled_error": true,
+      "state": "failed"
+    },
+    "last_meaningful_milestone": null,
+    "retry_budget": {
+      "full_gate_limit": 1,
+      "full_gate_used": 0,
+      "infrastructure_limit": 1,
+      "infrastructure_used": 0,
+      "repair_attempt_limit_per_family": 2,
+      "targeted_diagnostic_limit": 2,
+      "targeted_diagnostic_used": 1
+    },
+    "mutation": {
+      "base_sha": "2347cc8e4202ebb17617d56d1b28565841edfee1",
+      "candidate_committed": true,
+      "candidate_push_ref": "origin/main@2347cc8e4202ebb17617d56d1b28565841edfee1",
+      "candidate_pushed": true,
+      "canonical_release_source": true,
+      "closeout_receipt": null,
+      "closeout_registry": null,
+      "final_candidate_commit": "2347cc8e4202ebb17617d56d1b28565841edfee1",
+      "in_flight_operation": null,
+      "intended_commits": [],
+      "intended_diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "local_advisory_read_retries": 0,
+      "local_gates": [
+        {
+          "command": "cargo check --workspace --all-targets",
+          "evidence_ref": "local:version-preparation",
+          "name": "version-preparation",
+          "state": "succeeded"
+        },
+        {
+          "command": "cargo xtask verify",
+          "evidence_ref": "local:workspace-verify:c5df2ddda4c6c0549921cbddd3dac8dd9e87eff949ed8bb8850cd4b947b61b2b",
+          "name": "workspace-verify",
+          "state": "succeeded"
+        },
+        {
+          "command": "cargo xtask acceptance",
+          "evidence_ref": "local:acceptance:1e7429ae0978a8ed882ef490053193bf72646b36331317fd2f47c88261827eb8",
+          "name": "acceptance",
+          "state": "succeeded"
+        },
+        {
+          "command": "cargo xtask architecture",
+          "evidence_ref": "local:architecture:51dea8945e12a989f630f75723b51d36ddee4dd61c4059417a75bf992475fab5",
+          "name": "architecture",
+          "state": "succeeded"
+        },
+        {
+          "command": "cargo xtask msrv",
+          "evidence_ref": "local:msrv:b5969deed50d22ee79b13b928201941aec5627b5fc3a4e1a95f7dd04a3a4df4f",
+          "name": "msrv",
+          "state": "succeeded"
+        },
+        {
+          "command": "cargo deny --all-features check",
+          "evidence_ref": "local:supply-chain-policy:f1a0fca39d4280363937aabd77783990ea6480bd9ca257816de3b68fc8efa845",
+          "name": "supply-chain-policy",
+          "state": "succeeded"
+        },
+        {
+          "command": "cargo audit",
+          "evidence_ref": "local:advisories:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "name": "advisories",
+          "state": "succeeded"
+        },
+        {
+          "command": "cargo build --locked --release --package agent-vesper-acp --package agent-vesper-tui --package vesper-web-fetch --package vesper-sandbox --features agent-vesper-acp/docker,agent-vesper-tui/docker,agent-vesper-acp/swarm,agent-vesper-tui/swarm,agent-vesper-acp/bridge,agent-vesper-tui/bridge,agent-vesper-tui/voice-kokoro,agent-vesper-tui/voice-flm",
+          "evidence_ref": "local:release-build:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "name": "release-build",
+          "state": "succeeded"
+        }
+      ],
+      "objective_evidence_reports": [
+        "docs/foundation/2026-10-12-tui-message-queue-paste-execution.md",
+        "docs/foundation/2026-10-12-rrc-advisory-fetch-read-recovery.md",
+        "docs/foundation/2026-10-12-rrc-matrix-transport-read-recovery.md"
+      ],
+      "objective_id": "tui-message-queue-paste-20261012",
+      "objective_label": "Reliable TUI message queue and collapsible pasted content",
+      "publication_read_retries": 0,
+      "publication_run_id": null,
+      "publication_verified": false,
+      "publication_watch_millis": 0,
+      "published_asset_names": [],
+      "release_workspace": "/home/Alex/.local/state/agent-vesper/release-recovery/worktrees/abde39a508845675/20261012T102340984Z-2347cc8e4202",
+      "remote_matrix_read_retries": 1,
+      "repair_admissions": {
+        "6277bed235daa1cbf5373fb4d004d847ab1a976486cea22cb6daf696439d4d79": 1,
+        "f2e360be68ef03661bd2ac59ea611e0fb560280d4cb747cb144ef465f0604ce3": 1
+      },
+      "repair_files": [],
+      "source_commit": "2347cc8e4202ebb17617d56d1b28565841edfee1",
+      "source_variant_id": "tui-message-queue-paste-matrix-terminal-audited-20261012",
+      "source_variant_label": "Final queue/command and bounded read-recovery and terminal-backpressure audit; seven gates green; native publication pending",
+      "source_workspace": "/home/Alex/Projects/agent-vesper/.worktrees/tui-message-queue-paste-20261012",
+      "supersedes": [
+        "tui-message-queue-paste-advisory-read-audited-20261012"
+      ],
+      "tag_name": null,
+      "tag_object": null,
+      "tag_pushed": false,
+      "version_after": "0.24.13",
+      "version_before": "0.24.13",
+      "version_files": []
+    },
+    "failures": [
+      {
+        "attempt": 1,
+        "causal_excerpt": "2026-10-12T11:54:05.5770180Z \n2026-10-12T11:54:05.5771210Z thread 'terminal_message_queue_and_paste_lifecycle' (88098) panicked at apps/agent-vesper-tui/tests/message_queue_pty.rs:53:5:\n2026-10-12T11:54:05.5772400Z Traceback (most recent call last):\n2026-10-12T11:54:05.5773790Z   File \"/Users/runner/work/agent-vesper/agent-vesper/apps/agent-vesper-tui/tests/message_queue_pty.py\", line 331, in <module>\n2026-10-12T11:54:05.5775400Z     run(str(Path(sys.argv[1]).resolve()))",
+        "class": "test_regression",
+        "confidence": "strongly_supported",
+        "exists_on_last_green": false,
+        "fingerprint": "0cb8651abbee765ad0754a266afae171a3e9c7d6b3927c37b6af7d537fac4163",
+        "job_id": 114794964995,
+        "job_name": "macos-intel",
+        "observed_at": "2026-10-12T12:40:04.435350146Z",
+        "other_platforms_passed": true,
+        "platform": "macos-15-intel",
+        "related_source_touched": true,
+        "run_id": 38244516872,
+        "source_commit": "2347cc8e4202ebb17617d56d1b28565841edfee1",
+        "step_name": "Run eligible foundational tests",
+        "workflow_id": 324058986,
+        "workflow_name": "five-target-foundation"
+      },
+      {
+        "attempt": 1,
+        "causal_excerpt": "2026-10-12T11:49:16.5008130Z \n2026-10-12T11:49:16.5008970Z thread 'terminal_message_queue_and_paste_lifecycle' (52482) panicked at apps/agent-vesper-tui/tests/message_queue_pty.rs:53:5:\n2026-10-12T11:49:16.5010500Z Traceback (most recent call last):\n2026-10-12T11:49:16.5012320Z   File \"/Users/runner/work/agent-vesper/agent-vesper/apps/agent-vesper-tui/tests/message_queue_pty.py\", line 331, in <module>\n2026-10-12T11:49:16.5013820Z     run(str(Path(sys.argv[1]).resolve()))",
+        "class": "test_regression",
+        "confidence": "strongly_supported",
+        "exists_on_last_green": false,
+        "fingerprint": "bc6bdf8ee1d395a94b39125ca768775a789a9d92cec6a6ac2d30421a63f027fe",
+        "job_id": 114794965069,
+        "job_name": "macos-apple-silicon",
+        "observed_at": "2026-10-12T12:40:14.775855723Z",
+        "other_platforms_passed": true,
+        "platform": "macos-15",
+        "related_source_touched": true,
+        "run_id": 38244516872,
+        "source_commit": "2347cc8e4202ebb17617d56d1b28565841edfee1",
+        "step_name": "Run eligible foundational tests",
+        "workflow_id": 324058986,
+        "workflow_name": "five-target-foundation"
+      }
+    ],
+    "required_gates": [
+      {
+        "head_sha": "2347cc8e4202ebb17617d56d1b28565841edfee1",
+        "jobs": [
+          {
+            "attempt": 1,
+            "failed_step": null,
+            "job_id": 114794965489,
+            "job_name": "windows-installer",
+            "platform": "windows-2025",
+            "run_id": 38244517046,
+            "state": "success",
+            "url": "https://github.com/99percentgrip/agent-vesper/actions/runs/38244517046/job/114794965489",
+            "workflow_id": 324058982,
+            "workflow_name": "pull-request-validation"
+          },
+          {
+            "attempt": 1,
+            "failed_step": null,
+            "job_id": 114794965715,
+            "job_name": "supply-chain",
+            "platform": "ubuntu-24.04",
+            "run_id": 38244517046,
+            "state": "success",
+            "url": "https://github.com/99percentgrip/agent-vesper/actions/runs/38244517046/job/114794965715",
+            "workflow_id": 324058982,
+            "workflow_name": "pull-request-validation"
+          },
+          {
+            "attempt": 1,
+            "failed_step": null,
+            "job_id": 114794965770,
+            "job_name": "quality",
+            "platform": "ubuntu-24.04",
+            "run_id": 38244517046,
+            "state": "success",
+            "url": "https://github.com/99percentgrip/agent-vesper/actions/runs/38244517046/job/114794965770",
+            "workflow_id": 324058982,
+            "workflow_name": "pull-request-validation"
+          }
+        ],
+        "name": "pull-request-validation",
+        "run_attempt": 1,
+        "run_id": 38244517046,
+        "run_state": "success",
+        "url": "https://github.com/99percentgrip/agent-vesper/actions/runs/38244517046"
+      },
+      {
+        "head_sha": "2347cc8e4202ebb17617d56d1b28565841edfee1",
+        "jobs": [
+          {
+            "attempt": 1,
+            "failed_step": null,
+            "job_id": 114794964571,
+            "job_name": "windows-x86_64",
+            "platform": "windows-2025",
+            "run_id": 38244516872,
+            "state": "success",
+            "url": "https://github.com/99percentgrip/agent-vesper/actions/runs/38244516872/job/114794964571",
+            "workflow_id": 324058986,
+            "workflow_name": "five-target-foundation"
+          },
+          {
+            "attempt": 1,
+            "failed_step": null,
+            "job_id": 114794964910,
+            "job_name": "linux-x86_64",
+            "platform": "ubuntu-24.04",
+            "run_id": 38244516872,
+            "state": "success",
+            "url": "https://github.com/99percentgrip/agent-vesper/actions/runs/38244516872/job/114794964910",
+            "workflow_id": 324058986,
+            "workflow_name": "five-target-foundation"
+          },
+          {
+            "attempt": 1,
+            "failed_step": null,
+            "job_id": 114794964990,
+            "job_name": "linux-arm64",
+            "platform": "ubuntu-24.04-arm",
+            "run_id": 38244516872,
+            "state": "success",
+            "url": "https://github.com/99percentgrip/agent-vesper/actions/runs/38244516872/job/114794964990",
+            "workflow_id": 324058986,
+            "workflow_name": "five-target-foundation"
+          },
+          {
+            "attempt": 1,
+            "failed_step": "Run eligible foundational tests",
+            "job_id": 114794964995,
+            "job_name": "macos-intel",
+            "platform": "macos-15-intel",
+            "run_id": 38244516872,
+            "state": "failure",
+            "url": "https://github.com/99percentgrip/agent-vesper/actions/runs/38244516872/job/114794964995",
+            "workflow_id": 324058986,
+            "workflow_name": "five-target-foundation"
+          },
+          {
+            "attempt": 1,
+            "failed_step": "Run eligible foundational tests",
+            "job_id": 114794965069,
+            "job_name": "macos-apple-silicon",
+            "platform": "macos-15",
+            "run_id": 38244516872,
+            "state": "failure",
+            "url": "https://github.com/99percentgrip/agent-vesper/actions/runs/38244516872/job/114794965069",
+            "workflow_id": 324058986,
+            "workflow_name": "five-target-foundation"
+          }
+        ],
+        "name": "five-target-foundation",
+        "run_attempt": 1,
+        "run_id": 38244516872,
+        "run_state": "failure",
+        "url": "https://github.com/99percentgrip/agent-vesper/actions/runs/38244516872"
+      },
+      {
+        "head_sha": "2347cc8e4202ebb17617d56d1b28565841edfee1",
+        "jobs": [
+          {
+            "attempt": 1,
+            "failed_step": null,
+            "job_id": 114794964612,
+            "job_name": "Contained browser linux-aarch64",
+            "platform": "ubuntu-24.04-arm",
+            "run_id": 38244516830,
+            "state": "success",
+            "url": "https://github.com/99percentgrip/agent-vesper/actions/runs/38244516830/job/114794964612",
+            "workflow_id": 351737017,
+            "workflow_name": "web-driver"
+          },
+          {
+            "attempt": 1,
+            "failed_step": null,
+            "job_id": 114794965374,
+            "job_name": "Native namespace Hive",
+            "platform": "ubuntu-22.04",
+            "run_id": 38244516830,
+            "state": "success",
+            "url": "https://github.com/99percentgrip/agent-vesper/actions/runs/38244516830/job/114794965374",
+            "workflow_id": 351737017,
+            "workflow_name": "web-driver"
+          },
+          {
+            "attempt": 1,
+            "failed_step": null,
+            "job_id": 114794966047,
+            "job_name": "Contained browser linux-x86_64",
+            "platform": "ubuntu-24.04",
+            "run_id": 38244516830,
+            "state": "success",
+            "url": "https://github.com/99percentgrip/agent-vesper/actions/runs/38244516830/job/114794966047",
+            "workflow_id": 351737017,
+            "workflow_name": "web-driver"
+          }
+        ],
+        "name": "web-driver",
+        "run_attempt": 1,
+        "run_id": 38244516830,
+        "run_state": "success",
+        "url": "https://github.com/99percentgrip/agent-vesper/actions/runs/38244516830"
+      },
+      {
+        "head_sha": "2347cc8e4202ebb17617d56d1b28565841edfee1",
+        "jobs": [
+          {
+            "attempt": 1,
+            "failed_step": null,
+            "job_id": 114794964679,
+            "job_name": "rust-1-88",
+            "platform": "ubuntu-24.04",
+            "run_id": 38244516809,
+            "state": "success",
+            "url": "https://github.com/99percentgrip/agent-vesper/actions/runs/38244516809/job/114794964679",
+            "workflow_id": 324058985,
+            "workflow_name": "msrv"
+          }
+        ],
+        "name": "msrv",
+        "run_attempt": 1,
+        "run_id": 38244516809,
+        "run_state": "success",
+        "url": "https://github.com/99percentgrip/agent-vesper/actions/runs/38244516809"
+      }
+    ],
+    "repair_attempts": []
+  },
+  "evidence_log_sha256": {
+    "/tmp/vesper-queue-terminal-exit-red.log": "09f9810900cd04f6b74fdd6d8a82fb00f09a7cfbe3d808edc43cf844805da08d",
+    "/tmp/vesper-queue-terminal-exit-mechanism.json": "70e73e390e3c4e908506a38bd4bd77de5e307d3fb239bdc7ed15ef986ebe3204",
+    "/tmp/vesper-queue-terminal-exit-focused.log": "0c33692c447b93cd9a1cbd15d9de59bba12bfe762d65fa8c77303ca034d7d7bb",
+    "/tmp/vesper-queue-matrix-native-repair-provider-failed.json": "ff9f6cb918b784e2a663a4ba9833a8cb72dbd19573dd334c849b0e57a7f5aae9",
+    "/tmp/vesper-queue-terminal-exit-green.log": "a7c0420578577a4fd69487feec175c956260f9c7770be13bbcbd8cdf261730c4"
+  },
+  "verified_at": "2026-10-12T14:20:28.862034+00:00"
+}

@@ -2240,3 +2240,5 @@ v0.21.6 release notes own the final run links, image IDs and local-install recei
 [Native ConPTY cleanup repair](2026-10-11-native-conpty-cleanup-race-repair.md) records the complete failed capacity candidate, deterministic verified-cleanup repair and pending fresh native acceptance.
 
 [Native download and owner-release repair](2026-10-11-native-voice-download-and-owner-release-repair.md) records the complete failed ConPTY candidate, actual Windows recognition/reuse and corrective download/ownership/diagnosis proof; fresh platform acceptance remains required.
+
+- [Queue/paste normal-exit observer follow-up](2026-10-12-tui-message-queue-paste-execution.md#follow-up-macos-normal-exit-observer-audit) — complete failed macOS matrix, bounded exit observation, focused and sequential gate [receipts](2026-10-12-tui-message-queue-paste-exit-receipts.json).

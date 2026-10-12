@@ -153,3 +153,16 @@ The authorized release final audit found and reproduced this boundary regression
 after initial local acceptance. Its corrective verification supersedes the prior
 readiness claim. All required local gates passed on the corrected source;
 publication remains pending native release and complete exact-SHA hosted gates.
+
+### Normal-exit platform follow-up
+
+The execution report's exit-observer section records the completed `2347cc8e`
+matrix (ten passing jobs, two macOS exit-check failures), stopped GLM-429 repair,
+bounded observer correction and fresh verification. Previous green local gates
+cannot certify this later fixture source. Native macOS resume acceptance and
+publication remain pending until the corrected exact-SHA matrix passes.
+
+The corrected observer passed both focused real Linux terminal cases and all
+seven mandatory local gates on frozen source, recorded in the linked exit
+receipt. READY FOR LIVE ACCEPTANCE: YES. Fresh exact-SHA macOS/full-matrix gates
+and native RRC publication/closeout are still required.

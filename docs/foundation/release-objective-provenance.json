@@ -2,16 +2,16 @@
   "version": 1,
   "objective_id": "tui-message-queue-paste-20261012",
   "objective_label": "Reliable TUI message queue and collapsible pasted content",
-  "variant_id": "tui-message-queue-paste-matrix-terminal-audited-20261012",
-  "variant_label": "Final queue/command and bounded read-recovery and terminal-backpressure audit; seven gates green; native publication pending",
+  "variant_id": "tui-message-queue-paste-terminal-exit-audited-20261012",
+  "variant_label": "Queue/paste bounded normal-exit observer audit; final gate and native platform evidence in owned report",
   "canonical_release_source": true,
   "supersedes": [
-    "tui-message-queue-paste-advisory-read-audited-20261012"
+    "tui-message-queue-paste-matrix-terminal-audited-20261012"
   ],
   "evidence_reports": [
     "docs/foundation/2026-10-12-tui-message-queue-paste-execution.md",
     "docs/foundation/2026-10-12-rrc-advisory-fetch-read-recovery.md",
     "docs/foundation/2026-10-12-rrc-matrix-transport-read-recovery.md"
   ],
-  "completed_at": "2026-10-12T10:21:38.388794+00:00"
+  "completed_at": "2026-10-12T13:47:05.955727+00:00"
 }

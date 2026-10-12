@@ -192,6 +192,18 @@ class Host:
             if label in self.text(): return
             if self.child.poll() is not None: break
         raise AssertionError(f'Missing {label!r}; exit={self.child.poll()}\n{self.text()}\nraw tail: {self.raw[-1200:]!r}')
+    def wait_exit(self, timeout=10):
+        # macOS can block terminal restoration/exit until the PTY reader
+        # consumes pending output. Keep observing the terminal while waiting.
+        deadline = time.monotonic() + timeout
+        while self.child.poll() is None:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise AssertionError(
+                    f'Terminal child did not exit within {timeout} seconds\n'
+                    f'{self.text()}\nraw tail: {self.raw[-1200:]!r}')
+            self.pump(min(.1, remaining))
+        return self.child.poll()
     def key(self, value):
         self.write(value.encode())
         self.pump()

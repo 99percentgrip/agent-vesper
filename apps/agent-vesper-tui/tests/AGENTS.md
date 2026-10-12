@@ -36,7 +36,9 @@ Verify terminal interaction through the production TUI binary with isolated stat
   cleanup are bounded; POSIX writes are nonblocking, retain all partial bytes,
   drain output while blocked and restore descriptor flags. Owned child cleanup
   escalates TERM to KILL only after its bounded exit wait. No production
-  dependency is added. Native keyboard
+  dependency is added. Normal exit observation drains output until the child settles, retains the
+  ten-second deadline and prints visible state on timeout. Queue lifecycle exits
+  must return zero. Native keyboard
   navigation runs on every OS; POSIX authentication fixtures also retain clicks.
 
 - `rrc_terminal_pty.rs` gives the child its own session and controlling slave
