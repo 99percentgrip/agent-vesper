@@ -277,7 +277,11 @@ pub fn command(
                 .await
             {
                 Ok((outcome, history)) => {
-                    let _ = tx.send(AgentEvent::Completed { outcome, history });
+                    let _ = tx.send(AgentEvent::Completed {
+                        execution_succeeded: outcome.is_success(),
+                        outcome,
+                        history,
+                    });
                 }
                 Err(error) => {
                     let _ = tx.send(AgentEvent::Failed(error));

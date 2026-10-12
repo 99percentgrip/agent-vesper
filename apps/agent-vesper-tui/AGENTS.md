@@ -7,10 +7,21 @@ the Plan Mode state machine, the slash-command registry, the
 `TerminalRenderer` abstraction, and the `ratatui` + `crossterm` event loop.
 The crate is a thin composition boundary that queries the runtime registry
 for superpowers at startup and renders the active provider's controls
-natively; it owns no provider-wire, ACP, persistence, or session-mutation
-business logic.
+natively. Provider-wire, ACP and generic runtime/session business logic remain
+in foundation crates. The terminal owns its draft/message interaction journal
+and composes the existing bounded atomic session writer.
 
 ## Ownership
+
+- `src/messages.rs` owns terminal message composition, cached paste ranges and
+  the ID-based future-turn journal. `commands.rs`/`dispatch.rs` own typed command
+  intents; `main.rs` composes durable admission, runtime events and inspection;
+  `ui.rs` renders bounded projections. This interactive composer/queue/inspection
+  surface is TUI-specific: ACP clients own draft/paste display and protocol request
+  scheduling. It adds no host-neutral slash command or provider/runtime shortcut.
+  The persisted transcript marker only suppresses duplicate user projections
+  after preflight deferral; pending/active lifecycle alone authorizes dispatch.
+
 
 - `src/landing.rs` owns the responsive theme-aware character-art welcome screen and
   pure navigation/layout; `src/landing_host.rs` owns its terminal event loop.
@@ -322,8 +333,9 @@ business logic.
   older binaries:
   within each user turn, preceding assistant entries remain hidden in both
   views; tool activity retains execution order instead of regrouping by type.
-  Resumed multiline/256+-character user prompts receive the same compact
-  `[Pasted Content N chars]` presentation as newly submitted prompts. Review
+  Resumed structured messages retain their individual paste chips and content
+  inspection IDs. Legacy multiline/1,000-scalar user bodies fold as explicitly
+  identified submitted content; their original paste boundaries are unknown. Review
   URLs remain visible in compact chat. `PanelVisibility`
   now means: `reasoning` = inline-thinking visibility (F2), `sidebar` =
   right-rail visibility, and `tasks` = dedicated TODO visibility. `ViewModel` no longer carries
@@ -353,7 +365,7 @@ business logic.
   full-width and asymmetric chat-bubble backgrounds are prohibited. Consecutive thinking
   and expanded tool action/result entries form one compact activity group
   without blank rows between every event; human turns retain breathing room. Submitted
-  bracketed pastes remain compact `[Pasted Content N chars]` chips in the
+  bracketed pastes remain compact character/line/identity chips in the
   visible transcript while their complete text still reaches provider history.
   Mouse selection starts and ends only inside the Conversation column; sidebar
   and lower-chrome hits never become transcript selections. The interactive
@@ -363,26 +375,42 @@ business logic.
   the start of the editable text removes the last pending image. The chips
   are a render-only projection of the existing `pending_images` payload and
   disappear when that payload is consumed by submission.
-  Multiline or 256+-character text pastes follow the same compact UX: retain
-  the exact payload outside the editable line, render
-  `[Pasted Content N chars]`, expand it only when Enter submits the prompt,
-  and let Backspace at the editable-text origin remove the newest paste chip.
-  Short single-line pastes remain directly editable.
-  While an agent turn runs, slash-command results remain foreground-visible
-  after the live region and asynchronous `/usage` uses its independent
-  channel. Bare `/permission` reports the active mode; explicit
-  `ask|read|bypass` values mutate it. During any agent or VRO turn, free-text
-  Enter steers that same turn through a host-owned inbox drained at the next
-  safe model boundary; it never aborts the active provider stream or tool.
-  Tab submits a distinct visible FIFO follow-up that starts after the active
-  turn. Ctrl+C remains the explicit cancellation path and preserves already-
-  visible assistant/tool output. The activity strip reports the queue count
-  and both non-cancelling gestures.
+  Text pastes with two or more logical lines or at least 1,000 Unicode scalars
+  become individually identified chips with cached character/line counts. Short
+  single-line pastes stay editable. Typed gaps and ordered byte ranges preserve
+  exact terminal-delivered Unicode/line endings without added separators.
+  Backspace removes only a paste at the current boundary, otherwise one typed
+  scalar. The 1 MiB text and 16 MiB session bounds fail visibly, never truncate
+  acknowledged queue payloads. `/paste <message-id|paste-id>` opens a complete
+  scrollable detail projection; arrows/PageUp/PageDown scroll, Left/Right pan,
+  Esc collapses. Normal frames render chips, never full attached payloads.
+  While an agent turn runs, Enter submits a distinct future turn. Tab retains
+  the queue shortcut when no command palette is open. `/steer <guidance>` and
+  its footer action explicitly use the existing steering inbox at a safe boundary;
+  they never enqueue implicitly. Slash commands remain command-plane operations.
+  `/queue [drop <id>|clear|resume|page <n>]` controls pending IDs; active work uses
+  normal cancellation. Informational commands and `/usage` remain immediate.
+  Durably acknowledge admission before clearing the submitted draft. Persist the
+  active identity and compact user turn before external dispatch. Only successful
+  direct/tool-heavy/ReAct/VRO settlement commits history/final transcript and
+  advances FIFO. Cancel, failure, disconnect and recovery preserve future IDs and
+  pause dispatch until `/queue resume`; an uncertain active turn is never replayed.
+  Runtime ownership and approvals gate promotion, independently of UI redraws.
+  Preserve subsequent typed/paste/image drafts when promoting queued work.
+  The existing atomic writer stores the journal and inspection identity alongside
+  backward-compatible conversation/search fields. Session loading validates the
+  journal and retains stable IDs. Dropping pending work removes its payload only
+  after a durable command transition; failed persistence restores it.
   `render_permission_modal` overlays a centered `Clear` + bordered dialog
   (`PermissionModal`/`PermissionChoice` exported from `lib.rs`) whenever
   `ViewModel::pending_permission` is set; the binary's event loop intercepts
   Tab/Left/Right (toggle focus) and Enter/Esc (submit/dismiss) while the
   modal is up and resolves through `PermissionRequest::approve` / `reject`.
+  Ctrl+P opens a command-only composer for queue, inspection, steering and safe
+  informational commands. It moves the original draft aside and hides only the
+  modal projection; the actual approval remains pending and blocks promotion.
+  Esc restores the original text/paste/image draft and approval dialog. Ordinary
+  Enter/Tab cannot admit future work from this command-only view.
   Each frame retires requests whose waiting operation ended, clears the mobile
   approval capability, and skips expired queued requests with a bounded drain.
   A stale approval must never block input or consume a fresh operation's decision.
@@ -546,8 +574,10 @@ business logic.
   handles `Event::Paste(text)` as a single contiguous insertion at the
   composer cursor (NOT as individual `Char` / `Enter` events, which would
   shatter multi-line clipboard content into premature submissions on the
-  first embedded `\n`). The paste is swallowed while the permission modal
-  is up so the user cannot type behind the dialog. **(2) Live Tool
+  first embedded `\n`). Terminal paste is literal text even when it names an
+  existing image file; native clipboard image/path handling remains separate.
+  Paste is swallowed while the permission modal is up unless its explicit
+  Ctrl+P command view is open. **(2) Live Tool
   Telemetry** — `format_react_executing_entry(name)` emits
   `⏳ *Executing* \`<name>\`...` to the trajectory channel BEFORE
   `TrajectoryCapturingInvoker` awaits `inner.invoke`, so the Reasoning
@@ -1128,10 +1158,10 @@ business logic.
   any hidden missing route.
 - Clipboard image paste is an interactive-terminal-only host capability, so it
   has no ACP protocol twin. Plain Ctrl+V reads native bitmap data through the
-  platform clipboard and normalizes it to PNG; terminal bracketed paste and
-  clipboard text share one path-aware ingestion route so an existing
-  PNG/JPEG/WebP/AVIF path is queued through the established image pipeline
-  instead of being parsed as a slash command. Undocumented AVIF upload is
+  platform clipboard and normalizes it to PNG. Native clipboard text retains
+  path-aware PNG/JPEG/WebP/AVIF attachment handling through the established
+  image pipeline. Terminal `Event::Paste` uses literal text ingestion and never
+  consumes an existing path as an image; `/image` remains the explicit route. Undocumented AVIF upload is
   prohibited: pasted AVIF files are normalized locally with ImageMagick or
   ffmpeg, while copied bitmap pixels need no external converter. Normal text,
   multiline text, and real slash commands remain composer input.
@@ -1223,19 +1253,26 @@ business logic.
   PRD §8.1 mode list is authoritative — `parse_reasoning_mode` rejects
   every invented mode with a usage error listing all six.
 
-## Mid-Turn Submits (queued prompts + instant slash answers)
+## Mid-Turn Submits
 
-While an agent turn is running (`agent_running`): informational slash
-commands keep answering instantly (dispatch is pure transcript work);
-`/usage` runs on its OWN channel (`usage_rx`, drained by
-`drain_usage_event`) instead of hijacking the agent channel, so the quota
-answer lands mid-turn; the slash-command palette stays visible; and a
-free-text prompt or workflow submit is QUEUED (`queued_prompt`) and fired
-by the main loop through the shared `spawn_submitted_prompt` path the
-moment the turn completes — never silently dropped, never interrupting the
-work (ACP mid-turn-slash-grace parity; see `apps/agent-vesper-acp/AGENTS.md`).
+Enter queues an ordinary future user turn; `/steer` explicitly changes the active
+turn. The canonical journal owns FIFO and active/settled state, with durable
+admission/promotion/settlement through the existing session writer. The shared
+`spawn_submitted_prompt` path retains direct, ReAct and VRO routing. Runtime
+failure/cancellation and crash recovery pause future work; `/queue resume`
+releases only pending turns. No rendering state grants execution authority.
 
 ## Verification
+
+- `messages::tests`, binary `message_queue_tests` and `queue_approval_test` cover
+  composition, limits, durable IDs, FIFO, runtime terminal classification,
+  approvals, pause/resume, persistence failure and legacy/crash recovery.
+- `ui::queue_paste_render_tests` verifies runtime versus queue projections and
+  explicit inspection. `tests/message_queue_pty.py` exercises real Enter/paste,
+  multiple future turns, drop, command bypass, full inspection, compact transcript
+  and restart with a held loopback provider. Its Unix integration wrapper is
+  compiled under `integration-test-harness`; no live account is used.
+
 
 - Startup PTY readers answer each cursor-position query exactly once across
   split reads. Cold startup uses the existing 20-second fixture budget while

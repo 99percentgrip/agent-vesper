@@ -1,0 +1,453 @@
+{
+  "objective": "tui-message-queue-paste-20261012",
+  "canonical_source": "1253ff8bfb89e23195557a6397783d36ed4209df",
+  "branch": "feat/tui-message-queue-paste-20261012",
+  "source_sha256": {
+    "apps/agent-vesper-tui/src/commands.rs": "004d45686f75cb98c41bcb49e9fb157081f82aa69edc067161588e90bd719381",
+    "apps/agent-vesper-tui/src/dispatch.rs": "7394a16ee039f8238521e8d90affc3429854e7bc8a52df954c8a758dc85ccda8",
+    "apps/agent-vesper-tui/src/lib.rs": "f0e34d28557e932f8875c4e736fe3ef980c1d4dcdca59b27bd9958dc12f1fcf2",
+    "apps/agent-vesper-tui/src/main.rs": "f191e7bba05ca67291531c975d921067f2ffd3451fa065425f0acd5e14285d5c",
+    "apps/agent-vesper-tui/src/messages.rs": "3743bdc6269a35bffd538cec40fefe42f2d7eaadf5d29f66abe603f8f3bbff70",
+    "apps/agent-vesper-tui/src/swarm_host.rs": "1e3ef27e7d37fbde681faa562e2b48c5e1155ce2427960c24d2b9d384a7f9cec",
+    "apps/agent-vesper-tui/src/ui.rs": "32a8caa165c2ccad14e891dbb1b0ff277d647eb2f6b969824d3ef9167e86f655",
+    "apps/agent-vesper-tui/tests/message_queue_pty.py": "6bfcecc5a20eb853aaf93ff36ddb4c0563e1366abc1c437b8b4677e8ea9b0ac9",
+    "apps/agent-vesper-tui/tests/message_queue_pty.rs": "87a74fd6f5ffb8ba63e6297151c17dbfd0dfd559b8e7ae60ec4c68838e74d496"
+  },
+  "mandatory_gates": [
+    {
+      "name": "acceptance",
+      "command": [
+        "cargo",
+        "xtask",
+        "acceptance"
+      ],
+      "exit_code": 0,
+      "elapsed_seconds": 207.5,
+      "log": "/tmp/vesper-queue-gate-acceptance.log",
+      "log_sha256": "df5f69a43afccc5659a5a76430064852727fd1bf02e92041ca3758f4d184a6a1",
+      "log_tail": [
+        "acceptance verified: rrc_child_output_is_captured_sanitized_and_confined_in_a_real_pty",
+        "acceptance progress: 159/165 — rrc_child_output_is_captured_sanitized_and_confined_in_a_real_pty",
+        "acceptance verified: native_release_admission_does_not_wait_for_account_model_discovery",
+        "acceptance progress: 160/165 — native_release_admission_does_not_wait_for_account_model_discovery",
+        "acceptance verified: release_executor::tests::only_newly_classified_local_gate_errors_continue_to_repair",
+        "acceptance progress: 161/165 — release_executor::tests::only_newly_classified_local_gate_errors_continue_to_repair",
+        "acceptance verified: release_executor::tests::local_repair_dispatch_errors_are_retained_as_liveness_failures",
+        "acceptance progress: 162/165 — release_executor::tests::local_repair_dispatch_errors_are_retained_as_liveness_failures",
+        "acceptance verified: tests::release_repair_uses_selected_model_and_effort_before_account_discovery",
+        "acceptance progress: 163/165 — tests::release_repair_uses_selected_model_and_effort_before_account_discovery",
+        "acceptance verified: tests::release_repair_configuration_uses_session_model_and_provider_controls",
+        "acceptance progress: 164/165 — tests::release_repair_configuration_uses_session_model_and_provider_controls",
+        "acceptance verified: ui::tests::recoverable_release_is_not_rendered_as_running_or_ready",
+        "acceptance progress: 165/165 — ui::tests::recoverable_release_is_not_rendered_as_running_or_ready",
+        "Acceptance regression gate: 165 exact cases passed in 207351 ms. Offline fixture model cost: zero; live-model effectiveness is not measured."
+      ]
+    },
+    {
+      "name": "verify",
+      "command": [
+        "cargo",
+        "xtask",
+        "verify"
+      ],
+      "exit_code": 0,
+      "elapsed_seconds": 949.61,
+      "log": "/tmp/vesper-queue-gate-verify.log",
+      "log_sha256": "5f44aa3f625a97d4048b2d7194fdd307a36ba76e2dc3014da43be1d5dcdd19e4",
+      "log_tail": [
+        "acceptance verified: rrc_child_output_is_captured_sanitized_and_confined_in_a_real_pty",
+        "acceptance progress: 159/165 — rrc_child_output_is_captured_sanitized_and_confined_in_a_real_pty",
+        "acceptance verified: native_release_admission_does_not_wait_for_account_model_discovery",
+        "acceptance progress: 160/165 — native_release_admission_does_not_wait_for_account_model_discovery",
+        "acceptance verified: release_executor::tests::only_newly_classified_local_gate_errors_continue_to_repair",
+        "acceptance progress: 161/165 — release_executor::tests::only_newly_classified_local_gate_errors_continue_to_repair",
+        "acceptance verified: release_executor::tests::local_repair_dispatch_errors_are_retained_as_liveness_failures",
+        "acceptance progress: 162/165 — release_executor::tests::local_repair_dispatch_errors_are_retained_as_liveness_failures",
+        "acceptance verified: tests::release_repair_uses_selected_model_and_effort_before_account_discovery",
+        "acceptance progress: 163/165 — tests::release_repair_uses_selected_model_and_effort_before_account_discovery",
+        "acceptance verified: tests::release_repair_configuration_uses_session_model_and_provider_controls",
+        "acceptance progress: 164/165 — tests::release_repair_configuration_uses_session_model_and_provider_controls",
+        "acceptance verified: ui::tests::recoverable_release_is_not_rendered_as_running_or_ready",
+        "acceptance progress: 165/165 — ui::tests::recoverable_release_is_not_rendered_as_running_or_ready",
+        "Acceptance regression gate: 165 exact cases passed in 207427 ms. Offline fixture model cost: zero; live-model effectiveness is not measured."
+      ]
+    },
+    {
+      "name": "msrv",
+      "command": [
+        "cargo",
+        "xtask",
+        "msrv"
+      ],
+      "exit_code": 0,
+      "elapsed_seconds": 772.1,
+      "log": "/tmp/vesper-queue-gate-msrv.log",
+      "log_sha256": "913768a3afdde08c48b00c233a329d5d4b141e51efe9feac28dcea3b7afd7839",
+      "log_tail": [
+        "",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "",
+        "   Doc-tests vesper_web",
+        "",
+        "running 0 tests",
+        "",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "",
+        "   Doc-tests vesper_web_fetch",
+        "",
+        "running 0 tests",
+        "",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        ""
+      ]
+    },
+    {
+      "name": "deny",
+      "command": [
+        "cargo",
+        "deny",
+        "--all-features",
+        "check"
+      ],
+      "exit_code": 0,
+      "elapsed_seconds": 1.29,
+      "log": "/tmp/vesper-queue-gate-deny.log",
+      "log_sha256": "abddaadac3dd7f3143440c6048c76a4047cd7dde6a572ad62e6ef03b7c0a7fd6",
+      "log_tail": [
+        "    │ ╰────────────────────────────────────────────────────────────────────────────────┘ lock entries",
+        "    │  ",
+        "    ├ windows_x86_64_msvc v0.42.2",
+        "      └── windows-targets v0.42.2",
+        "          └── windows-sys v0.45.0",
+        "              └── jni v0.21.1",
+        "                  └── cpal v0.17.3",
+        "                      └── agent-vesper-tui v0.24.12",
+        "    ├ windows_x86_64_msvc v0.52.6",
+        "      └── windows-targets v0.52.6",
+        "          └── windows-sys v0.52.0",
+        "              └── arboard v3.6.1",
+        "                  └── agent-vesper-tui v0.24.12",
+        "",
+        "advisories ok, bans ok, licenses ok, sources ok"
+      ]
+    },
+    {
+      "name": "audit",
+      "command": [
+        "cargo",
+        "audit"
+      ],
+      "exit_code": 0,
+      "elapsed_seconds": 2.62,
+      "log": "/tmp/vesper-queue-gate-audit.log",
+      "log_sha256": "fe3268c1d4700767399d43c101668c45ccd627d351568676b39f9924bbf8b6bd",
+      "log_tail": [
+        "    Fetching advisory database from `https://github.com/RustSec/advisory-db.git`",
+        "      Loaded 1296 security advisories (from /home/Alex/.cargo/advisory-db)",
+        "    Updating crates.io index",
+        "    Scanning Cargo.lock for vulnerabilities (554 crate dependencies)"
+      ]
+    },
+    {
+      "name": "fmt",
+      "command": [
+        "cargo",
+        "fmt",
+        "--all",
+        "--",
+        "--check"
+      ],
+      "exit_code": 0,
+      "elapsed_seconds": 1.7,
+      "log": "/tmp/vesper-queue-gate-fmt.log",
+      "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "log_tail": []
+    },
+    {
+      "name": "whitespace",
+      "command": [
+        "git",
+        "diff",
+        "--check"
+      ],
+      "exit_code": 0,
+      "elapsed_seconds": 0.04,
+      "log": "/tmp/vesper-queue-gate-whitespace.log",
+      "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "log_tail": []
+    }
+  ],
+  "focused_regressions": [
+    {
+      "name": "lifecycle",
+      "command": [
+        "cargo",
+        "test",
+        "-p",
+        "agent-vesper-tui",
+        "--all-features",
+        "message_queue_tests"
+      ],
+      "exit_code": 0,
+      "elapsed_seconds": 1.45,
+      "log": "/tmp/vesper-queue-focused-lifecycle-frozen.log",
+      "log_sha256": "77a2a2f28726815badac4966aa3285b83f498eb0f7345230e56bf93bf770ab95",
+      "results": [
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 323 filtered out; finished in 0.00s",
+        "test result: ok. 18 passed; 0 failed; 0 ignored; 0 measured; 179 filtered out; finished in 1.11s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 4 filtered out; finished in 0.00s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 6 filtered out; finished in 0.00s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 10 filtered out; finished in 0.00s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 6 filtered out; finished in 0.00s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 10 filtered out; finished in 0.00s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 12 filtered out; finished in 0.00s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 3 filtered out; finished in 0.00s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 13 filtered out; finished in 0.00s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 5 filtered out; finished in 0.00s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 11 filtered out; finished in 0.00s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 0.00s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 7 filtered out; finished in 0.00s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 8 filtered out; finished in 0.00s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 12 filtered out; finished in 0.00s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 4 filtered out; finished in 0.00s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 0.00s"
+      ]
+    },
+    {
+      "name": "approval",
+      "command": [
+        "cargo",
+        "test",
+        "-p",
+        "agent-vesper-tui",
+        "--all-features",
+        "pending_real_approval_prevents_queue_promotion"
+      ],
+      "exit_code": 0,
+      "elapsed_seconds": 0.31,
+      "log": "/tmp/vesper-queue-focused-approval-frozen.log",
+      "log_sha256": "96b43342a986c378d138902f6d09facbe85ad4e41e5ebe5ec5cb6735eba03a64",
+      "results": [
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 323 filtered out; finished in 0.00s",
+        "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 196 filtered out; finished in 0.05s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 4 filtered out; finished in 0.00s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 6 filtered out; finished in 0.00s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 10 filtered out; finished in 0.00s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 6 filtered out; finished in 0.00s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 10 filtered out; finished in 0.00s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 12 filtered out; finished in 0.00s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 3 filtered out; finished in 0.00s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 13 filtered out; finished in 0.00s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 5 filtered out; finished in 0.00s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 11 filtered out; finished in 0.00s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 0.00s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 7 filtered out; finished in 0.00s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 8 filtered out; finished in 0.00s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 12 filtered out; finished in 0.00s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 4 filtered out; finished in 0.00s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 0.00s"
+      ]
+    },
+    {
+      "name": "cancel",
+      "command": [
+        "cargo",
+        "test",
+        "-p",
+        "agent-vesper-tui",
+        "--all-features",
+        "explicit_cancellation_preserves_visible_partial_output"
+      ],
+      "exit_code": 0,
+      "elapsed_seconds": 0.3,
+      "log": "/tmp/vesper-queue-focused-cancel-frozen.log",
+      "log_sha256": "bda6520f237db926b39ef72780119c1c6885e57ff7041cafbd2bd94798ec9ff9",
+      "results": [
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 323 filtered out; finished in 0.00s",
+        "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 196 filtered out; finished in 0.05s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 4 filtered out; finished in 0.00s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 6 filtered out; finished in 0.00s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 10 filtered out; finished in 0.00s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 6 filtered out; finished in 0.00s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 10 filtered out; finished in 0.00s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 12 filtered out; finished in 0.00s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 3 filtered out; finished in 0.00s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 13 filtered out; finished in 0.00s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 5 filtered out; finished in 0.00s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 11 filtered out; finished in 0.00s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 0.00s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 7 filtered out; finished in 0.00s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 8 filtered out; finished in 0.00s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 12 filtered out; finished in 0.00s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 4 filtered out; finished in 0.00s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 0.00s"
+      ]
+    },
+    {
+      "name": "model",
+      "command": [
+        "cargo",
+        "test",
+        "-p",
+        "agent-vesper-tui",
+        "--lib",
+        "--all-features",
+        "messages::tests"
+      ],
+      "exit_code": 0,
+      "elapsed_seconds": 0.21,
+      "log": "/tmp/vesper-queue-focused-model-frozen.log",
+      "log_sha256": "3f44bed14d85c51178bda5882c48505d1b43e57b65639c812b67c6c8234ddbfe",
+      "results": [
+        "test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 316 filtered out; finished in 0.01s"
+      ]
+    },
+    {
+      "name": "render",
+      "command": [
+        "cargo",
+        "test",
+        "-p",
+        "agent-vesper-tui",
+        "--lib",
+        "--all-features",
+        "queue_paste_render_tests"
+      ],
+      "exit_code": 0,
+      "elapsed_seconds": 0.2,
+      "log": "/tmp/vesper-queue-focused-render-frozen.log",
+      "log_sha256": "4e54c1f099d8787386887781aaf51b3a87e2d09419bba7e70c03b2d23fbe97a7",
+      "results": [
+        "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 320 filtered out; finished in 0.03s"
+      ]
+    },
+    {
+      "name": "terminal",
+      "command": [
+        "cargo",
+        "test",
+        "-p",
+        "agent-vesper-tui",
+        "--all-features",
+        "--test",
+        "message_queue_pty"
+      ],
+      "exit_code": 0,
+      "elapsed_seconds": 39.6,
+      "log": "/tmp/vesper-queue-focused-terminal-frozen.log",
+      "log_sha256": "38e0f94acaaa0eb1c9b765e5f9db76f97077cd168487716f512079e5e251ba1d",
+      "results": [
+        "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 39.44s"
+      ]
+    }
+  ],
+  "red_before_green": {
+    "source_extracted_function": "take_composer_text",
+    "canonical_source": "1253ff8bfb89e23195557a6397783d36ed4209df",
+    "exit_code": 101,
+    "expected": "AB\nCD\r\n",
+    "actual": "AC\n\nB\n\n\nD\r\n",
+    "log_sha256": "c47b28ba5fc1e5e92eac207830d97f8d406a321860e25502f239be555eac86bc"
+  },
+  "production_regressions": [
+    "test dispatch::integration_tests::queue_and_inspection_commands_stay_on_the_command_plane ... ok",
+    "test messages::tests::cancellation_error_recovery_preserve_future_without_replay ... ok",
+    "test messages::tests::collapse_thresholds_unicode_and_newlines ... ok",
+    "test messages::tests::corrupt_paste_identities_and_exhausted_counters_fail_closed ... ok",
+    "test messages::tests::lifecycle_fifo_one_owner_no_redraw_duplicate ... ok",
+    "test messages::tests::mixed_events_preserve_exact_order ... ok",
+    "test messages::tests::persistence_complete_payload_ids_and_uncertain_recovery ... ok",
+    "test messages::tests::queue_drop_clear_and_bounded_paste_projection ... ok",
+    "test ui::queue_paste_render_tests::inspection_is_an_explicit_overlay_and_normal_frames_stay_compact ... ok",
+    "test ui::queue_paste_render_tests::runtime_and_queue_projection_remain_independent ... ok",
+    "test ui::queue_paste_render_tests::structured_transcript_keeps_each_paste_identity_without_refolding ... ok",
+    "test message_queue_tests::acknowledged_mid_turn_message_is_durable_not_steering_and_draft_clears ... ok",
+    "test message_queue_tests::active_history_load_cannot_replace_acknowledged_queue ... ok",
+    "test message_queue_tests::command_dispatch_registers_queue_steer_and_paste_without_user_turns ... ok",
+    "test message_queue_tests::delegated_cancellation_requires_the_host_token_and_retains_output ... ok",
+    "test message_queue_tests::cancel_retains_future_and_requires_explicit_resume ... ok",
+    "test message_queue_tests::failed_admission_retains_draft_and_does_not_acknowledge_queue ... ok",
+    "test message_queue_tests::failed_promotion_restores_pending_identity_and_pauses ... ok",
+    "test message_queue_tests::delegated_failure_provider_error_and_disconnected_channel_pause_queue ... ok",
+    "test message_queue_tests::full_inspection_collapsed_transcript_and_expanded_resume_are_preserved ... ok",
+    "test message_queue_tests::legacy_folded_history_preserves_activity_and_inspects_original_body ... ok",
+    "test message_queue_tests::failed_queue_mutations_restore_payloads_and_never_drop_active_work ... ok",
+    "test message_queue_tests::old_sessions_load_without_queue_or_schema_regression ... ok",
+    "test message_queue_tests::preflight_deferral_keeps_one_user_projection_and_the_same_identity ... ok",
+    "test message_queue_tests::production_composer_exact_event_order_and_boundaries ... ok",
+    "test message_queue_tests::queue_inspect_drop_clear_and_explicit_steering_are_distinct ... ok",
+    "test message_queue_tests::successful_normal_and_tool_heavy_settle_before_fifo_promotion ... ok",
+    "test message_queue_tests::terminal_image_path_is_literal_editable_text_and_preserves_line_endings ... ok",
+    "test queue_approval_test::pending_real_approval_prevents_queue_promotion ... ok",
+    "test message_queue_tests::production_react_and_vro_bridge_preserves_all_terminal_outcomes ... ok",
+    "test terminal_message_queue_and_paste_lifecycle ... ok"
+  ],
+  "existing_ignored_cases": [
+    "test native_acp_settings_run_executes_three_workers_and_captures_tool_continuations ... ignored, requires a real local container runtime and selected immutable image",
+    "test swarm_host_tests::native_tui_swarm_settings_task_and_history_round_trip ... ignored, requires real container runtime and bundled Landlock image; all state is isolated",
+    "test microphone_free_voice_lifecycle ... ignored, requires VESPER_TEST_PYTHON pointing to a Python with numpy",
+    "test live_react_loop_calls_ping_then_finishes ... ignored, live integration test — requires LM Studio at localhost:1234",
+    "test live_react_loop_enforces_max_model_calls_against_real_endpoint ... ignored, live integration test — requires LM Studio at localhost:1234",
+    "test live_react_loop_finishes_with_real_lm_studio_endpoint ... ignored, live integration test — requires LM Studio at localhost:1234",
+    "test soak_gvr_loop_runs_50_iterations_without_panic_or_leak ... ignored, VRO-10 §22.4 soak test: 50 iterations; run with --ignored",
+    "test soak_loop_detector_200_call_mixed_workload_bounded_and_deterministic ... ignored, VRO-12 §6 S1 soak test: 200 iterations; run with --ignored",
+    "test soak_mixed_long_session_50_turns_no_state_corruption ... ignored, VRO-10 §22.4 soak test: mixed long session × 50 turns; run with --ignored",
+    "test soak_parallel_executor_runs_20_iterations_without_dangling_tasks ... ignored, VRO-10 §22.4 soak test: parallel fan-out × 20 iterations; run with --ignored",
+    "test soak_rate_limit_tracker_survives_50_record_429_then_clear_cycles ... ignored, VRO-10 §22.4 soak test: rate-limit churn × 50; run with --ignored",
+    "test soak_repair_controller_retains_only_most_recent_signature_across_50_attempts ... ignored, VRO-10 §22.4 soak test: repair signature growth; run with --ignored",
+    "test hosted_native_credential_persistence ... ignored, explicit hosted OS credential-manager acceptance only",
+    "test hosted_native_credential_reload_child ... ignored, spawned only by the explicit hosted native persistence fixture",
+    "test acceptance::enrollment_bounds_tests::real_vesper_bridge_prd_opens_under_the_raised_ceiling ... ignored, workspace-layout probe; run explicitly with --ignored",
+    "test bridge_service::adapter_tests::live_mpris_player_control ... ignored, live: run any MPRIS player first",
+    "test bridge_service::adapter_tests::live_resolve_worker_status_roundtrip ... ignored, live: set VESPER_BRIDGE_RESOLVE_IPC with the worker pasted in Resolve",
+    "test bridge_service::latency_tests::live_product_path_latency_budget ... ignored, live: requires a running MPRIS player",
+    "test dependency_setup::tests::real_dependency_browser_readiness ... ignored, explicit contained runtime acceptance; requires isolated engine storage and a pinned image",
+    "test swarm_sandbox::tests::native_shared_scope_confines_siblings_and_reaps_detached_descendants ... ignored, requires the bundled Landlock image and real enforcing container runtime",
+    "test real_browser_feedback_reaches_native_provider_continuation ... ignored, explicit real browser -> native worker -> captured provider continuation",
+    "test native_container_hive_runs_two_permissioned_commands_per_worker_and_verifies_cleanup ... ignored, requires a real container runtime and explicitly selected local image",
+    "test native_scoped_hive_runs_two_permissioned_commands_per_worker_and_verifies_cleanup ... ignored, requires the real namespace supervisor; fails rather than skips when unavailable",
+    "test native_shared_scope_hive_runs_all_topologies_and_cancellation ... ignored, requires bundled Landlock image and real container isolation",
+    "test native_shared_service_runs_permissioned_workers_with_project_inputs_and_cleanup ... ignored, requires a real container runtime and explicitly selected local image",
+    "test playwright_live_tests::real_playwright_navigation_snapshot_click_isolation_close ... ignored, requires explicitly supplied local Node and Playwright MCP CLI; launches isolated Chrome",
+    "test auth::tests::hosted_device_flow_persists_large_subscription_record ... ignored, explicit hosted synthetic device-flow/native-store acceptance only",
+    "test docker_default_provisions_no_network ... ignored, requires a real Docker daemon; run with DOCKER_AVAILABLE=1",
+    "test docker_resource_limits_are_enforced ... ignored, requires a real Docker daemon; run with DOCKER_AVAILABLE=1",
+    "test docker_run_exec_provisions_workspace_and_teardown_reaps ... ignored, requires a real Docker daemon; run with DOCKER_AVAILABLE=1",
+    "test namespace_security_and_timeout_acceptance ... ignored, requires real namespaces; unavailable isolation fails acceptance",
+    "test clustered_insertion_order_measures_recall_against_exact_cosine ... ignored, explicit adversarial clustered-vector recall measurement",
+    "test high_dimensional_default_capacity_retains_coherent_readers ... ignored, explicit high-dimensional default-capacity measurement",
+    "test one_thousand_retained_admissions_reclaim_capacity_and_keep_reader_generation ... ignored, explicit bounded retention measurement; run with --ignored --nocapture",
+    "test ten_thousand_records_with_retained_generation_and_lossless_reload ... ignored, explicit bounded scale measurement; run with --ignored --nocapture",
+    "test live_headless_pipe_handshake ... ignored, live headless browser required",
+    "test perf::perf_prune_and_convert_hundred_k_nodes ... ignored, release-profile perf gate",
+    "test perf::perf_serialize_five_k_interactables ... ignored, release-profile perf gate",
+    "test browser::live_tests::real_navigation_and_chunked_fetch ... ignored, requires a real image/runtime and explicitly permits public website access",
+    "test browser::live_tests::real_pipe_browser_actions_redaction_and_stale_indices ... ignored, requires VESPER_WEB_TEST_IMAGE and a real container runtime",
+    "test docker_backend_executes_fetch_helper ... ignored, live docker + network required",
+    "test crates/vesper-swarm/src/pool.rs - pool::WorkerPool::heartbeat_interval (line 835) ... ignored",
+    "test crates/vesper-swarm/src/pool.rs - pool::WorkerPool::heartbeat_interval (line 835) ... ignored"
+  ],
+  "real_terminal": "Linux POSIX PTY; held synthetic xAI loopback; mixed paste, FIFO, actual hosted-tool approval commands/draft restoration and tool-heavy continuation, cancellation, terminal error, crash and explicit resume",
+  "live_only_unexecuted": [
+    "Native Windows ConPTY/macOS interaction",
+    "Live provider multi-turn and delegated VRO/ReAct behavior"
+  ],
+  "prohibited_actions": {
+    "push": false,
+    "tag": false,
+    "release": false,
+    "install": false,
+    "rrc_state_mutation": false,
+    "vro19_work": false
+  },
+  "ready_for_live_acceptance": true
+}

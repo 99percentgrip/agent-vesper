@@ -127,6 +127,8 @@ pub struct SessionState {
     pub pending_mobile_toggle: bool,
     /// Whether to edit and live-reload persistent keybindings.
     pub pending_keybind_editor: bool,
+    /// Terminal queue, inspection or explicit steering command intent.
+    pub pending_message_command: Option<crate::commands::MessageCommand>,
     /// Native image operation for the binary to execute after dispatch.
     pub pending_media_op: Option<crate::commands::MediaOp>,
     /// Side question to execute with the configured auxiliary model.
@@ -465,6 +467,7 @@ fn apply_outcome(
         pending_diff_annotator,
         pending_mobile_toggle,
         pending_keybind_editor,
+        pending_message_command,
         pending_media_op,
         pending_auxiliary_question,
         pending_provider_usage,
@@ -509,6 +512,9 @@ fn apply_outcome(
         }
         CommandOutcome::Error(message) => {
             *status = Some(message);
+        }
+        CommandOutcome::Message(operation) => {
+            *pending_message_command = Some(operation);
         }
         CommandOutcome::Prompt(text) => {
             // During PLANNING the driver answers the oldest pending question
@@ -1265,6 +1271,39 @@ mod integration_tests {
     use crate::ui::{StubRenderer, TerminalRenderer, ViewModel};
     use vesper_domain::{BoundedString, ProviderId};
     use vesper_provider::{SuperpowerDescriptor, SuperpowerKind, SuperpowerScope, SuperpowerValue};
+
+    #[test]
+    fn queue_and_inspection_commands_stay_on_the_command_plane() {
+        let registry = crate::commands::CommandRegistry::stage_11b();
+        let surface =
+            crate::ProviderSuperpowerSurface::new(ProviderId::new("fixture").unwrap(), vec![]);
+        for command in [
+            "/queue",
+            "/queue drop m1",
+            "/queue clear",
+            "/queue resume",
+            "/steer guidance",
+            "/paste p1",
+        ] {
+            let mut state = SessionState::new();
+            let _ = dispatch(
+                &CommandIntent::parse(command),
+                &registry,
+                &surface,
+                &vesper_provider::PermissiveSuperpowerPolicy,
+                surface.provider_id(),
+                &mut state,
+            );
+            assert!(state.pending_message_command.is_some(), "{command}");
+            assert!(
+                !state
+                    .transcript
+                    .iter()
+                    .any(|line| line.starts_with("user:")),
+                "{command}"
+            );
+        }
+    }
 
     #[test]
     fn vro119_native_mouse_defaults_on_so_the_wheel_reaches_the_app() {

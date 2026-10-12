@@ -251,6 +251,9 @@ pub struct ViewModel {
     pub background_task: Option<BackgroundTaskState>,
     /// Number of follow-up prompts retained in the native FIFO.
     pub queued_prompt_count: usize,
+    pub content_inspection: Option<ContentInspection>,
+    pub queue_paused: bool,
+    pub composer_projection: Option<(String, u16)>,
     /// Typed live controls governing real agent turns.
     pub controls: SessionControls,
     /// Native dashboard panel visibility.
@@ -365,6 +368,7 @@ fn footer_candidates(model: &ViewModel) -> Vec<FooterChip> {
     };
     if model.pending_permission.is_some() {
         return vec![
+            chip("Ctrl+P", "Commands", "approval_commands"),
             chip("Tab", "Choose", "permission_choose"),
             chip("Enter", "Confirm", "permission_confirm"),
             FooterChip {
@@ -395,8 +399,8 @@ fn footer_candidates(model: &ViewModel) -> Vec<FooterChip> {
     };
     if model.agent_running {
         return vec![
-            chip("Enter", "Steer", "submit"),
-            chip("Tab", "Queue", "queue"),
+            chip("Enter", "Queue", "submit"),
+            chip("/steer", "Steer", "open_steering"),
             FooterChip {
                 warning: true,
                 ..chip("Ctrl+C", "Stop", "cancel_turn")
@@ -430,6 +434,13 @@ fn footer_candidates(model: &ViewModel) -> Vec<FooterChip> {
         chip("F1", "More", "show_help"),
     ]);
     candidates
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct ContentInspection {
+    pub title: String,
+    pub lines: Vec<String>,
+    pub horizontal_scroll: u16,
 }
 
 /// Projects current-state footer actions into exactly one terminal row.
@@ -850,13 +861,22 @@ pub fn render_to_frame(frame: &mut Frame<'_>, model: &ViewModel) {
                 .add_modifier(Modifier::BOLD),
         ));
     }
-    if model.input.is_empty() && model.composer_attachments.is_empty() {
+    if model.input.is_empty()
+        && model.composer_attachments.is_empty()
+        && model.composer_projection.is_none()
+    {
         composer_spans.push(Span::styled(
             "Type a prompt or / for commands",
             Style::default().fg(palette.muted),
         ));
     } else {
-        composer_spans.push(Span::raw(model.input.clone()));
+        composer_spans.push(Span::raw(
+            model
+                .composer_projection
+                .as_ref()
+                .map(|(text, _)| text.clone())
+                .unwrap_or_else(|| model.input.clone()),
+        ));
     }
     let composer_title = if model.preferences.vim {
         format!(
@@ -884,9 +904,16 @@ pub fn render_to_frame(frame: &mut Frame<'_>, model: &ViewModel) {
                 .iter()
                 .map(|label| label.chars().count() as u16 + 1)
                 .sum::<u16>()
-                + model.input[..model.preferences.composer_cursor.min(model.input.len())]
-                    .chars()
-                    .count() as u16,
+                + model
+                    .composer_projection
+                    .as_ref()
+                    .map(|(_, cursor)| *cursor)
+                    .unwrap_or_else(|| {
+                        model.input[..model.preferences.composer_cursor.min(model.input.len())]
+                            .chars()
+                            .count()
+                            .min(u16::MAX as usize) as u16
+                    }),
         )
         .min(composer_area.right().saturating_sub(1));
     frame.set_cursor_position(Position {
@@ -937,6 +964,21 @@ pub fn render_to_frame(frame: &mut Frame<'_>, model: &ViewModel) {
     // Overlay the tool-permission modal LAST so it paints over every other
     // panel. `Clear` resets the underlying cells first so the dialog reads as
     // a true pop-up rather than a tinted in-place block.
+    if let Some(view) = &model.content_inspection {
+        let area = frame.area();
+        frame.render_widget(Clear, area);
+        frame.render_widget(
+            Paragraph::new(view.lines.join("\n"))
+                .scroll((0, view.horizontal_scroll))
+                .style(Style::default().fg(palette.text).bg(palette.surface))
+                .block(
+                    Block::default()
+                        .borders(Borders::ALL)
+                        .title(view.title.as_str()),
+                ),
+            area,
+        );
+    }
     render_permission_modal(frame, model, palette);
 }
 
@@ -979,7 +1021,19 @@ fn run_status_line(model: &ViewModel, show_sidebar: bool, palette: ThemePalette)
         return Line::from(vec![
             Span::styled("○ ", Style::default().fg(palette.muted)),
             Span::styled(
-                model.status.clone().unwrap_or_else(|| "Ready".into()),
+                format!(
+                    "{}{}",
+                    model.status.clone().unwrap_or_else(|| "Ready".into()),
+                    if model.queued_prompt_count > 0 {
+                        format!(
+                            " · QUEUED {}{}",
+                            model.queued_prompt_count,
+                            if model.queue_paused { " · paused" } else { "" }
+                        )
+                    } else {
+                        String::new()
+                    }
+                ),
                 Style::default().fg(palette.muted),
             ),
         ]);
@@ -1004,7 +1058,11 @@ fn run_status_line(model: &ViewModel, show_sidebar: bool, palette: ThemePalette)
         detail.push(format!("thought for {}", format_duration(ms)));
     }
     if model.queued_prompt_count > 0 {
-        detail.push(format!("{} queued", model.queued_prompt_count));
+        detail.push(format!(
+            "QUEUED {}{}",
+            model.queued_prompt_count,
+            if model.queue_paused { " · paused" } else { "" }
+        ));
     }
     if !show_sidebar {
         let completed = model
@@ -1022,7 +1080,14 @@ fn run_status_line(model: &ViewModel, show_sidebar: bool, palette: ThemePalette)
                 .add_modifier(Modifier::BOLD),
         ),
         Span::styled(
-            run_activity_label(model),
+            model
+                .status
+                .as_deref()
+                .filter(|status| {
+                    !status.starts_with("WORKING") && !status.starts_with("agent turn complete")
+                })
+                .map(|status| status.chars().take(90).collect::<String>())
+                .unwrap_or_else(|| run_activity_label(model).to_owned()),
             Style::default()
                 .fg(palette.warning)
                 .add_modifier(Modifier::BOLD),
@@ -2669,9 +2734,12 @@ fn compact_visible_prompt(line: String) -> String {
     let Some(body) = line.strip_prefix("user:") else {
         return line;
     };
+    if body.contains("[Pasted Content ·") || body.contains("[Submitted Content ·") {
+        return line;
+    }
     let body = body.trim();
     let count = body.chars().count();
-    if count < 256 && !body.contains('\n') {
+    if count < 1000 && !body.contains('\n') {
         return line;
     }
     let lead = body
@@ -2681,7 +2749,7 @@ fn compact_visible_prompt(line: String) -> String {
         .chars()
         .take(120)
         .collect::<String>();
-    format!("user: {lead} [Pasted Content {count} chars]")
+    format!("user: {lead} [Submitted Content {count} chars]")
 }
 
 /// Compact projection of a verbose provider/tool event stream.
@@ -4128,7 +4196,7 @@ fn resumed_large_prompt_renders_as_a_compact_attachment_chip() {
     let compact = compact_persisted_transcript(&[format!("user: {body}")]);
     assert_eq!(compact.len(), 1);
     assert!(compact[0].contains("Please implement this request"));
-    assert!(compact[0].contains(&format!("[Pasted Content {count} chars]")));
+    assert!(compact[0].contains(&format!("[Submitted Content {count} chars]")));
     assert!(!compact[0].contains("detailed context detailed context"));
 }
 
@@ -4256,7 +4324,7 @@ fn visual_reference_frame_has_agent_cli_information_hierarchy() {
         frame_text.push_str(row.trim_end());
         frame_text.push('\n');
     }
-    assert!(frame_text.contains("[Pasted Content"));
+    assert!(frame_text.contains("[Submitted Content"));
     assert!(frame_text.contains("Ran 3 tools"));
     assert!(frame_text.contains("Edited 1 file (+1 -1)"));
     assert!(frame_text.contains("Implemented"));
@@ -4688,4 +4756,67 @@ fn voice_wait_is_visible_during_an_active_agent_turn() {
             .contains("waiting for speakable agent text"),
         "running voice stage must not be hidden by generic agent activity: {line}"
     );
+}
+
+#[cfg(test)]
+mod queue_paste_render_tests {
+    use super::*;
+    use ratatui::{Terminal, backend::TestBackend};
+    fn screen(model: &ViewModel) -> String {
+        let mut terminal = Terminal::new(TestBackend::new(120, 40)).unwrap();
+        terminal
+            .draw(|frame| render_to_frame(frame, model))
+            .unwrap();
+        let buffer = terminal.backend().buffer();
+        (0..40)
+            .map(|y| {
+                (0..120)
+                    .map(|x| buffer[(x, y)].symbol())
+                    .collect::<String>()
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+    #[test]
+    fn runtime_and_queue_projection_remain_independent() {
+        let mut model = ViewModel {
+            agent_running: true,
+            queued_prompt_count: 2,
+            ..ViewModel::default()
+        };
+        let running = screen(&model);
+        assert!(running.contains("RUNNING"));
+        assert!(running.contains("QUEUED 2"));
+        model.agent_running = false;
+        model.queue_paused = true;
+        let paused = screen(&model);
+        assert!(paused.contains("READY"));
+        assert!(!paused.contains("RUNNING"));
+        assert!(paused.contains("QUEUED 2 · paused"));
+    }
+    #[test]
+    fn inspection_is_an_explicit_overlay_and_normal_frames_stay_compact() {
+        let label = "[Pasted Content · 999,999 chars · 2 lines · p1]";
+        let mut model = ViewModel {
+            transcript: vec![format!("user: {label} · /paste m1")],
+            ..ViewModel::default()
+        };
+        assert!(screen(&model).contains("Pasted Content"));
+        model.content_inspection = Some(ContentInspection {
+            title: "Esc collapse".into(),
+            lines: vec!["FULL_CONTENT_ACCESS".into()],
+            horizontal_scroll: 0,
+        });
+        assert!(screen(&model).contains("FULL_CONTENT_ACCESS"));
+        model.content_inspection = None;
+        assert!(!screen(&model).contains("FULL_CONTENT_ACCESS"));
+    }
+    #[test]
+    fn structured_transcript_keeps_each_paste_identity_without_refolding() {
+        let body = format!(
+            "user: {} [Pasted Content · 5,000 chars · 74 lines · p1] between [Pasted Content · 1,000 chars · 1 lines · p2] · /paste m2",
+            "typed ".repeat(60)
+        );
+        assert_eq!(compact_visible_prompt(body.clone()), body);
+    }
 }

@@ -529,7 +529,12 @@ async fn run(resume_id: Option<String>) -> Result<(), String> {
         trajectory_rx: None,
         agent_task: None,
         agent_running: false,
-        queued_prompts: VecDeque::new(),
+        message_journal: Default::default(),
+        paste_inspection: None,
+        deferred_composer_restore: None,
+        approval_command_backup: None,
+        #[cfg(test)]
+        test_session_root: tempfile::tempdir().expect("isolated session fixture"),
         pending_text_pastes: Vec::new(),
         usage_rx: None,
         approval_rx,
@@ -991,10 +996,19 @@ struct TuiSession {
     agent_running: bool,
     /// Mid-turn FIFO: every submitted follow-up is retained and runs in
     /// order after the active turn. Tab submits to this FIFO while work runs.
-    queued_prompts: VecDeque<String>,
+    message_journal: agent_vesper_tui::messages::MessageJournal,
+    paste_inspection: Option<PasteInspection>,
+    approval_command_backup: Option<ApprovalCommandBackup>,
+    deferred_composer_restore: Option<(
+        String,
+        usize,
+        Vec<agent_vesper_tui::messages::ComposerPaste>,
+    )>,
+    #[cfg(test)]
+    test_session_root: tempfile::TempDir,
     /// Large or multiline bracketed-paste payloads retained verbatim while
     /// the composer renders compact attachment-style labels.
-    pending_text_pastes: Vec<String>,
+    pending_text_pastes: Vec<agent_vesper_tui::messages::ComposerPaste>,
     /// Receiver for an in-flight `/usage` quota query. Deliberately
     /// SEPARATE from `agent_rx` so the query can answer while an agent
     /// turn keeps streaming (it previously deferred until the turn ended
@@ -1116,13 +1130,7 @@ struct TuiSession {
     reasoning_diagnostics: Option<agent_vesper_tui::ReasoningDiagnostics>,
 }
 
-#[derive(Debug, Clone)]
-struct QueuedImage {
-    descriptor: ImageDescriptor,
-    path: std::path::PathBuf,
-    encoded: String,
-    bytes: u64,
-}
+type QueuedImage = agent_vesper_tui::messages::MessageImage;
 
 #[derive(Debug, Clone)]
 struct PendingCapabilitySwitch {
@@ -1150,6 +1158,8 @@ enum AgentEvent {
     Progress(AgentProgressEvent),
     /// The loop returned a terminal outcome.
     Completed {
+        /// True only when the direct or delegated execution path succeeded.
+        execution_succeeded: bool,
         outcome: AgentTurnOutcome,
         history: Vec<ConversationMessage>,
     },
@@ -1229,6 +1239,20 @@ fn handle_mouse_click(
             "close_menu" | "permission_deny" => return MouseClickOutcome::Escape,
             "menu_select" => return MouseClickOutcome::Handled,
             _ => {}
+        }
+        if action == "approval_commands" {
+            open_approval_commands(session);
+            refresh_command_menu(session, registry, surface);
+            return MouseClickOutcome::Handled;
+        }
+        if action == "open_steering" {
+            session.input.insert_str(0, "/steer ");
+            for paste in &mut session.pending_text_pastes {
+                paste.offset += 7;
+            }
+            session.state.preferences.composer_cursor = session.input.len();
+            refresh_command_menu(session, registry, surface);
+            return MouseClickOutcome::Handled;
         }
         if action == "open_palette" {
             session.input = "/".into();
@@ -1805,17 +1829,28 @@ async fn drive_loop(
                 push_activity(session, format!("◌ {text}"));
             }
         }
+        if let Some((text, cursor, pastes)) = session.deferred_composer_restore.take() {
+            session.input = text;
+            session.state.preferences.composer_cursor = cursor;
+            session.pending_text_pastes = pastes;
+            refresh_command_menu(session, registry_commands, surface);
+        }
         drain_agent_event(session);
         #[cfg(feature = "voice-conversation")]
         drain_speech_status(session);
-        // Mid-turn queued prompt (Claude Code parity): a prompt submitted
-        // while a turn was running fires the moment that turn completes.
-        if !session.agent_running
-            && !openai_account_pending
-            && !session.queued_prompts.is_empty()
+        // The journal owns admission and dispatch; rendering never advances it.
+        if !openai_account_pending
             && session.state.phase() == PlanPhase::Normal
-            && let Some(text) = session.queued_prompts.pop_front()
+            && let Some(text) = promote_pending_message(session)
         {
+            let draft_images = std::mem::take(&mut session.pending_images);
+            session.pending_images = session
+                .message_journal
+                .active
+                .as_ref()
+                .and_then(|id| session.message_journal.get(id))
+                .map(|message| message.images.clone())
+                .unwrap_or_default();
             spawn_submitted_prompt(
                 agent,
                 agent_tools,
@@ -1827,6 +1862,11 @@ async fn drive_loop(
                 text,
                 session,
             );
+            session.pending_images = draft_images;
+            if !session.agent_running && session.pending_capability_switch.is_none() {
+                session.message_journal.settle(false);
+                persist_message_transition(session);
+            }
         }
         // `/usage` quota answer — independent channel, answers even while
         // an agent turn keeps streaming.
@@ -1843,6 +1883,9 @@ async fn drive_loop(
         drain_lens_urls(session);
         drain_permission_request(session);
         drain_mobile_decision(session);
+        if session.pending_approval.is_none() || !session.agent_running {
+            close_approval_commands(session);
+        }
         refresh_command_menu(session, registry_commands, surface);
 
         let model_discovery_unavailable = openai_controls.is_some()
@@ -1863,10 +1906,7 @@ async fn drive_loop(
                 overrides: session.state.overrides.clone(),
                 transcript: session.state.transcript.clone(),
                 input: session.input.clone(),
-                composer_attachments: composer_attachment_labels(
-                    &session.pending_images,
-                    &session.pending_text_pastes,
-                ),
+                composer_attachments: composer_attachment_labels(&session.pending_images, &[]),
                 status: if voice.phase != agent_vesper_tui::ui::VoicePhase::Idle {
                     Some(voice.detail.clone())
                 } else {
@@ -1876,7 +1916,14 @@ async fn drive_loop(
                 command_menu_selected: session.command_selected,
                 agent_running: session.agent_running,
                 background_task,
-                queued_prompt_count: session.queued_prompts.len(),
+                queued_prompt_count: session.message_journal.pending.len(),
+                queue_paused: session.message_journal.paused.is_some(),
+                composer_projection: agent_vesper_tui::messages::composer_projection(
+                    &session.input,
+                    &session.pending_text_pastes,
+                    session.state.preferences.composer_cursor,
+                ),
+                content_inspection: session.paste_inspection.as_ref().map(|view| view.visible()),
                 controls: session.state.controls.clone(),
                 panels: session.state.panels,
                 task_plan: session.state.task_plan.clone(),
@@ -1911,15 +1958,17 @@ async fn drive_loop(
                 working_tree_lines: session.working_tree_lines.clone(),
                 preferences: session.state.preferences.clone(),
                 conversation_manual_scroll: session.state.conversation_manual_scroll,
-                pending_permission: session.pending_approval.as_ref().map(|request| {
-                    PermissionModal {
+                pending_permission: session
+                    .pending_approval
+                    .as_ref()
+                    .filter(|_| session.approval_command_backup.is_none())
+                    .map(|request| PermissionModal {
                         tool: request.tool.clone(),
                         arguments: serde_json::to_string_pretty(&request.arguments)
                             .unwrap_or_else(|_| request.arguments.to_string()),
                         reason: request.reason.clone(),
                         focus: session.state.permission_modal_focus,
-                    }
-                }),
+                    }),
             };
             // VRO-11.9: stash the frame's view model so the click handler can
             // inverse-map transcript rows (click-on-URL opens the browser).
@@ -2109,11 +2158,11 @@ async fn drive_loop(
         // what submits, exactly like the oracle composer. Swallow the
         // paste while the permission modal is up so the user cannot
         // accidentally type behind the dialog.
-        if let Event::Paste(text) = event.clone() {
-            if session.pending_approval.is_some() {
+        if let Event::Paste(ref text) = event {
+            if session.pending_approval.is_some() && session.approval_command_backup.is_none() {
                 continue;
             }
-            ingest_pasted_text(&text, session);
+            ingest_terminal_pasted_text(text, session);
             refresh_command_menu(session, registry_commands, surface);
             continue;
         }
@@ -2137,6 +2186,29 @@ async fn drive_loop(
             checkpoint_stores,
         ) {
             refresh_command_menu(session, registry_commands, surface);
+            continue;
+        }
+        if (session.pending_approval.is_none() || session.approval_command_backup.is_some())
+            && let Some(view) = session.paste_inspection.as_mut()
+        {
+            match code {
+                KeyCode::Esc => session.paste_inspection = None,
+                KeyCode::Down => {
+                    view.scroll = (view.scroll + 1).min(view.lines.len().saturating_sub(1))
+                }
+                KeyCode::Up => view.scroll = view.scroll.saturating_sub(1),
+                KeyCode::Left => view.horizontal_scroll = view.horizontal_scroll.saturating_sub(4),
+                KeyCode::Right => {
+                    view.horizontal_scroll = view.horizontal_scroll.saturating_add(4).min(256)
+                }
+                KeyCode::PageDown => {
+                    view.scroll = (view.scroll + 20).min(view.lines.len().saturating_sub(1))
+                }
+                KeyCode::PageUp => view.scroll = view.scroll.saturating_sub(20),
+                KeyCode::Home => view.scroll = 0,
+                KeyCode::End => view.scroll = view.lines.len().saturating_sub(1),
+                _ => {}
+            }
             continue;
         }
         if code == KeyCode::F(5) {
@@ -2184,6 +2256,19 @@ async fn drive_loop(
                 }
                 KeyCode::Esc => {
                     session.pending_capability_switch = None;
+                    if let Some(id) = session.message_journal.active.take() {
+                        session
+                            .message_journal
+                            .messages
+                            .iter_mut()
+                            .find(|message| message.id == id)
+                            .expect("preflight message")
+                            .state = agent_vesper_tui::messages::MessageState::Pending;
+                        session.message_journal.pending.push_front(id);
+                        session.message_journal.pause("Model switch cancelled; queued message retained. Choose a capable model, then /queue resume.");
+                        persist_message_transition(session);
+                        continue;
+                    }
                     session.state.status = Some(
                         "Model switch cancelled; the prompt and image remain in the composer."
                             .into(),
@@ -2202,9 +2287,28 @@ async fn drive_loop(
                         );
                         continue;
                     };
+                    if session.message_journal.active.is_some() {
+                        session.deferred_composer_restore = Some((
+                            std::mem::take(&mut session.input),
+                            session.state.preferences.composer_cursor,
+                            std::mem::take(&mut session.pending_text_pastes),
+                        ));
+                    }
                     session.input = format!("/model {}", candidate.model.model_id.as_str());
                     session.state.preferences.composer_cursor = session.input.len();
-                    session.queued_prompts.push_front(pending.prompt);
+                    if let Some(id) = session.message_journal.active.take() {
+                        session
+                            .message_journal
+                            .messages
+                            .iter_mut()
+                            .find(|message| message.id == id)
+                            .expect("capability message")
+                            .state = agent_vesper_tui::messages::MessageState::Pending;
+                        session.message_journal.pending.push_front(id);
+                        persist_message_transition(session);
+                    } else {
+                        admit_plain_message(pending.prompt, session);
+                    }
                     session.confirmed_capability_switch = true;
                     // Fall through to the ordinary Enter path. It owns the
                     // existing validated UpdateProviderConfiguration flow.
@@ -2222,7 +2326,12 @@ async fn drive_loop(
         // Every other key is swallowed so the
         // user cannot accidentally type into the composer while the modal
         // is up.
-        if session.pending_approval.is_some() {
+        if session.pending_approval.is_some() && session.approval_command_backup.is_none() {
+            if code == KeyCode::Char('p') && ctrl {
+                open_approval_commands(session);
+                refresh_command_menu(session, registry_commands, surface);
+                continue;
+            }
             match code {
                 KeyCode::Tab | KeyCode::Left | KeyCode::Right => {
                     let next = session.state.permission_modal_focus.toggle();
@@ -2284,6 +2393,11 @@ async fn drive_loop(
             }
             continue;
         }
+        if session.approval_command_backup.is_some() && code == KeyCode::Esc {
+            close_approval_commands(session);
+            refresh_command_menu(session, registry_commands, surface);
+            continue;
+        }
         // Crossterm receives Ctrl+V as an ordinary key event; terminals only
         // synthesize Event::Paste for their own paste binding (commonly
         // Ctrl+Shift+V). Read the native clipboard here so the conventional
@@ -2319,9 +2433,15 @@ async fn drive_loop(
             refresh_command_menu(session, registry_commands, surface);
             continue;
         }
+        let before_vim_input = session.input.clone();
         if session.state.preferences.vim
             && handle_vim_composer_key(code, &mut session.input, &mut session.state.preferences)
         {
+            agent_vesper_tui::messages::reconcile_edit(
+                &before_vim_input,
+                &session.input,
+                &mut session.pending_text_pastes,
+            );
             refresh_command_menu(session, registry_commands, surface);
             continue;
         }
@@ -2426,27 +2546,62 @@ async fn drive_loop(
                         continue;
                     }
                 }
-                if account_discovery_blocks_submission(
-                    openai_account_pending,
-                    &session.input,
-                    !session.pending_text_pastes.is_empty(),
-                ) {
+                if !session.agent_running
+                    && account_discovery_blocks_submission(
+                        openai_account_pending,
+                        &session.input,
+                        !session.pending_text_pastes.is_empty(),
+                    )
+                {
                     session.state.status = Some(OPENAI_MODEL_LOADING_STATUS.into());
                     continue;
                 }
-                let compact_paste_display = (!session.pending_text_pastes.is_empty()).then(|| {
-                    let pasted_chars = session
-                        .pending_text_pastes
-                        .iter()
-                        .map(|paste| paste.chars().count())
-                        .sum::<usize>();
-                    let typed = session.input.trim();
-                    if typed.is_empty() {
-                        format!("user: [Pasted Content {pasted_chars} chars]")
-                    } else {
-                        format!("user: {typed} [Pasted Content {pasted_chars} chars]")
+                let snapshot = match agent_vesper_tui::messages::compose(
+                    &session.input,
+                    &session.pending_text_pastes,
+                ) {
+                    Ok(message) => message,
+                    Err(error) => {
+                        session.state.status = Some(error);
+                        continue;
                     }
-                });
+                };
+                let classified = if !snapshot.pastes.is_empty()
+                    && !session.input.trim_start().starts_with('/')
+                {
+                    CommandIntent::Prompt(snapshot.text.clone())
+                } else {
+                    CommandIntent::parse(&snapshot.text)
+                };
+                if session.approval_command_backup.is_some()
+                    && !approval_command_supported(&registry_commands.resolve(
+                        &classified,
+                        &session.state.plan,
+                        provider_id,
+                        surface.descriptors(),
+                    ))
+                {
+                    session.state.status = Some("Tool approval pending: queue and informational commands only; Esc returns to approval. Nothing was queued.".into());
+                    continue;
+                }
+                let ordinary = matches!(classified, CommandIntent::Prompt(_))
+                    && (session.agent_running || session.state.phase() == PlanPhase::Normal)
+                    && (session.agent_running
+                        || !snapshot.pastes.is_empty()
+                        || matches!(
+                            vesper_harness::release_recovery::classify_release_intent(
+                                &snapshot.text
+                            ),
+                            vesper_harness::release_recovery::ReleaseIntentDecision::NotRelease
+                        ));
+                if ordinary {
+                    if let Err(error) = admit_composer_message(snapshot, session) {
+                        session.state.status = Some(error);
+                    }
+                    continue;
+                }
+                let compact_paste_display =
+                    (!snapshot.pastes.is_empty()).then(|| format!("user: {}", snapshot.preview()));
                 let submitted_input = take_composer_text(session);
                 let intent = CommandIntent::parse(&submitted_input);
                 let command_submission = matches!(&intent, CommandIntent::Slash { .. });
@@ -2568,10 +2723,10 @@ async fn drive_loop(
                                 .execute(runtime_command(reasoning_seq(), payload))
                                 .await
                             {
-                                if let Some(prompt) = session.queued_prompts.pop_front() {
-                                    session.input = prompt;
-                                    session.state.preferences.composer_cursor = session.input.len();
-                                }
+                                session
+                                    .message_journal
+                                    .pause("Model switch failed; pending message preserved.");
+                                persist_message_transition(session);
                                 session.state.status = Some(format!(
                                     "model switch validation failed: {error:?}; prompt preserved"
                                 ));
@@ -2579,10 +2734,10 @@ async fn drive_loop(
                             }
                         }
                         Err(error) => {
-                            if let Some(prompt) = session.queued_prompts.pop_front() {
-                                session.input = prompt;
-                                session.state.preferences.composer_cursor = session.input.len();
-                            }
+                            session
+                                .message_journal
+                                .pause("Model switch failed; pending message preserved.");
+                            persist_message_transition(session);
                             session.state.status = Some(format!(
                                 "model switch validation failed: {error}; prompt preserved"
                             ));
@@ -2987,11 +3142,14 @@ async fn drive_loop(
                 {
                     session.state.status = Some(format!("image operation failed: {error}"));
                 }
-                if let Some(question) = session.state.pending_auxiliary_question.take()
-                    && !session.agent_running
-                    && let Err(error) = spawn_auxiliary_question(agent, question, session, surface)
-                {
-                    session.state.status = Some(error);
+                if let Some(question) = session.state.pending_auxiliary_question.take() {
+                    if session.agent_running {
+                        session.state.status = Some("Auxiliary question unavailable during an active turn; /steer changes current guidance, Enter queues a future turn.".into());
+                    } else if let Err(error) =
+                        spawn_auxiliary_question(agent, question, session, surface)
+                    {
+                        session.state.status = Some(error);
+                    }
                 }
                 if session.state.pending_provider_usage {
                     session.state.pending_provider_usage = false;
@@ -3037,12 +3195,11 @@ async fn drive_loop(
                 // through the shared persisted release controller. Drain it
                 // the same way: it takes precedence over a free-text
                 // prompt (only one prompt fires per Enter).
+                if let Some(operation) = session.state.pending_message_command.take() {
+                    execute_message_command(operation, session);
+                }
                 let workflow_prompt = session.state.pending_prompt.take();
-                let mut prompt_to_spawn = workflow_prompt.or(prompt_text).or_else(|| {
-                    (!session.agent_running)
-                        .then(|| session.queued_prompts.pop_front())
-                        .flatten()
-                });
+                let mut prompt_to_spawn = workflow_prompt.or(prompt_text);
                 if !session.agent_running
                     && let Some(objective) = prompt_to_spawn.as_deref()
                     && !matches!(
@@ -3084,40 +3241,17 @@ async fn drive_loop(
                         prompt_to_spawn = None;
                     }
                 }
-                // Mid-turn Enter steers the live direct loop at its next safe
-                // provider boundary. It does not abort the provider stream or
-                // tool currently in flight. Tab owns the separate FIFO path.
                 if session.agent_running
                     && let Some(text) = prompt_to_spawn.as_ref()
                 {
-                    if let Some(tx) = session.steering_tx.as_ref() {
-                        match tx.send(text.clone()) {
-                            Ok(()) => {
-                                session.state.status = Some(
-                                    "Steering sent — current operation continues; guidance applies at the next safe boundary."
-                                        .into(),
-                                );
-                            }
-                            Err(_) => {
-                                session.queued_prompts.push_back(text.clone());
-                                session.state.status = Some(format!(
-                                    "Live turn is finalizing; queued follow-up #{}.",
-                                    session.queued_prompts.len()
-                                ));
-                            }
-                        }
-                    } else {
-                        session.queued_prompts.push_back(text.clone());
-                        session.state.status = Some(format!(
-                            "This execution path cannot accept live steering; queued follow-up #{}.",
-                            session.queued_prompts.len()
-                        ));
-                    }
+                    admit_plain_message(text.clone(), session);
                 } else if let Some(text) = prompt_to_spawn
                     && session.state.phase() == PlanPhase::Normal
                 {
                     if openai_account_pending {
-                        session.input = text;
+                        if session.input.is_empty() {
+                            session.input = text;
+                        }
                         session.state.preferences.composer_cursor = session.input.len();
                         session.state.status = Some(OPENAI_MODEL_LOADING_STATUS.into());
                     } else {
@@ -3176,16 +3310,31 @@ async fn drive_loop(
                 }
             }
             KeyCode::Backspace => {
-                if session.state.preferences.composer_cursor == 0
-                    && (!session.pending_images.is_empty()
-                        || !session.pending_text_pastes.is_empty())
+                let cursor = session
+                    .state
+                    .preferences
+                    .composer_cursor
+                    .min(session.input.len());
+                if let Some(index) = session
+                    .pending_text_pastes
+                    .iter()
+                    .rposition(|paste| paste.offset == cursor)
                 {
+                    session.pending_text_pastes.remove(index);
+                    session.state.status = Some("Removed pasted-content attachment.".into());
+                } else if cursor == 0 && !session.pending_images.is_empty() {
                     remove_last_composer_attachment(session);
                 } else {
+                    let previous = previous_boundary(&session.input, cursor);
                     composer_backspace(
                         &mut session.input,
                         &mut session.state.preferences.composer_cursor,
                     );
+                    for paste in &mut session.pending_text_pastes {
+                        if paste.offset >= cursor {
+                            paste.offset -= cursor - previous;
+                        }
+                    }
                 }
                 refresh_command_menu(session, registry_commands, surface);
             }
@@ -3203,12 +3352,17 @@ async fn drive_loop(
                     && (!session.input.trim().is_empty()
                         || !session.pending_text_pastes.is_empty()) =>
             {
-                let text = take_composer_text(session);
-                session.queued_prompts.push_back(text);
-                session.state.status = Some(format!(
-                    "Queued follow-up #{} — the active turn continues unchanged.",
-                    session.queued_prompts.len()
-                ));
+                match agent_vesper_tui::messages::compose(
+                    &session.input,
+                    &session.pending_text_pastes,
+                ) {
+                    Ok(message) => {
+                        if let Err(error) = admit_composer_message(message, session) {
+                            session.state.status = Some(error);
+                        }
+                    }
+                    Err(error) => session.state.status = Some(error),
+                }
             }
             KeyCode::Tab if !session.command_matches.is_empty() => {
                 if let Some(command) = selected_command_completion(session) {
@@ -3247,13 +3401,7 @@ async fn drive_loop(
                 }
             }
             KeyCode::Char(ch) => {
-                let cursor = session
-                    .state
-                    .preferences
-                    .composer_cursor
-                    .min(session.input.len());
-                session.input.insert(cursor, ch);
-                session.state.preferences.composer_cursor = cursor + ch.len_utf8();
+                insert_composer_text(&ch.to_string(), session);
                 refresh_command_menu(session, registry_commands, surface);
             }
             KeyCode::Esc if session.state.phase() != PlanPhase::Normal => {
@@ -5509,6 +5657,10 @@ fn apply_keybinding_action(
 }
 
 fn cancel_active_turn_preserving_partial(session: &mut TuiSession, cause: &str) {
+    session
+        .message_journal
+        .pause("User cancelled the current turn; /queue resume starts pending future turns.");
+    persist_message_transition(session);
     if session.agent_running
         && let Some(cancel) = &session.turn_cancellation
     {
@@ -5542,6 +5694,7 @@ fn cancel_active_turn_preserving_partial(session: &mut TuiSession, cause: &str) 
     session.steering_tx = None;
     session.trajectory_rx = None;
     session.agent_running = false;
+    session.message_journal.settle(false);
     let partial = std::mem::take(&mut session.live_response);
     if !partial.trim().is_empty() {
         session
@@ -5567,6 +5720,7 @@ fn cancel_active_turn_preserving_partial(session: &mut TuiSession, cause: &str) 
                 .map(|line| format!("interrupted: {line}")),
         );
     }
+    persist_message_transition(session);
 }
 
 fn edit_prompt_in_external_editor(
@@ -5698,12 +5852,471 @@ fn execute_media_op(operation: MediaOp, session: &mut TuiSession) -> Result<(), 
     }
 }
 
+struct ApprovalCommandBackup {
+    text: String,
+    cursor: usize,
+    pastes: Vec<agent_vesper_tui::messages::ComposerPaste>,
+    images: Vec<QueuedImage>,
+}
+
+fn open_approval_commands(session: &mut TuiSession) {
+    if session.pending_approval.is_none() || session.approval_command_backup.is_some() {
+        return;
+    }
+    session.approval_command_backup = Some(ApprovalCommandBackup {
+        text: std::mem::take(&mut session.input),
+        cursor: session.state.preferences.composer_cursor,
+        pastes: std::mem::take(&mut session.pending_text_pastes),
+        images: std::mem::take(&mut session.pending_images),
+    });
+    session.input = "/".into();
+    session.state.preferences.composer_cursor = 1;
+    session.state.status = Some(
+        "Tool approval still pending · commands only · Esc returns to approval; draft preserved."
+            .into(),
+    );
+}
+
+fn close_approval_commands(session: &mut TuiSession) {
+    if let Some(draft) = session.approval_command_backup.take() {
+        session.input = draft.text;
+        session.state.preferences.composer_cursor = draft.cursor;
+        session.pending_text_pastes = draft.pastes;
+        session.pending_images = draft.images;
+        session.command_matches.clear();
+        session.paste_inspection = None;
+        session.state.status =
+            Some("Original draft restored; approval was not granted by command navigation.".into());
+    }
+}
+
+fn approval_command_supported(outcome: &agent_vesper_tui::commands::CommandOutcome) -> bool {
+    use agent_vesper_tui::commands::CommandOutcome;
+    matches!(
+        outcome,
+        CommandOutcome::Message(_)
+            | CommandOutcome::Error(_)
+            | CommandOutcome::Help(_)
+            | CommandOutcome::Version
+            | CommandOutcome::ContextView(_)
+            | CommandOutcome::Search { .. }
+            | CommandOutcome::ProviderUsage
+            | CommandOutcome::ReasoningStatus
+            | CommandOutcome::Quit
+    )
+}
+
+#[derive(Debug)]
+struct PasteInspection {
+    id: String,
+    lines: Vec<String>,
+    scroll: usize,
+    horizontal_scroll: u16,
+}
+impl PasteInspection {
+    fn visible(&self) -> agent_vesper_tui::ui::ContentInspection {
+        agent_vesper_tui::ui::ContentInspection {
+            title: format!(
+                "Content {} · ↑↓ / PgUp PgDn · ←→ pan · Esc collapse",
+                self.id
+            ),
+            lines: self
+                .lines
+                .iter()
+                .skip(self.scroll)
+                .take(60)
+                .cloned()
+                .collect(),
+            horizontal_scroll: self.horizontal_scroll,
+        }
+    }
+}
+
+fn successful_message_completion(event: &AgentEvent) -> bool {
+    match event {
+        AgentEvent::Completed {
+            execution_succeeded: true,
+            outcome: AgentTurnOutcome::Completed { .. },
+            ..
+        } => true,
+        AgentEvent::Completed {
+            execution_succeeded: true,
+            outcome: AgentTurnOutcome::Acceptance { report, .. },
+            ..
+        } => report.is_verified(),
+        #[cfg(feature = "swarm")]
+        AgentEvent::Swarm {
+            success, cancelled, ..
+        } => *success && !*cancelled,
+        AgentEvent::SideQuestion { .. } | AgentEvent::Usage { .. } => true,
+        _ => false,
+    }
+}
+
+/// Preserve the delegated terminal receipt through the shared host event.
+fn delegated_completion(
+    status: vesper_domain::OutcomeStatus,
+    text: ContentText,
+    iterations: u32,
+    plan: Option<String>,
+    history: Vec<ConversationMessage>,
+) -> AgentEvent {
+    AgentEvent::Completed {
+        execution_succeeded: status == vesper_domain::OutcomeStatus::Succeeded,
+        outcome: if status == vesper_domain::OutcomeStatus::Cancelled {
+            AgentTurnOutcome::Interrupted {
+                assistant_content: vec![ContentPart::Text(text)],
+                cause: vesper_domain::StreamInterruptionCause::Cancelled,
+                tool_call_started: false,
+                iterations,
+                tool_results: vec![],
+                plan,
+            }
+        } else {
+            AgentTurnOutcome::Completed {
+                assistant_content: vec![ContentPart::Text(text)],
+                iterations,
+                tool_results: vec![],
+                plan,
+            }
+        },
+        history,
+    }
+}
+
+fn persist_message_transition(session: &mut TuiSession) -> bool {
+    if let Err(error) = persist_tui_conversation(session) {
+        session
+            .message_journal
+            .pause("Session persistence failed; automatic queue dispatch paused.");
+        session.state.status = Some(format!(
+            "Session persistence failed: {error}; queue retained in memory, not confirmed saved."
+        ));
+        false
+    } else {
+        true
+    }
+}
+
+fn admit_composer_message(
+    mut message: agent_vesper_tui::messages::Message,
+    session: &mut TuiSession,
+) -> Result<(), String> {
+    if session.approval_command_backup.is_some() {
+        return Err(
+            "Tool approval pending: commands only; Esc returns to approval. Nothing was queued."
+                .into(),
+        );
+    }
+    message.images = session.pending_images.clone();
+    let id = session.message_journal.admit(message)?;
+    if let Err(error) = persist_tui_conversation(session) {
+        session.message_journal.pending.pop_back();
+        session.message_journal.messages.pop();
+        return Err(format!(
+            "Message not queued: persistence failed ({error}); draft retained."
+        ));
+    }
+    session.input.clear();
+    session.pending_text_pastes.clear();
+    session.pending_images.clear();
+    session.state.preferences.composer_cursor = 0;
+    session.command_matches.clear();
+    session.command_selected = 0;
+    let preview = session
+        .message_journal
+        .get(&id)
+        .expect("admitted message")
+        .preview();
+    session.state.status = Some(format!(
+        "QUEUED {} · {id} · {preview} · /queue",
+        session.message_journal.pending.len()
+    ));
+    Ok(())
+}
+
+fn admit_plain_message(text: String, session: &mut TuiSession) {
+    let mut message = agent_vesper_tui::messages::Message::plain(text);
+    message.images = session.pending_images.clone();
+    match session.message_journal.admit(message) {
+        Ok(id) => {
+            if let Err(error) = persist_tui_conversation(session) {
+                session.message_journal.pending.pop_back();
+                if let Some(message) = session.message_journal.messages.pop()
+                    && session.input.is_empty()
+                {
+                    session.input = message.text;
+                    session.state.preferences.composer_cursor = session.input.len();
+                }
+                session.state.status = Some(format!(
+                    "Message not queued: persistence failed ({error}); draft retained."
+                ));
+            } else {
+                session.pending_images.clear();
+                session.state.status = Some(format!(
+                    "QUEUED {} · {id}",
+                    session.message_journal.pending.len()
+                ));
+            }
+        }
+        Err(error) => session.state.status = Some(error),
+    }
+}
+
+fn promote_pending_message(session: &mut TuiSession) -> Option<String> {
+    let id = session
+        .message_journal
+        .promote(session.agent_running, session.pending_approval.is_some())?;
+    let message = session.message_journal.get(&id).expect("promoted message");
+    let text = message.text.clone();
+    let previously_displayed = message.transcript_committed;
+    let transcript_length = session.state.transcript.len();
+    if !previously_displayed {
+        session.state.transcript.push(format!(
+            "user: {}",
+            if message.pastes.is_empty() {
+                message.text.clone()
+            } else {
+                format!("{} · /paste {id}", message.preview())
+            }
+        ));
+        session
+            .message_journal
+            .messages
+            .iter_mut()
+            .find(|message| message.id == id)
+            .expect("promoted message")
+            .transcript_committed = true;
+    }
+    // Persist Active before starting external work. A restart never replays it.
+    if let Err(error) = persist_tui_conversation(session) {
+        session.state.transcript.truncate(transcript_length);
+        session.message_journal.active = None;
+        session.message_journal.pending.push_front(id.clone());
+        let message = session
+            .message_journal
+            .messages
+            .iter_mut()
+            .find(|message| message.id == id)
+            .expect("promoted message");
+        message.state = agent_vesper_tui::messages::MessageState::Pending;
+        message.transcript_committed = previously_displayed;
+        session
+            .message_journal
+            .pause("Could not persist dispatch; /queue resume retries pending messages.");
+        session.state.status = Some(format!("Dispatch blocked by persistence failure: {error}"));
+        return None;
+    }
+
+    session.state.conversation_manual_scroll = None;
+    Some(text)
+}
+
+fn execute_message_command(
+    operation: agent_vesper_tui::commands::MessageCommand,
+    session: &mut TuiSession,
+) {
+    use agent_vesper_tui::commands::MessageCommand;
+    match operation {
+        MessageCommand::Steer(text) => {
+            session.state.status = Some(if text.is_empty() {
+                "Usage: /steer <guidance>".into()
+            } else if !session.agent_running {
+                "No active turn to steer; submit a normal message instead.".into()
+            } else if session
+                .steering_tx
+                .as_ref()
+                .is_some_and(|tx| tx.send(text).is_ok())
+            {
+                "Explicit steering sent to the next safe boundary.".into()
+            } else {
+                "Current execution path cannot accept steering; nothing was queued.".into()
+            });
+        }
+        MessageCommand::Paste(id) => {
+            let content = session
+                .message_journal
+                .get(&id)
+                .map(|message| message.text.as_str())
+                .or_else(|| {
+                    session.message_journal.messages.iter().find_map(|message| {
+                        message
+                            .pastes
+                            .iter()
+                            .find(|paste| paste.id == id)
+                            .map(|paste| &message.text[paste.start..paste.end])
+                    })
+                });
+            if let Some(content) = content {
+                // Build the scrollable projection ONCE on explicit inspection.
+                // Chunk long single lines so every scalar remains accessible.
+                let mut lines = Vec::new();
+                for line in content.split('\n') {
+                    let mut current = String::new();
+                    let mut count = 0;
+                    for ch in line.chars() {
+                        current.push(ch);
+                        count += 1;
+                        if count == 64 {
+                            lines.push(std::mem::take(&mut current));
+                            count = 0;
+                        }
+                    }
+                    lines.push(current);
+                }
+                session.paste_inspection = Some(PasteInspection {
+                    id,
+                    lines,
+                    scroll: 0,
+                    horizontal_scroll: 0,
+                });
+            } else {
+                session.state.status = Some("Usage: /paste <message-id|paste-id>; inspect IDs through /queue or transcript chips.".into());
+            }
+        }
+        MessageCommand::Queue(argument) => {
+            let words = argument.split_whitespace().collect::<Vec<_>>();
+            let page = match words.as_slice() {
+                [] => Some(0),
+                ["page", page] => page
+                    .parse::<usize>()
+                    .ok()
+                    .filter(|page| *page > 0)
+                    .map(|page| page - 1),
+                _ => None,
+            };
+            if let Some(page) = page {
+                session.state.transcript.push(format!(
+                    "queue: {} pending · active {} · {}",
+                    session.message_journal.pending.len(),
+                    session.message_journal.active.as_deref().unwrap_or("none"),
+                    session
+                        .message_journal
+                        .paused
+                        .as_deref()
+                        .unwrap_or("automatic dispatch enabled")
+                ));
+                for (index, id) in session
+                    .message_journal
+                    .pending
+                    .iter()
+                    .enumerate()
+                    .skip(page.saturating_mul(20))
+                    .take(20)
+                {
+                    if let Some(message) = session.message_journal.get(id) {
+                        session.state.transcript.push(format!(
+                            "queue: {} · {id} · {} · /paste {id}",
+                            index + 1,
+                            message.preview()
+                        ));
+                    }
+                }
+                if session.message_journal.pending.len() > page.saturating_add(1).saturating_mul(20)
+                {
+                    session.state.transcript.push(format!(
+                        "queue: more pending · /queue page {}",
+                        page.saturating_add(2)
+                    ));
+                }
+                session.state.status = Some("/queue drop <id> · clear · resume · page <n> · /paste <id> · /steer <guidance>".into());
+                return;
+            }
+            let previous_pending = session.message_journal.pending.clone();
+            let previous_paused = session.message_journal.paused.clone();
+            let previous_states = session
+                .message_journal
+                .messages
+                .iter()
+                .map(|message| message.state)
+                .collect::<Vec<_>>();
+            let mut removed = Vec::new();
+            let result = match words.as_slice() {
+                ["drop", id] => session
+                    .message_journal
+                    .drop_pending(id)
+                    .map(|message| removed.push(message)),
+                ["clear"] => {
+                    while let Some(id) = session.message_journal.pending.front().cloned() {
+                        if let Ok(message) = session.message_journal.drop_pending(&id) {
+                            removed.push(message);
+                        } else {
+                            break;
+                        }
+                    }
+                    Ok(())
+                }
+                ["resume"] if !session.agent_running => {
+                    session.message_journal.paused = None;
+                    Ok(())
+                }
+                _ => Err("Usage: /queue [drop <id>|clear|resume]".into()),
+            };
+            if let Err(error) = result {
+                session.state.status = Some(error);
+                return;
+            }
+            if let Err(error) = persist_tui_conversation(session) {
+                for message in removed {
+                    if let Some(stub) = session
+                        .message_journal
+                        .messages
+                        .iter_mut()
+                        .find(|stub| stub.id == message.id)
+                    {
+                        *stub = message;
+                    }
+                }
+                session.message_journal.pending = previous_pending;
+                session.message_journal.paused = previous_paused;
+                for (message, state) in session
+                    .message_journal
+                    .messages
+                    .iter_mut()
+                    .zip(previous_states)
+                {
+                    message.state = state;
+                }
+                session.state.status = Some(format!(
+                    "Queue change not saved: {error}; previous queue retained."
+                ));
+            } else {
+                session.state.status = Some(format!(
+                    "Queue updated · {} pending",
+                    session.message_journal.pending.len()
+                ));
+            }
+        }
+    }
+}
+
 fn insert_composer_text(text: &str, session: &mut TuiSession) {
+    if text
+        .len()
+        .saturating_add(session.input.len())
+        .saturating_add(
+            session
+                .pending_text_pastes
+                .iter()
+                .map(|paste| paste.text.len())
+                .sum::<usize>(),
+        )
+        > agent_vesper_tui::messages::MAX_MESSAGE_BYTES
+    {
+        session.state.status =
+            Some("Input exceeds the 1 MiB message limit; existing draft retained.".into());
+        return;
+    }
     let cursor = session
         .state
         .preferences
         .composer_cursor
         .min(session.input.len());
+    for paste in &mut session.pending_text_pastes {
+        if paste.offset > cursor {
+            paste.offset += text.len();
+        }
+    }
     session.input.insert_str(cursor, text);
     session.state.preferences.composer_cursor = cursor + text.len();
 }
@@ -5735,27 +6348,56 @@ fn ingest_pasted_text(text: &str, session: &mut TuiSession) {
         if let Err(error) = queue_image(&path, session) {
             session.state.status = Some(format!("Image paste failed: {error}"));
         }
-    } else if text.contains(['\n', '\r']) || text.chars().count() >= 256 {
-        session.pending_text_pastes.push(text.to_owned());
-        session.state.status = Some(format!(
-            "Attached [Pasted Content {} chars] for the next prompt.",
-            format_character_count(text.chars().count())
-        ));
     } else {
-        insert_composer_text(text, session);
+        ingest_terminal_pasted_text(text, session);
     }
 }
 
-fn format_character_count(count: usize) -> String {
-    let digits = count.to_string();
-    let mut formatted = String::with_capacity(digits.len() + digits.len() / 3);
-    for (index, ch) in digits.chars().enumerate() {
-        if index > 0 && (digits.len() - index).is_multiple_of(3) {
-            formatted.push(',');
+/// Terminal paste events are literal text, including existing image-file paths.
+fn ingest_terminal_pasted_text(text: &str, session: &mut TuiSession) {
+    if agent_vesper_tui::messages::should_collapse(text) {
+        if text.len()
+            + session.input.len()
+            + session
+                .pending_text_pastes
+                .iter()
+                .map(|paste| paste.text.len())
+                .sum::<usize>()
+            > agent_vesper_tui::messages::MAX_MESSAGE_BYTES
+        {
+            session.state.status = Some(
+                "Paste exceeds the 1 MiB message limit; paste rejected, existing draft retained."
+                    .into(),
+            );
+            return;
         }
-        formatted.push(ch);
+        let id = match session.message_journal.paste_id() {
+            Ok(id) => id,
+            Err(error) => {
+                session.state.status = Some(error);
+                return;
+            }
+        };
+        let paste = agent_vesper_tui::messages::ComposerPaste::new(
+            id,
+            session
+                .state
+                .preferences
+                .composer_cursor
+                .min(session.input.len()),
+            text.to_owned(),
+        );
+        session.state.status = Some(format!(
+            "Attached {}. /paste <id> inspects submitted content.",
+            paste.metadata.label()
+        ));
+        let index = session
+            .pending_text_pastes
+            .partition_point(|existing| existing.offset <= paste.offset);
+        session.pending_text_pastes.insert(index, paste);
+    } else {
+        insert_composer_text(text, session);
     }
-    formatted
 }
 
 fn account_discovery_blocks_submission(pending: bool, input: &str, has_paste: bool) -> bool {
@@ -5770,17 +6412,10 @@ fn account_discovery_blocks_submission(pending: bool, input: &str, has_paste: bo
 }
 
 fn take_composer_text(session: &mut TuiSession) -> String {
-    if session.pending_text_pastes.is_empty() {
-        return session.input.clone();
-    }
-    let mut submitted = session.input.clone();
-    for paste in session.pending_text_pastes.drain(..) {
-        if !submitted.is_empty() {
-            submitted.push_str("\n\n");
-        }
-        submitted.push_str(&paste);
-    }
-    submitted
+    let message = agent_vesper_tui::messages::compose(&session.input, &session.pending_text_pastes)
+        .expect("composer bounds validated before submission");
+    session.pending_text_pastes.clear();
+    message.text
 }
 
 fn paste_native_clipboard(session: &mut TuiSession) {
@@ -5938,16 +6573,14 @@ fn queue_image_bytes(
     Ok(())
 }
 
-fn composer_attachment_labels(images: &[QueuedImage], text_pastes: &[String]) -> Vec<String> {
+fn composer_attachment_labels(
+    images: &[QueuedImage],
+    text_pastes: &[agent_vesper_tui::messages::ComposerPaste],
+) -> Vec<String> {
     let mut labels: Vec<String> = (1..=images.len())
         .map(|index| format!("[Image #{index}]"))
         .collect();
-    labels.extend(text_pastes.iter().map(|paste| {
-        format!(
-            "[Pasted Content {} chars]",
-            format_character_count(paste.chars().count())
-        )
-    }));
+    labels.extend(text_pastes.iter().map(|paste| paste.metadata.label()));
     labels
 }
 
@@ -6428,6 +7061,11 @@ fn spawn_agent_turn(
     cognition: &CognitionBundle,
     routed_skills: RoutedSkillTurn,
 ) -> Result<(), String> {
+    if session.agent_running {
+        return Err(
+            "A normal turn is already active; submit a future turn through the queue.".into(),
+        );
+    }
     let selected_for_display = routed_skills.selected.clone();
     let routing_notice = routed_skills.notice.clone();
     let config = turn_configuration(agent, &session.state, surface)?;
@@ -6444,7 +7082,9 @@ fn spawn_agent_turn(
         .iter()
         .map(|image| image.descriptor.clone())
         .collect::<Vec<_>>();
+    ContentText::new(&user_text).map_err(|_| "Message exceeds the 1 MiB provider text limit.")?;
     let mut original_user = build_user_message_with_images(&user_text, images);
+    assign_submitted_message_id(&mut original_user, session);
     if !routed_skills.selected.is_empty() {
         let _ = original_user.extensions.insert(
             "vesper:skills",
@@ -6617,7 +7257,11 @@ fn spawn_agent_turn(
                 {
                     latest_user.content = original_user.content;
                 }
-                AgentEvent::Completed { outcome, history }
+                AgentEvent::Completed {
+                    execution_succeeded: outcome.is_success(),
+                    outcome,
+                    history,
+                }
             }
             Err(error) => {
                 routed_skills
@@ -6713,7 +7357,17 @@ fn spawn_submitted_prompt(
         session.state.status = Some(format!("Acceptance incomplete: {error}"));
         return;
     }
-    match vesper_agent::expand_references(&root, &text) {
+    let literal_paste = session
+        .message_journal
+        .active
+        .as_ref()
+        .and_then(|id| session.message_journal.get(id))
+        .is_some_and(|message| !message.pastes.is_empty());
+    match if literal_paste {
+        Ok(text.clone())
+    } else {
+        vesper_agent::expand_references(&root, &text)
+    } {
         Ok(expanded) => {
             if let Ok(config) = turn_configuration(agent, &session.state, surface) {
                 let mut outgoing = session.conversation.clone();
@@ -7079,6 +7733,11 @@ fn spawn_vro_turn(
     routed_skills: RoutedSkillTurn,
     session: &mut TuiSession,
 ) -> Result<(), String> {
+    if session.agent_running {
+        return Err(
+            "A normal turn is already active; submit a future turn through the queue.".into(),
+        );
+    }
     let selected_for_display = routed_skills.selected.clone();
     let routing_notice = routed_skills.notice.clone();
     let (tx, rx) = mpsc::unbounded_channel::<AgentEvent>();
@@ -7097,7 +7756,9 @@ fn spawn_vro_turn(
     let agent = Arc::new(agent.as_ref().clone().with_steering_port(steering));
     let compaction_agent = Arc::clone(&agent);
     let mut history = session.conversation.clone();
+    ContentText::new(&user_text).map_err(|_| "Message exceeds the 1 MiB provider text limit.")?;
     let mut user_message = build_user_message(&user_text);
+    assign_submitted_message_id(&mut user_message, session);
     if !routed_skills.selected.is_empty() {
         let _ = user_message.extensions.insert(
             "vesper:skills",
@@ -7210,7 +7871,11 @@ fn spawn_vro_turn(
                     routed_skills
                         .outcomes
                         .record(&routed_skills.selected, outcome.is_success());
-                    let _ = tx.send(AgentEvent::Completed { outcome, history });
+                    let _ = tx.send(AgentEvent::Completed {
+                        execution_succeeded: outcome.is_success(),
+                        outcome,
+                        history,
+                    });
                 }
                 Err(error) => {
                     let _ = tx.send(AgentEvent::Failed(error));
@@ -7269,15 +7934,7 @@ fn spawn_vro_turn(
             ));
         }
 
-        let _ = tx.send(AgentEvent::Completed {
-            outcome: vesper_agent::AgentTurnOutcome::Completed {
-                assistant_content: vec![vesper_domain::ContentPart::Text(text)],
-                iterations: 1,
-                tool_results: vec![],
-                plan: None,
-            },
-            history,
-        });
+        let _ = tx.send(delegated_completion(outcome.status, text, 1, None, history));
     });
 
     session.agent_task = Some(task);
@@ -7936,6 +8593,11 @@ fn spawn_vro_react_turn(
     routed_skills: RoutedSkillTurn,
     session: &mut TuiSession,
 ) -> Result<(), String> {
+    if session.agent_running {
+        return Err(
+            "A normal turn is already active; submit a future turn through the queue.".into(),
+        );
+    }
     let selected_for_display = routed_skills.selected.clone();
     let routing_notice = routed_skills.notice.clone();
     let cancellation = Arc::new(vesper_runtime::RuntimeCancellation::new());
@@ -7975,7 +8637,9 @@ fn spawn_vro_react_turn(
     let effective_mode = session.state.effective_reasoning_mode();
     let compaction_agent = Arc::clone(agent);
     let mut history = session.conversation.clone();
+    ContentText::new(&user_text).map_err(|_| "Message exceeds the 1 MiB provider text limit.")?;
     let mut user_message = build_user_message(&user_text);
+    assign_submitted_message_id(&mut user_message, session);
     if !routed_skills.selected.is_empty() {
         let _ = user_message.extensions.insert(
             "vesper:skills",
@@ -8091,7 +8755,7 @@ fn spawn_vro_react_turn(
             _ = cancellation.cancelled() => {
                 if compaction_agent.completion_port().is_some() {
                     match compaction_agent.finish_delegated_acceptance(history, "ReAct cancelled; no success granted", mode, permission, cancellation.clone()).await {
-                        Ok((outcome, history)) => { let _ = tx.send(AgentEvent::Completed { outcome, history }); }
+                        Ok((outcome, history)) => { let _ = tx.send(AgentEvent::Completed { execution_succeeded: outcome.is_success(), outcome, history }); }
                         Err(error) => { let _ = tx.send(AgentEvent::Failed(error)); }
                     }
                 } else {
@@ -8116,7 +8780,11 @@ fn spawn_vro_react_turn(
                     routed_skills
                         .outcomes
                         .record(&routed_skills.selected, outcome.is_success());
-                    let _ = tx.send(AgentEvent::Completed { outcome, history });
+                    let _ = tx.send(AgentEvent::Completed {
+                        execution_succeeded: outcome.is_success(),
+                        outcome,
+                        history,
+                    });
                 }
                 Err(error) => {
                     let _ = tx.send(AgentEvent::Failed(error));
@@ -8189,15 +8857,13 @@ fn spawn_vro_react_turn(
             ));
         }
 
-        let _ = tx.send(AgentEvent::Completed {
-            outcome: vesper_agent::AgentTurnOutcome::Completed {
-                assistant_content: vec![vesper_domain::ContentPart::Text(text)],
-                iterations: outcome.cost.model_calls.max(1),
-                tool_results: vec![],
-                plan: Some(reasoning_summary),
-            },
+        let _ = tx.send(delegated_completion(
+            outcome.status,
+            text,
+            outcome.cost.model_calls.max(1),
+            Some(reasoning_summary),
             history,
-        });
+        ));
     });
 
     session.agent_task = Some(task);
@@ -8397,6 +9063,7 @@ fn spawn_manual_compaction(
                     report.dropped_messages, report.before_tokens, report.after_tokens
                 );
                 AgentEvent::Completed {
+                    execution_succeeded: true,
                     outcome: AgentTurnOutcome::Completed {
                         assistant_content: vec![ContentPart::Text(
                             ContentText::new(message).expect("bounded compaction notice"),
@@ -9097,6 +9764,7 @@ fn drain_agent_event(session: &mut TuiSession) {
             Ok(event) => {
                 let mut event =
                     promote_user_cancellation(event, session.turn_cancellation.as_ref());
+                let queue_success = successful_message_completion(&event);
                 session.agent_running = false;
                 // VRO-17 PR-4: runtime settlement reaches the voice
                 // session (distinct from message completion); a failed
@@ -9186,6 +9854,8 @@ fn drain_agent_event(session: &mut TuiSession) {
                 }
                 record_agent_event(session, &event);
                 apply_agent_event(event, &mut session.state);
+                session.message_journal.settle(queue_success);
+                persist_message_transition(session);
                 return;
             }
             Err(mpsc::error::TryRecvError::Empty) => return,
@@ -9207,6 +9877,8 @@ fn drain_agent_event(session: &mut TuiSession) {
                     .state
                     .transcript
                     .push("agent: task aborted (sender dropped).".into());
+                session.message_journal.settle(false);
+                persist_message_transition(session);
                 return;
             }
         }
@@ -9439,6 +10111,14 @@ fn build_completion_report(session: &mut TuiSession, event: &AgentEvent) {
         .count();
     let total = session.state.task_plan.len();
     session.last_report = match event {
+        AgentEvent::Completed {
+            execution_succeeded: false,
+            outcome: AgentTurnOutcome::Completed { .. },
+            ..
+        } => vec![
+            "✗ Delegated execution stopped without success".into(),
+            "Future messages retained; automatic dispatch paused.".into(),
+        ],
         AgentEvent::Completed {
             outcome:
                 AgentTurnOutcome::Acceptance {
@@ -9810,8 +10490,20 @@ fn record_agent_event(session: &TuiSession, event: &AgentEvent) {
 /// opaque data, reasoning blocks, tool arguments, and tool outputs are
 /// intentionally omitted; the persisted search contract exposes only user
 /// and assistant text.
+fn session_storage_root(session: &TuiSession) -> std::path::PathBuf {
+    #[cfg(test)]
+    {
+        session.test_session_root.path().to_owned()
+    }
+    #[cfg(not(test))]
+    {
+        let _ = session;
+        session_root_path()
+    }
+}
+
 fn persist_tui_conversation(session: &TuiSession) -> Result<(), String> {
-    let root = session_root_path();
+    let root = session_storage_root(session);
     std::fs::create_dir_all(&root).map_err(|error| error.to_string())?;
     let messages = session
         .conversation
@@ -9832,10 +10524,14 @@ fn persist_tui_conversation(session: &TuiSession) -> Result<(), String> {
                 })
                 .collect::<Vec<_>>()
                 .join("\n");
-            (!text.is_empty()).then(|| serde_json::json!({"role": role, "content": text}))
+            (!text.is_empty()).then(
+                || serde_json::json!({"id": message.id.as_str(), "role": role, "content": text}),
+            )
         })
         .collect::<Vec<_>>();
     let record = serde_json::json!({
+        "message_inspection": session.paste_inspection.as_ref().map(|view| serde_json::json!({"id": view.id, "scroll": view.scroll, "horizontal_scroll": view.horizontal_scroll})),
+        "message_journal": session.message_journal,
         "session_id": session.session_id,
         "title": "Agent Vesper TUI session",
         "cwd": std::env::current_dir().ok().map(|path| path.display().to_string()),
@@ -9885,6 +10581,11 @@ fn session_history_candidates() -> Vec<(String, String)> {
 }
 
 fn load_tui_session(selected: &str, session: &mut TuiSession) -> Result<(), String> {
+    if session.agent_running {
+        return Err(
+            "Cannot replace the session during an active turn; current queue retained.".into(),
+        );
+    }
     if selected.is_empty()
         || selected.len() > 128
         || !selected
@@ -9893,7 +10594,7 @@ fn load_tui_session(selected: &str, session: &mut TuiSession) -> Result<(), Stri
     {
         return Err("invalid session id".into());
     }
-    let bytes = std::fs::read(session_root_path().join(format!("{selected}.json")))
+    let bytes = std::fs::read(session_storage_root(session).join(format!("{selected}.json")))
         .map_err(|error| error.to_string())?;
     if bytes.len() > 16 * 1024 * 1024 {
         return Err("session exceeds 16 MiB".into());
@@ -9927,14 +10628,87 @@ fn load_tui_session(selected: &str, session: &mut TuiSession) -> Result<(), Stri
         };
         transcript.push(format!("{role_text}: {text}"));
         conversation.push(ConversationMessage {
-            id: MessageId::new(format!("history-{index}")).map_err(|error| error.to_string())?,
+            id: MessageId::new(
+                message
+                    .get("id")
+                    .and_then(serde_json::Value::as_str)
+                    .map(str::to_owned)
+                    .unwrap_or_else(|| format!("history-{index}")),
+            )
+            .map_err(|error| error.to_string())?,
             role,
             content: vec![ContentPart::Text(content)],
             extensions: ExtensionMap::default(),
         });
     }
+    let mut journal: agent_vesper_tui::messages::MessageJournal = value
+        .get("message_journal")
+        .cloned()
+        .map(serde_json::from_value)
+        .transpose()
+        .map_err(|error| error.to_string())?
+        .unwrap_or_default();
+    let legacy = value.get("message_journal").is_none();
+    if legacy {
+        for message in &conversation {
+            if message.role != MessageRole::User {
+                continue;
+            }
+            let text = message
+                .content
+                .iter()
+                .filter_map(|part| {
+                    if let ContentPart::Text(text) = part {
+                        Some(text.as_str())
+                    } else {
+                        None
+                    }
+                })
+                .collect::<Vec<_>>()
+                .join("\n");
+            let mut archived = agent_vesper_tui::messages::Message::plain(text.clone());
+            if agent_vesper_tui::messages::should_collapse(&text) {
+                let mut paste =
+                    agent_vesper_tui::messages::ComposerPaste::new(journal.paste_id()?, 0, text);
+                paste.metadata.origin = agent_vesper_tui::messages::PasteOrigin::LegacySubmitted;
+                archived.pastes.push(paste.metadata);
+            }
+            let id = journal.admit(archived)?;
+            journal.pending.pop_back();
+            journal
+                .messages
+                .iter_mut()
+                .find(|message| message.id == id)
+                .expect("legacy message")
+                .state = agent_vesper_tui::messages::MessageState::Settled;
+        }
+    }
+    journal.validate()?;
+    journal.recover();
     if let Some(mcp) = &session.mcp_session {
         mcp.reset().map_err(|error| error.to_string())?;
+    }
+    session.message_journal = journal;
+    session.paste_inspection = None;
+    if let Some(inspection) = value.get("message_inspection")
+        && let Some(id) = inspection.get("id").and_then(serde_json::Value::as_str)
+    {
+        execute_message_command(
+            agent_vesper_tui::commands::MessageCommand::Paste(id.to_owned()),
+            session,
+        );
+        if let Some(view) = session.paste_inspection.as_mut() {
+            view.scroll = inspection
+                .get("scroll")
+                .and_then(serde_json::Value::as_u64)
+                .unwrap_or_default() as usize;
+            view.scroll = view.scroll.min(view.lines.len().saturating_sub(1));
+            view.horizontal_scroll = inspection
+                .get("horizontal_scroll")
+                .and_then(serde_json::Value::as_u64)
+                .unwrap_or_default()
+                .min(256) as u16;
+        }
     }
     session.session_id = selected.to_owned();
     session.conversation = conversation;
@@ -9943,6 +10717,47 @@ fn load_tui_session(selected: &str, session: &mut TuiSession) -> Result<(), Stri
         .cloned()
         .and_then(|field| serde_json::from_value(field).ok())
         .unwrap_or(transcript);
+    if legacy
+        && session
+            .message_journal
+            .messages
+            .iter()
+            .any(|message| !message.pastes.is_empty())
+    {
+        // Preserve historical activity and errors; replace user projections
+        // only where their ordinal mapping is unambiguous. Unknown legacy
+        // composition is never labelled as a recovered terminal paste event.
+        let displayed_users = session
+            .state
+            .transcript
+            .iter()
+            .filter(|line| line.starts_with("user:"))
+            .count();
+        if displayed_users == session.message_journal.messages.len() {
+            let mut index = 0;
+            for line in &mut session.state.transcript {
+                if !line.starts_with("user:") {
+                    continue;
+                }
+                let archived = &session.message_journal.messages[index];
+                index += 1;
+                if !archived.pastes.is_empty() {
+                    *line = format!("user: {} · /paste {}", archived.preview(), archived.id);
+                }
+            }
+        } else {
+            for (index, archived) in session.message_journal.messages.iter().enumerate() {
+                if !archived.pastes.is_empty() {
+                    session.state.transcript.push(format!(
+                        "content: stored user turn {} · {} · /paste {}",
+                        index + 1,
+                        archived.preview(),
+                        archived.id
+                    ));
+                }
+            }
+        }
+    }
     session.state.context_pressure = value
         .get("context_pressure")
         .cloned()
@@ -9971,6 +10786,21 @@ fn load_tui_session(selected: &str, session: &mut TuiSession) -> Result<(), Stri
 fn apply_agent_event(event: AgentEvent, state: &mut SessionState) {
     match event {
         AgentEvent::Progress(_) | AgentEvent::RoutingNotice { .. } => {}
+        AgentEvent::Completed {
+            execution_succeeded: false,
+            outcome:
+                AgentTurnOutcome::Completed {
+                    assistant_content, ..
+                },
+            ..
+        } => {
+            for part in assistant_content {
+                if let ContentPart::Text(text) = part {
+                    state.transcript.push(format!("assistant: {text}"));
+                }
+            }
+            state.status = Some("Delegated execution stopped without success; queue paused. /queue resume starts future messages.".into());
+        }
         AgentEvent::Completed { outcome, .. } => match outcome {
             AgentTurnOutcome::Acceptance { report, plan, .. } => {
                 state
@@ -10129,15 +10959,20 @@ fn apply_agent_event(event: AgentEvent, state: &mut SessionState) {
 /// Builds a user-role [`ConversationMessage`] for one agent turn.
 ///
 /// `MessageId` is bounded; the binary uses a monotonic counter scoped to this
-/// process so collisions across prompts are impossible.
+/// session; ordinary submissions use their persisted journal identity.
+fn assign_submitted_message_id(message: &mut ConversationMessage, session: &TuiSession) {
+    if let Some(id) = session.message_journal.active.as_ref() {
+        message.id = MessageId::new(format!("tui-{}-{id}", session.session_id))
+            .expect("bounded session/message identity");
+    }
+}
+
 fn build_user_message(text: &str) -> ConversationMessage {
     build_user_message_with_images(text, Vec::new())
 }
 
 fn build_user_message_with_images(text: &str, images: Vec<ImageDescriptor>) -> ConversationMessage {
-    static SEQ: AtomicU64 = AtomicU64::new(3000);
-    let n = SEQ.fetch_add(1, Ordering::Relaxed);
-    let id = MessageId::new(format!("tui-prompt-{n}"))
+    let id = MessageId::new(format!("tui-prompt-{}", uuid::Uuid::new_v4()))
         .expect("bounded message id derived from a small monotonic counter");
     let mut content = vec![ContentPart::Text(
         ContentText::new(text)
@@ -16515,6 +17350,7 @@ mod tests {
         let mut state = SessionState::default();
         apply_agent_event(
             AgentEvent::Completed {
+                execution_succeeded: true,
                 outcome: AgentTurnOutcome::Completed {
                     assistant_content: vec![citation, encrypted],
                     iterations: 1,
@@ -18047,6 +18883,7 @@ mod tests {
         assert_eq!(state.phase(), PlanPhase::Planning);
 
         let event = AgentEvent::Completed {
+            execution_succeeded: true,
             outcome: AgentTurnOutcome::Completed {
                 assistant_content: vec![ContentPart::Text(
                     ContentText::new("Planning now.").unwrap(),
@@ -18084,6 +18921,7 @@ mod tests {
         })).unwrap();
         apply_agent_event(
             AgentEvent::Completed {
+                execution_succeeded: true,
                 outcome: AgentTurnOutcome::Acceptance {
                     report,
                     iterations: 1,
@@ -18106,6 +18944,7 @@ mod tests {
         // assistant text and a completion notice, leaving Plan Mode alone.
         let mut state = SessionState::new();
         let event = AgentEvent::Completed {
+            execution_succeeded: true,
             outcome: AgentTurnOutcome::Completed {
                 assistant_content: vec![ContentPart::Text(
                     ContentText::new("Hello, agent.").unwrap(),
@@ -18132,6 +18971,7 @@ mod tests {
     fn apply_agent_event_preserves_interrupted_partial_text_and_plan() {
         let mut state = SessionState::new();
         let event = AgentEvent::Completed {
+            execution_succeeded: true,
             outcome: AgentTurnOutcome::Interrupted {
                 assistant_content: vec![ContentPart::Text(
                     ContentText::new("partial tui answer").unwrap(),
@@ -18191,6 +19031,7 @@ mod tests {
         tool_results: Vec<vesper_agent::ToolResult>,
     ) -> AgentEvent {
         AgentEvent::Completed {
+            execution_succeeded: true,
             outcome: AgentTurnOutcome::Interrupted {
                 assistant_content: if partial.is_empty() {
                     Vec::new()
@@ -18418,6 +19259,7 @@ mod tests {
         drain_terminal_event(
             &mut session,
             AgentEvent::Completed {
+                execution_succeeded: true,
                 outcome: AgentTurnOutcome::Completed {
                     assistant_content: vec![ContentPart::Text(
                         ContentText::new("next turn succeeded").unwrap(),
@@ -18453,6 +19295,7 @@ mod tests {
         let mut state = SessionState::new();
         apply_agent_event(
             AgentEvent::Completed {
+                execution_succeeded: true,
                 outcome: AgentTurnOutcome::MaxIterationsReached {
                     iterations: 50,
                     plan: None,
@@ -18500,7 +19343,12 @@ mod tests {
             steering_tx: None,
             trajectory_rx: None,
             agent_task: None,
-            queued_prompts: VecDeque::new(),
+            message_journal: Default::default(),
+            paste_inspection: None,
+            deferred_composer_restore: None,
+            approval_command_backup: None,
+            #[cfg(test)]
+            test_session_root: tempfile::tempdir().expect("isolated session fixture"),
             pending_text_pastes: Vec::new(),
             usage_rx: None,
             agent_running: true,
@@ -18580,7 +19428,12 @@ mod tests {
             steering_tx: None,
             trajectory_rx: None,
             agent_task: None,
-            queued_prompts: VecDeque::new(),
+            message_journal: Default::default(),
+            paste_inspection: None,
+            deferred_composer_restore: None,
+            approval_command_backup: None,
+            #[cfg(test)]
+            test_session_root: tempfile::tempdir().expect("isolated session fixture"),
             pending_text_pastes: Vec::new(),
             usage_rx: None,
             agent_running: true,
@@ -18658,7 +19511,12 @@ mod tests {
             steering_tx: None,
             trajectory_rx: None,
             agent_task: None,
-            queued_prompts: VecDeque::new(),
+            message_journal: Default::default(),
+            paste_inspection: None,
+            deferred_composer_restore: None,
+            approval_command_backup: None,
+            #[cfg(test)]
+            test_session_root: tempfile::tempdir().expect("isolated session fixture"),
             pending_text_pastes: Vec::new(),
             usage_rx: None,
             agent_running: true,
@@ -18724,6 +19582,7 @@ mod tests {
             "no Completed event arrived, so the turn stays in flight"
         );
         let _ = tx.send(AgentEvent::Completed {
+            execution_succeeded: true,
             outcome: AgentTurnOutcome::Completed {
                 assistant_content: vec![ContentPart::Text(
                     ContentText::new("answering in order…").unwrap(),
@@ -19874,7 +20733,12 @@ mod tests {
             steering_tx: None,
             trajectory_rx: None,
             agent_task: None,
-            queued_prompts: VecDeque::new(),
+            message_journal: Default::default(),
+            paste_inspection: None,
+            deferred_composer_restore: None,
+            approval_command_backup: None,
+            #[cfg(test)]
+            test_session_root: tempfile::tempdir().expect("isolated session fixture"),
             pending_text_pastes: Vec::new(),
             usage_rx: None,
             agent_running: false,
@@ -20719,6 +21583,7 @@ mod tests {
     fn completed_iteration_commentary_collapses_but_final_answer_remains_primary() {
         let mut session = fresh_tui_session_for_trajectory_tests();
         let mut event = AgentEvent::Completed {
+            execution_succeeded: true,
             outcome: AgentTurnOutcome::Completed {
                 assistant_content: vec![
                     ContentPart::Text(ContentText::new("Let me inspect the files.").unwrap()),
@@ -20984,16 +21849,21 @@ mod tests {
     #[test]
     fn queued_prompt_fifo_preserves_every_mid_turn_submit() {
         let mut session = fresh_tui_session_for_trajectory_tests();
-        session.queued_prompts.push_back("first follow-up".into());
-        session.queued_prompts.push_back("second follow-up".into());
-        assert_eq!(
-            session.queued_prompts.pop_front().as_deref(),
-            Some("first follow-up")
-        );
-        assert_eq!(
-            session.queued_prompts.pop_front().as_deref(),
-            Some("second follow-up")
-        );
+        let a = session
+            .message_journal
+            .admit(agent_vesper_tui::messages::Message::plain(
+                "first follow-up".into(),
+            ))
+            .unwrap();
+        let b = session
+            .message_journal
+            .admit(agent_vesper_tui::messages::Message::plain(
+                "second follow-up".into(),
+            ))
+            .unwrap();
+        assert_eq!(session.message_journal.promote(false, false), Some(a));
+        session.message_journal.settle(true);
+        assert_eq!(session.message_journal.promote(false, false), Some(b));
     }
 
     #[test]
@@ -21041,6 +21911,21 @@ mod tests {
         );
         assert_eq!(session.conversation.len(), 1);
         assert_eq!(session.conversation[0].role, MessageRole::Assistant);
+        let saved: serde_json::Value = serde_json::from_slice(
+            &std::fs::read(
+                session_storage_root(&session).join(format!("{}.json", session.session_id)),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(saved["messages"][0]["content"], "partial answer");
+        assert!(
+            saved["display_transcript"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|line| line.as_str().unwrap().contains("read_file"))
+        );
     }
 
     #[test]
@@ -21262,16 +22147,10 @@ mod tests {
             session.input.is_empty(),
             "payload must not flood the composer"
         );
-        assert_eq!(
-            session.pending_text_pastes.as_slice(),
-            std::slice::from_ref(&pasted)
-        );
+        assert_eq!(session.pending_text_pastes[0].text, pasted);
         assert_eq!(
             composer_attachment_labels(&session.pending_images, &session.pending_text_pastes),
-            [format!(
-                "[Pasted Content {} chars]",
-                format_character_count(pasted.chars().count())
-            )]
+            [session.pending_text_pastes[0].metadata.label()]
         );
         assert_eq!(take_composer_text(&mut session), pasted);
         assert!(session.pending_text_pastes.is_empty());
@@ -21288,7 +22167,13 @@ mod tests {
     #[test]
     fn backspace_at_composer_start_removes_pasted_content_before_images() {
         let mut session = fresh_tui_session_for_trajectory_tests();
-        session.pending_text_pastes.push("large payload".into());
+        session
+            .pending_text_pastes
+            .push(agent_vesper_tui::messages::ComposerPaste::new(
+                "p1".into(),
+                0,
+                "large payload".into(),
+            ));
         remove_last_composer_attachment(&mut session);
         assert!(session.pending_text_pastes.is_empty());
         assert_eq!(
@@ -21298,7 +22183,7 @@ mod tests {
     }
 
     #[test]
-    fn bracketed_paste_queues_existing_image_path_without_touching_composer() {
+    fn native_clipboard_text_queues_existing_image_path_without_touching_composer() {
         use base64::Engine as _;
 
         let directory = tempfile::tempdir().unwrap();
@@ -21466,3 +22351,604 @@ mod voice_conversation_glue {
 }
 #[cfg(feature = "voice-conversation")]
 use voice_conversation_glue::ConversationPhase;
+
+#[cfg(test)]
+mod message_queue_tests {
+    use super::*;
+    use agent_vesper_tui::commands::MessageCommand;
+    use agent_vesper_tui::messages::MessageState;
+
+    fn session() -> TuiSession {
+        tests::fresh_tui_session_for_trajectory_tests()
+    }
+    fn submit(text: &str, session: &mut TuiSession) {
+        insert_composer_text(text, session);
+        let message =
+            agent_vesper_tui::messages::compose(&session.input, &session.pending_text_pastes)
+                .unwrap();
+        admit_composer_message(message, session).unwrap();
+    }
+    fn terminal(session: &mut TuiSession, event: AgentEvent) {
+        let (tx, rx) = mpsc::unbounded_channel();
+        session.agent_running = true;
+        session.agent_rx = Some(rx);
+        tx.send(event).unwrap();
+        drain_agent_event(session);
+    }
+    fn completion(heavy: bool, execution_succeeded: bool) -> AgentEvent {
+        AgentEvent::Completed {
+            execution_succeeded,
+            outcome: AgentTurnOutcome::Completed {
+                assistant_content: vec![ContentPart::Text(
+                    ContentText::new("settled answer").unwrap(),
+                )],
+                iterations: if heavy { 4 } else { 1 },
+                tool_results: if heavy {
+                    vec![vesper_agent::ToolResult::new("tool finished").unwrap()]
+                } else {
+                    vec![]
+                },
+                plan: None,
+            },
+            history: vec![build_user_message("active")],
+        }
+    }
+    #[test]
+    fn production_composer_exact_event_order_and_boundaries() {
+        let mut s = session();
+        insert_composer_text("A", &mut s);
+        ingest_terminal_pasted_text("B\r\n💡", &mut s);
+        insert_composer_text("C", &mut s);
+        ingest_terminal_pasted_text("D\n", &mut s);
+        let snapshot =
+            agent_vesper_tui::messages::compose(&s.input, &s.pending_text_pastes).unwrap();
+        assert_eq!(snapshot.text, "AB\r\n💡CD\n");
+        let projection = agent_vesper_tui::messages::composer_projection(
+            &s.input,
+            &s.pending_text_pastes,
+            s.state.preferences.composer_cursor,
+        )
+        .unwrap()
+        .0;
+        assert!(projection.starts_with("A[Pasted"));
+        assert!(projection.contains("]C[Pasted"));
+        assert_eq!(
+            snapshot
+                .pastes
+                .iter()
+                .map(|paste| paste.id.as_str())
+                .collect::<Vec<_>>(),
+            ["p1", "p2"]
+        );
+        let mut short = session();
+        ingest_terminal_pasted_text(&"界".repeat(999), &mut short);
+        assert!(short.pending_text_pastes.is_empty());
+        let mut long = session();
+        ingest_terminal_pasted_text(&"界".repeat(1000), &mut long);
+        assert_eq!(long.pending_text_pastes.len(), 1);
+    }
+    #[test]
+    fn terminal_image_path_is_literal_editable_text_and_preserves_line_endings() {
+        let mut s = session();
+        let path = s.test_session_root.path().join("literal.png");
+        std::fs::write(&path, b"a text reference, not clipboard image data").unwrap();
+        let text = path.to_str().unwrap();
+        ingest_terminal_pasted_text(text, &mut s);
+        assert_eq!(s.input, text);
+        assert!(s.pending_images.is_empty());
+        assert!(s.pending_text_pastes.is_empty());
+        let mut multiline = session();
+        let delivered = format!("{text}\r\n");
+        ingest_terminal_pasted_text(&delivered, &mut multiline);
+        assert_eq!(
+            agent_vesper_tui::messages::compose(&multiline.input, &multiline.pending_text_pastes,)
+                .unwrap()
+                .text,
+            delivered
+        );
+        assert!(multiline.pending_images.is_empty());
+    }
+    #[test]
+    fn acknowledged_mid_turn_message_is_durable_not_steering_and_draft_clears() {
+        let mut s = session();
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        s.steering_tx = Some(tx);
+        s.agent_running = true;
+        submit("future", &mut s);
+        assert!(rx.try_recv().is_err());
+        assert!(s.input.is_empty());
+        insert_composer_text("new draft", &mut s);
+        assert_eq!(s.input, "new draft");
+        let value: serde_json::Value = serde_json::from_slice(
+            &std::fs::read(
+                s.test_session_root
+                    .path()
+                    .join(format!("{}.json", s.session_id)),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(value["message_journal"]["pending"][0], "m1");
+        assert_eq!(value["message_journal"]["messages"][0]["text"], "future");
+        assert!(promote_pending_message(&mut s).is_none());
+    }
+    #[test]
+    fn failed_admission_retains_draft_and_does_not_acknowledge_queue() {
+        let mut s = session();
+        std::fs::create_dir(
+            s.test_session_root
+                .path()
+                .join(format!("{}.json", s.session_id)),
+        )
+        .unwrap();
+        insert_composer_text("typed", &mut s);
+        ingest_terminal_pasted_text("full\r\npaste", &mut s);
+        let snapshot =
+            agent_vesper_tui::messages::compose(&s.input, &s.pending_text_pastes).unwrap();
+        assert!(
+            admit_composer_message(snapshot, &mut s)
+                .unwrap_err()
+                .contains("draft retained")
+        );
+        assert_eq!(s.input, "typed");
+        assert_eq!(s.pending_text_pastes[0].text, "full\r\npaste");
+        assert!(s.message_journal.pending.is_empty());
+    }
+    #[test]
+    fn failed_promotion_restores_pending_identity_and_pauses() {
+        let mut s = session();
+        submit("pending", &mut s);
+        let target = s
+            .test_session_root
+            .path()
+            .join(format!("{}.json", s.session_id));
+        std::fs::remove_file(&target).unwrap();
+        std::fs::create_dir(&target).unwrap();
+        assert!(promote_pending_message(&mut s).is_none());
+        assert_eq!(
+            s.message_journal.pending.front().map(String::as_str),
+            Some("m1")
+        );
+        assert!(s.message_journal.active.is_none());
+        assert!(s.message_journal.paused.is_some());
+    }
+    #[test]
+    fn successful_normal_and_tool_heavy_settle_before_fifo_promotion() {
+        for heavy in [false, true] {
+            let mut s = session();
+            submit("active", &mut s);
+            submit("next", &mut s);
+            assert_eq!(promote_pending_message(&mut s).as_deref(), Some("active"));
+            terminal(&mut s, completion(heavy, true));
+            assert!(
+                s.state
+                    .transcript
+                    .iter()
+                    .any(|line| line.contains("settled answer"))
+            );
+            let saved: serde_json::Value = serde_json::from_slice(
+                &std::fs::read(
+                    s.test_session_root
+                        .path()
+                        .join(format!("{}.json", s.session_id)),
+                )
+                .unwrap(),
+            )
+            .unwrap();
+            assert_eq!(saved["message_journal"]["messages"][0]["state"], "Settled");
+            assert!(
+                saved["display_transcript"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .any(|line| line.as_str().unwrap().contains("settled answer"))
+            );
+            assert_eq!(promote_pending_message(&mut s).as_deref(), Some("next"));
+            for _ in 0..100 {
+                assert!(promote_pending_message(&mut s).is_none());
+            }
+            assert_eq!(
+                s.state
+                    .transcript
+                    .iter()
+                    .filter(|line| line.as_str() == "user: next")
+                    .count(),
+                1
+            );
+        }
+    }
+    #[test]
+    fn delegated_failure_provider_error_and_disconnected_channel_pause_queue() {
+        for kind in 0..3 {
+            let mut s = session();
+            submit("active", &mut s);
+            submit("next", &mut s);
+            promote_pending_message(&mut s);
+            match kind {
+                0 => terminal(&mut s, completion(false, false)),
+                1 => terminal(
+                    &mut s,
+                    AgentEvent::Failed(AgentLoopError::Incomplete(
+                        vesper_domain::FinishOutcome::ProviderError,
+                    )),
+                ),
+                _ => {
+                    let (tx, rx) = mpsc::unbounded_channel();
+                    drop(tx);
+                    s.agent_rx = Some(rx);
+                    s.agent_running = true;
+                    drain_agent_event(&mut s);
+                }
+            }
+            assert!(s.message_journal.paused.is_some());
+            assert_eq!(
+                s.message_journal.get("m1").unwrap().state,
+                MessageState::Interrupted
+            );
+            assert!(promote_pending_message(&mut s).is_none());
+            execute_message_command(MessageCommand::Queue("resume".into()), &mut s);
+            assert_eq!(promote_pending_message(&mut s).as_deref(), Some("next"));
+        }
+    }
+    #[test]
+    fn cancel_retains_future_and_requires_explicit_resume() {
+        let mut s = session();
+        submit("active", &mut s);
+        submit("next", &mut s);
+        promote_pending_message(&mut s);
+        s.agent_running = true;
+        cancel_active_turn_preserving_partial(&mut s, "cancelled by user");
+        assert_eq!(s.message_journal.pending.len(), 1);
+        assert!(promote_pending_message(&mut s).is_none());
+        execute_message_command(MessageCommand::Queue("resume".into()), &mut s);
+        assert_eq!(promote_pending_message(&mut s).as_deref(), Some("next"));
+    }
+    #[test]
+    fn production_react_and_vro_bridge_preserves_all_terminal_outcomes() {
+        use vesper_domain::OutcomeStatus::*;
+        for plan in [None, Some("ReAct — model calls: 4, tokens: 12".to_owned())] {
+            for status in [
+                Succeeded,
+                Failed,
+                Partial,
+                Cancelled,
+                BudgetExceeded,
+                RateLimitExceeded,
+                Inconclusive,
+            ] {
+                let mut s = session();
+                submit("active", &mut s);
+                submit("future", &mut s);
+                promote_pending_message(&mut s);
+                let event = delegated_completion(
+                    status,
+                    ContentText::new("delegated final").unwrap(),
+                    4,
+                    plan.clone(),
+                    vec![build_user_message("active")],
+                );
+                terminal(&mut s, event);
+                assert_eq!(
+                    s.message_journal.get("m1").unwrap().state,
+                    if status == Succeeded {
+                        MessageState::Settled
+                    } else {
+                        MessageState::Interrupted
+                    }
+                );
+                assert_eq!(
+                    promote_pending_message(&mut s).is_some(),
+                    status == Succeeded
+                );
+            }
+        }
+    }
+    #[test]
+    fn preflight_deferral_keeps_one_user_projection_and_the_same_identity() {
+        let mut s = session();
+        submit("capability preflight", &mut s);
+        promote_pending_message(&mut s);
+        let id = s.message_journal.active.take().unwrap();
+        s.message_journal.messages[0].state = MessageState::Pending;
+        s.message_journal.pending.push_front(id.clone());
+        persist_tui_conversation(&s).unwrap();
+        assert_eq!(
+            promote_pending_message(&mut s).as_deref(),
+            Some("capability preflight")
+        );
+        assert_eq!(s.message_journal.active.as_deref(), Some(id.as_str()));
+        assert_eq!(
+            s.state
+                .transcript
+                .iter()
+                .filter(|line| line.as_str() == "user: capability preflight")
+                .count(),
+            1
+        );
+    }
+    #[test]
+    fn active_history_load_cannot_replace_acknowledged_queue() {
+        let mut s = session();
+        submit("active", &mut s);
+        submit("future", &mut s);
+        promote_pending_message(&mut s);
+        s.agent_running = true;
+        assert!(
+            load_tui_session("another", &mut s)
+                .unwrap_err()
+                .contains("current queue retained")
+        );
+        assert_eq!(s.message_journal.active.as_deref(), Some("m1"));
+        assert_eq!(
+            s.message_journal.pending.front().map(String::as_str),
+            Some("m2")
+        );
+    }
+    #[test]
+    fn delegated_cancellation_requires_the_host_token_and_retains_output() {
+        let event = || {
+            delegated_completion(
+                vesper_domain::OutcomeStatus::Cancelled,
+                ContentText::new("partial delegated output").unwrap(),
+                4,
+                None,
+                vec![build_user_message("active")],
+            )
+        };
+        assert!(user_cancelled_terminal(&event()));
+        assert!(!matches!(
+            promote_user_cancellation(event(), None),
+            AgentEvent::Cancelled { .. }
+        ));
+        let signal = Arc::new(vesper_runtime::RuntimeCancellation::new());
+        signal.cancel();
+        let promoted = promote_user_cancellation(event(), Some(&signal));
+        assert!(matches!(promoted, AgentEvent::Cancelled { .. }));
+        let mut state = SessionState::new();
+        apply_agent_event(promoted, &mut state);
+        assert!(
+            state
+                .transcript
+                .iter()
+                .any(|line| line.contains("partial delegated output"))
+        );
+        assert!(
+            state
+                .transcript
+                .iter()
+                .any(|line| line.contains("Turn cancelled by user"))
+        );
+    }
+    #[test]
+    fn queue_inspect_drop_clear_and_explicit_steering_are_distinct() {
+        let mut s = session();
+        submit("a", &mut s);
+        submit("b", &mut s);
+        execute_message_command(MessageCommand::Queue(String::new()), &mut s);
+        assert!(
+            s.state
+                .transcript
+                .iter()
+                .any(|line| line.contains("2 pending"))
+        );
+        execute_message_command(MessageCommand::Queue("drop m1".into()), &mut s);
+        assert_eq!(
+            s.message_journal.pending.front().map(String::as_str),
+            Some("m2")
+        );
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        s.steering_tx = Some(tx);
+        s.agent_running = true;
+        execute_message_command(MessageCommand::Steer("guidance".into()), &mut s);
+        assert_eq!(rx.try_recv().unwrap(), "guidance");
+        assert_eq!(s.message_journal.pending.len(), 1);
+        execute_message_command(MessageCommand::Queue("clear".into()), &mut s);
+        assert!(s.message_journal.pending.is_empty());
+    }
+    #[test]
+    fn full_inspection_collapsed_transcript_and_expanded_resume_are_preserved() {
+        let mut s = session();
+        let text = "💡 Unicode\r\n".repeat(1000);
+        ingest_terminal_pasted_text(&text, &mut s);
+        let snapshot =
+            agent_vesper_tui::messages::compose(&s.input, &s.pending_text_pastes).unwrap();
+        admit_composer_message(snapshot, &mut s).unwrap();
+        promote_pending_message(&mut s);
+        assert!(!s.state.transcript.join("\n").contains("Unicode"));
+        execute_message_command(MessageCommand::Paste("p1".into()), &mut s);
+        assert!(
+            s.paste_inspection
+                .as_ref()
+                .unwrap()
+                .lines
+                .join("\n")
+                .contains("Unicode")
+        );
+        s.paste_inspection.as_mut().unwrap().scroll = 10;
+        persist_tui_conversation(&s).unwrap();
+        let id = s.session_id.clone();
+        load_tui_session(&id, &mut s).unwrap();
+        assert_eq!(s.message_journal.get("m1").unwrap().text, text);
+        assert_eq!(
+            s.message_journal.get("m1").unwrap().state,
+            MessageState::Interrupted
+        );
+        assert_eq!(s.paste_inspection.as_ref().unwrap().scroll, 10);
+        assert!(s.message_journal.paused.is_some());
+        assert!(
+            promote_pending_message(&mut s).is_none(),
+            "uncertain active work must not replay"
+        );
+    }
+    #[test]
+    fn old_sessions_load_without_queue_or_schema_regression() {
+        let mut s = session();
+        std::fs::write(s.test_session_root.path().join("legacy.json"), br#"{"messages":[{"role":"user","content":"old user"},{"role":"assistant","content":"old answer"}]}"#).unwrap();
+        load_tui_session("legacy", &mut s).unwrap();
+        assert_eq!(s.conversation.len(), 2);
+        assert!(s.message_journal.pending.is_empty());
+        assert_eq!(s.state.transcript[0], "user: old user");
+    }
+    #[test]
+    fn legacy_folded_history_preserves_activity_and_inspects_original_body() {
+        let mut s = session();
+        let body = "legacy\r\n界".repeat(400);
+        let saved = serde_json::json!({"messages":[{"role":"user","content":body}], "display_transcript":["user: old compact label", "agent: prior failure retained"]});
+        std::fs::write(
+            s.test_session_root.path().join("legacy.json"),
+            serde_json::to_vec(&saved).unwrap(),
+        )
+        .unwrap();
+        load_tui_session("legacy", &mut s).unwrap();
+        assert!(s.state.transcript[0].contains("Submitted Content"));
+        assert_eq!(s.state.transcript[1], "agent: prior failure retained");
+        assert_eq!(s.message_journal.get("m1").unwrap().text, body);
+        execute_message_command(MessageCommand::Paste("m1".into()), &mut s);
+        assert!(s.paste_inspection.is_some());
+        assert!(s.message_journal.pending.is_empty());
+    }
+    #[test]
+    fn failed_queue_mutations_restore_payloads_and_never_drop_active_work() {
+        for operation in ["drop m2", "clear", "resume"] {
+            let mut s = session();
+            submit("active", &mut s);
+            ingest_terminal_pasted_text("future\r\n界", &mut s);
+            let snapshot =
+                agent_vesper_tui::messages::compose(&s.input, &s.pending_text_pastes).unwrap();
+            admit_composer_message(snapshot, &mut s).unwrap();
+            promote_pending_message(&mut s);
+            execute_message_command(MessageCommand::Queue("drop m1".into()), &mut s);
+            assert_eq!(s.message_journal.active.as_deref(), Some("m1"));
+            s.message_journal.pause("fixture pause");
+            let path = s
+                .test_session_root
+                .path()
+                .join(format!("{}.json", s.session_id));
+            std::fs::remove_file(&path).unwrap();
+            std::fs::create_dir(&path).unwrap();
+            execute_message_command(MessageCommand::Queue(operation.into()), &mut s);
+            assert_eq!(
+                s.message_journal.pending.front().map(String::as_str),
+                Some("m2")
+            );
+            assert_eq!(s.message_journal.get("m2").unwrap().text, "future\r\n界");
+            assert!(s.message_journal.paused.is_some());
+            assert_eq!(s.message_journal.active.as_deref(), Some("m1"));
+        }
+    }
+    #[test]
+    fn command_dispatch_registers_queue_steer_and_paste_without_user_turns() {
+        let registry = CommandRegistry::stage_11b();
+        let surface = tests::palette_surface();
+        for command in [
+            "/queue",
+            "/queue clear",
+            "/steer explicit",
+            "/paste p1",
+            "/not-a-real-command",
+        ] {
+            let mut state = SessionState::new();
+            let _ = dispatch(
+                &CommandIntent::parse(command),
+                &registry,
+                &surface,
+                &vesper_provider::PermissiveSuperpowerPolicy,
+                surface.provider_id(),
+                &mut state,
+            );
+            assert!(
+                !state
+                    .transcript
+                    .iter()
+                    .any(|line| line.starts_with("user:")),
+                "{command}"
+            );
+        }
+    }
+}
+
+#[cfg(test)]
+mod queue_approval_test {
+    use super::*;
+    #[tokio::test]
+    async fn pending_real_approval_prevents_queue_promotion() {
+        use vesper_agent::{ApprovalBroker, PermissionPort, ToolRegistry};
+        let mut s = tests::fresh_tui_session_for_trajectory_tests();
+        s.message_journal
+            .admit(agent_vesper_tui::messages::Message::plain("future".into()))
+            .unwrap();
+        let (broker, receiver) = ApprovalBroker::channel();
+        s.approval_rx = receiver;
+        let tools = ToolRegistry::parity_default();
+        let definition = tools.definition("run_command").unwrap();
+        let context = vesper_agent::executor::uncancellable_context(
+            Vec::new(),
+            SessionOperatingMode::Code,
+            SessionPermissionMode::Ask,
+        );
+        let call = vesper_domain::ToolCall {
+            id: vesper_domain::ToolCallId::new("approval").unwrap(),
+            tool_id: vesper_domain::ToolId::new("run_command").unwrap(),
+            arguments: serde_json::json!({}),
+            extensions: ExtensionMap::default(),
+        };
+        let mut waiting = broker.authorize(&call, definition, &context);
+        assert!(
+            tokio::time::timeout(std::time::Duration::from_millis(1), &mut waiting)
+                .await
+                .is_err()
+        );
+        drain_permission_request(&mut s);
+        assert!(s.pending_approval.is_some());
+        assert!(promote_pending_message(&mut s).is_none());
+        assert_eq!(s.message_journal.pending.len(), 1);
+        assert!(s.message_journal.active.is_none());
+        insert_composer_text("draft before", &mut s);
+        ingest_terminal_pasted_text("attached\nbody", &mut s);
+        let original = agent_vesper_tui::messages::compose(&s.input, &s.pending_text_pastes)
+            .unwrap()
+            .text;
+        open_approval_commands(&mut s);
+        assert_eq!(s.input, "/");
+        assert!(s.pending_approval.is_some());
+        assert!(s.pending_text_pastes.is_empty());
+        assert!(
+            admit_composer_message(
+                agent_vesper_tui::messages::Message::plain("Tab must not admit".into()),
+                &mut s,
+            )
+            .is_err()
+        );
+        assert_eq!(s.message_journal.pending.len(), 1);
+        assert!(approval_command_supported(
+            &agent_vesper_tui::commands::CommandOutcome::Message(
+                agent_vesper_tui::commands::MessageCommand::Queue("clear".into())
+            )
+        ));
+        assert!(!approval_command_supported(
+            &agent_vesper_tui::commands::CommandOutcome::Prompt(
+                "not a future turn in this command view".into()
+            )
+        ));
+        execute_message_command(
+            agent_vesper_tui::commands::MessageCommand::Queue("clear".into()),
+            &mut s,
+        );
+        assert!(s.message_journal.pending.is_empty());
+        assert!(s.pending_approval.is_some());
+        assert!(
+            tokio::time::timeout(std::time::Duration::from_millis(1), &mut waiting)
+                .await
+                .is_err(),
+            "queue management must not grant approval"
+        );
+        close_approval_commands(&mut s);
+        assert_eq!(
+            agent_vesper_tui::messages::compose(&s.input, &s.pending_text_pastes)
+                .unwrap()
+                .text,
+            original
+        );
+        drop(waiting);
+    }
+}

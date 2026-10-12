@@ -39,6 +39,7 @@ pub mod landing;
 pub mod lmstudio_hub;
 pub mod lmstudio_provider;
 pub mod markdown;
+pub mod messages;
 pub mod plan_mode;
 mod presentation;
 pub mod provider_hub;

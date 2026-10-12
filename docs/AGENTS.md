@@ -6,6 +6,8 @@ Own durable project documentation and evidence-backed engineering records.
 
 ## Ownership
 
+- `tui-message-queue-paste-prd.md` owns terminal future-turn admission, paste folding/inspection and durable recovery; the linked foundation report records source and acceptance evidence.
+
 - `foundation/2026-10-11-native-voice-download-and-owner-release-repair.md` owns the Windows pack downloader portability defect, explicit RRC owner release and missing-helper diagnosis correction with failed matrix and red/green receipts.
 
 - `foundation/2026-10-11-native-conpty-cleanup-race-repair.md` owns the complete capacity-candidate matrix and verified ConPTY cleanup race correction; mock cleanup proof does not replace native Windows acceptance.

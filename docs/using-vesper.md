@@ -34,6 +34,26 @@ add a regression test, and run the relevant tests. Report anything unverified.
 
 The conversation shows tool activity and results. Review the plan for multi-step work, respond to permission prompts, and inspect the resulting diff. Automatic continuation is bounded; an interrupted or exhausted run can leave work unfinished.
 
+## Messages while Vesper works
+
+Press **Enter** to queue a separate future turn while the agent is running.
+Messages run in submission order after successful completion. Use `/steer <text>`
+(or the Steer footer action) for explicit guidance to the current turn.
+
+- `/queue` shows pending IDs and bounded previews; `/queue page <n>` shows more.
+- `/queue drop <id>` removes one pending turn; `/queue clear` removes all pending turns.
+- Cancellation or error preserves future messages and pauses dispatch. After
+  inspecting the outcome, `/queue resume` starts pending future turns.
+- Recovered queues start paused. Interrupted in-flight work is never replayed.
+
+Multiline pastes and single-line pastes of at least 1,000 Unicode characters appear
+as compact chips. Typed text and multiple pasted blocks keep their original order.
+After submission, `/paste <message-id|paste-id>` opens the full content; use
+arrows/PageUp/PageDown to scroll, Left/Right to pan, and Esc to collapse. Short
+single-line pastes remain editable. The complete terminal-delivered content goes
+to the model; labels are display only. Oversized text or failed persistence is
+reported visibly and leaves an unacknowledged composer draft intact.
+
 ## Settings and providers
 
 The selected theme colors every native Settings panel, including Providers,
@@ -179,3 +199,11 @@ Native MCP tools and signed declarative plugins extend workflows subject to perm
 The terminal app supports saved-session resume with `agent-vesper-tui --resume <SESSION_ID>`. Editor chat persistence needs both session read and write flags; see [Zed setup](zed.md#keep-chat-history).
 
 Checkpoints and lineage are a separate feature. In ACP they are off by default and require an explicit checkpoint root or `AGENT_VESPER_ENABLE_CHECKPOINTS=1`. Ordinary editor chats should not create a project checkpoint directory merely by connecting.
+
+While a tool approval is waiting, **Ctrl+P Commands** opens queue management,
+content inspection and informational commands without granting approval.
+**Esc** returns to the approval dialog and restores the original draft.
+Normal text in this command-only view is not submitted or queued.
+
+Terminal text paste remains literal, including existing image-file paths.
+Use the native clipboard image route or `/image` to attach an image explicitly.

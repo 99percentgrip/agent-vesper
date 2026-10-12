@@ -6,6 +6,19 @@ Verify terminal interaction through the production TUI binary with isolated stat
 
 ## Ownership
 
+- `message_queue_pty.py` owns a held loopback provider and real terminal proof of
+  mixed literal terminal paste ordering (including existing image-file paths),
+  Enter queue/FIFO, command bypass, pending drop, complete
+  inspection, compact transcript, durable IDs, cancellation/provider-error pauses
+  and crash recovery requiring explicit future-turn resume without replay.
+  A hosted-tool fixture verifies Ctrl+P queue management during pending approval,
+  original draft restoration and tool-heavy completion before FIFO promotion.
+  `message_queue_pty.rs` enrolls it under Unix `integration-test-harness` using
+  `VESPER_TEST_PYTHON` or Python 3. State and credentials are synthetic/private;
+  it changes no invoking RRC state. Native Windows/macOS proof is reported
+  separately when executed; a portable script is not native-platform evidence.
+
+
 - `first_launch_pty.py` verifies signed-out first launch for every registered
   provider, all four Settings authentication routes, benign Back and clean Quit.
   Never seed a Z.ai key in this case; malformed private GLM vaults deliberately

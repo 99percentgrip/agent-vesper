@@ -67,11 +67,20 @@ impl CommandIntent {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum MessageCommand {
+    Queue(String),
+    Steer(String),
+    Paste(String),
+}
+
 /// Outcome of resolving a slash command against the registry.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CommandOutcome {
     /// Free-text prompt — pass straight to the runtime.
     Prompt(String),
+    /// Native future-turn queue and pasted-content inspection operations.
+    Message(MessageCommand),
     /// Plan Mode was invoked with a PRD.
     Plan {
         prd: String,
@@ -1172,6 +1181,9 @@ impl CommandRegistry {
                     }
                 }
             }
+            "queue" => CommandOutcome::Message(MessageCommand::Queue(argument.to_owned())),
+            "steer" => CommandOutcome::Message(MessageCommand::Steer(argument.to_owned())),
+            "paste" => CommandOutcome::Message(MessageCommand::Paste(argument.to_owned())),
             "history" => {
                 let session_id = argument.trim();
                 if session_id.is_empty() {
@@ -2184,6 +2196,9 @@ const ORACLE_COMMAND_SURFACE: &[OracleCommandEntry] = &[
     OracleCommandEntry { name: "version",           description: "Show package, Python, and platform version info" },
     OracleCommandEntry { name: "help",              description: "Show the full harness command reference" },
     OracleCommandEntry { name: "copy",              description: "Copy the last response to clipboard" },
+    OracleCommandEntry { name: "queue", description: "Inspect, drop, clear or resume future turns" },
+    OracleCommandEntry { name: "steer", description: "Explicit guidance for the current active turn" },
+    OracleCommandEntry { name: "paste", description: "Inspect full pasted content by message or paste ID" },
     OracleCommandEntry { name: "history",           description: "Browse and resume past sessions" },
     OracleCommandEntry { name: "search",            description: "Grep the current conversation" },
     OracleCommandEntry { name: "export",            description: "Export current session" },
@@ -2710,9 +2725,12 @@ mod tests {
         );
         assert_eq!(
             registry.names().len(),
-            102 + usize::from(cfg!(feature = "swarm")) + usize::from(cfg!(feature = "bridge")),
+            105 + usize::from(cfg!(feature = "swarm")) + usize::from(cfg!(feature = "bridge")),
             "the complete oracle-compatible and Vesper-native command surface must stay registered"
         );
+        for command in ["queue", "steer", "paste"] {
+            assert!(registry.contains(command));
+        }
         assert_eq!(registry.contains("swarm"), cfg!(feature = "swarm"));
         assert_eq!(
             registry.contains("bridge"),
