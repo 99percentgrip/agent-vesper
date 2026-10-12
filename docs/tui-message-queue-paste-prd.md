@@ -128,18 +128,16 @@ Use the native clipboard image route or `/image` to attach an image explicitly.
 
 ## Current acceptance status
 
-Initial implementation passed seven gates, 165 exact acceptance cases and 31
-focused checks. The subsequent audit found native-command regressions; the corrected final source passed all seven mandatory gates and 35 scoped
-regressions, including the strengthened real terminal interaction test.
-The later native release exposed an advisory-fetch blocker. Its bounded shared
-correction passed the complete final ladder and four focused recovery tests;
-current verification contains 39 scoped successes on frozen source.
-READY FOR LIVE ACCEPTANCE: YES. Publication remains pending native exact-SHA
-gates and registry/report closeout.
-The execution report maps the 26 required behaviors to current automated evidence.
-Native Windows/macOS and live-provider/delegated acceptance remain unexecuted;
-local readiness does not claim those live proofs. Source, methods, failures and
-verification receipts are retained in the linked execution report.
+The queue/paste and command corrections passed their complete ladders; the
+advisory-read correction passed all seven gates and 39 scoped regressions. Native
+RRC passed eight versioned local gates and pushed the unused v0.24.13 candidate.
+Its matrix watcher then stopped on a measured connection-read error. The
+[bounded matrix-read correction](foundation/2026-10-12-rrc-matrix-transport-read-recovery.md)
+passed four focused tests and the complete seven-gate final-source ladder.
+Current verification includes 44 scoped successes on frozen source.
+READY FOR LIVE ACCEPTANCE: YES. Fresh native exact-SHA publication is pending.
+The execution report maps the 26 behaviors to automated evidence. Live native
+Windows/macOS queue interaction and provider/delegated proof remain unexecuted.
 
 ## Native command boundary
 

@@ -18,7 +18,11 @@ Verify terminal interaction through the production TUI binary with isolated stat
   commands without losing the draft; Enter reports unknown commands immediately.
   `message_queue_pty.rs` enrolls it under Unix `integration-test-harness` using
   `VESPER_TEST_PYTHON` or Python 3. State and credentials are synthetic/private;
-  it changes no invoking RRC state. Native Windows/macOS proof is reported
+  it changes no invoking RRC state. The Rust fixture has a 270-second outer
+  lifetime; Python requests ordinary cleanup at 240 seconds.
+  `test_terminal_writer.py` pins partial-byte fidelity, output-draining
+  backpressure, input deadlines/flag restoration and real bounded duplex I/O.
+  Native Windows/macOS proof is reported
   separately when executed; a portable script is not native-platform evidence.
 
 
@@ -29,7 +33,10 @@ Verify terminal interaction through the production TUI binary with isolated stat
 - `settings_pty.py` supplies the common rendered-screen observer. POSIX uses
   stdlib PTYs; Windows uses the exact hashed Python 3.13 pywinpty wheel in
   `windows-terminal-requirements.txt`, explicitly ConPTY. Reads, exits and
-  cleanup are bounded; no production dependency is added. Native keyboard
+  cleanup are bounded; POSIX writes are nonblocking, retain all partial bytes,
+  drain output while blocked and restore descriptor flags. Owned child cleanup
+  escalates TERM to KILL only after its bounded exit wait. No production
+  dependency is added. Native keyboard
   navigation runs on every OS; POSIX authentication fixtures also retain clicks.
 
 - `rrc_terminal_pty.rs` gives the child its own session and controlling slave

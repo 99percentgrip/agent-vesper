@@ -2,6 +2,8 @@
 """Real terminal queue/paste lifecycle against a bounded loopback provider."""
 import http.server
 import json
+import os
+import signal
 from pathlib import Path
 import socketserver
 import sys
@@ -320,4 +322,10 @@ def run(binary):
 
 
 if __name__ == "__main__":
+    if os.name != "nt":
+        def timeout(_signal, _frame):
+            raise TimeoutError("queue PTY fixture exceeded its bounded lifetime")
+        signal.signal(signal.SIGALRM, timeout)
+        signal.signal(signal.SIGTERM, timeout)
+        signal.alarm(240)
     run(str(Path(sys.argv[1]).resolve()))

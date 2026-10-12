@@ -1,5 +1,7 @@
 # Agent Vesper — Release Recovery Controller PRD
 
+Measured matrix connection recovery and its current verification boundary: [execution report](foundation/2026-10-12-rrc-matrix-transport-read-recovery.md).
+
 The [advisory-fetch read recovery](foundation/2026-10-12-rrc-advisory-fetch-read-recovery.md)
 records a measured native release blocker. The exact security-advisory gate may
 collect one persisted read-only diagnostic after an identified Git transport

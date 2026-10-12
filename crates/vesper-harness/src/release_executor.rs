@@ -2168,6 +2168,74 @@ fn advisory_fetch_transport_failure(gate: &LocalGateRecord, error: &RrcError) ->
         .any(|needle| text.contains(needle))
 }
 
+fn recover_remote_matrix_transport_read(
+    record: &mut ReleaseRecoveryRecord,
+    ledger: &ReleaseLedger,
+    error: &RrcError,
+    cancelled: &AtomicBool,
+) -> Result<bool, RrcError> {
+    let RrcError::Invalid(message) = error else {
+        return Ok(false);
+    };
+    let text = message.to_ascii_lowercase();
+    if !matches!(
+        record.state,
+        ReleaseRecoveryState::RemoteGateRunning | ReleaseRecoveryState::WaitingForMatrix
+    ) || !record.mutation.candidate_pushed
+        || record.mutation.tag_pushed
+        || record.mutation.publication_verified
+        || record.mutation.in_flight_operation.is_some()
+        || record.mutation.remote_matrix_read_retries >= 2
+        || record.retry_budget.targeted_diagnostic_used
+            >= record.retry_budget.targeted_diagnostic_limit
+        || cancelled.load(Ordering::Acquire)
+        || !text.contains("github api command failed")
+        || !text.contains("error connecting to api.github.com")
+        || [
+            "unauthorized",
+            "forbidden",
+            "permission denied",
+            "authentication",
+            "bad credentials",
+            "http 401",
+            "http 403",
+            "http 404",
+            "certificate",
+            "ssl",
+            "tls",
+        ]
+        .iter()
+        .any(|needle| text.contains(needle))
+    {
+        return Ok(false);
+    }
+    // Reserve durable read limits before the worker's cancellable poll wait.
+    // Keep the last real matrix; this observation grants no CI or write authority.
+    record.mutation.remote_matrix_read_retries += 1;
+    record.retry_budget.targeted_diagnostic_used += 1;
+    record.note_progress_milestone(format!(
+        "GitHub matrix transport failed — read-only recovery {}/2 reserved; last matrix remains unverified: {}",
+        record.mutation.remote_matrix_read_retries,
+        crate::release_recovery::first_causal_excerpt(message),
+    ));
+    if record.state == ReleaseRecoveryState::RemoteGateRunning {
+        let candidate = record
+            .active_commit()
+            .ok_or_else(|| RrcError::Invalid("matrix read has no candidate".into()))?
+            .to_owned();
+        record.transition(
+            ReleaseRecoveryState::WaitingForMatrix,
+            &candidate,
+            "awaiting a fresh exact-SHA matrix after transport failure",
+            vec!["rrc:matrix-read-transport".into()],
+            None,
+        )?;
+    }
+    record.note_liveness_active("remote matrix read recovery");
+    ledger.save(record)?;
+    Ok(true)
+}
+
 fn retain_local_gate_failure_evidence(
     record: &mut ReleaseRecoveryRecord,
     index: usize,
@@ -2564,8 +2632,14 @@ pub fn advance_release(
         ReleaseRecoveryState::RemoteGateRunning
         | ReleaseRecoveryState::WaitingForMatrix
         | ReleaseRecoveryState::PostReleaseMainDegraded => {
-            refresh_remote_evidence(record, repository, github)?;
-            ledger.save(record)?;
+            match refresh_remote_evidence(record, repository, github) {
+                Ok(()) => ledger.save(record)?,
+                Err(error) => {
+                    if !recover_remote_matrix_transport_read(record, ledger, &error, &cancelled)? {
+                        return Err(error);
+                    }
+                }
+            }
         }
         ReleaseRecoveryState::DiagnosingLocalFailure | ReleaseRecoveryState::DiagnosingRepair => {
             let factory = repair_factory.ok_or_else(|| {
@@ -7623,6 +7697,232 @@ pub(crate) mod tests {
         );
         assert!(persisted.failures.is_empty());
         assert!(!persisted.mutation.candidate_pushed);
+    }
+
+    struct MatrixReadFixture {
+        outcomes: Mutex<VecDeque<Result<(), RrcError>>>,
+        reads: std::sync::atomic::AtomicUsize,
+        checkpoint_root: PathBuf,
+    }
+    impl GitHubEvidencePort for MatrixReadFixture {
+        fn matrix_for_sha(
+            &self,
+            repository: &str,
+            sha: &str,
+        ) -> Result<Vec<crate::release_recovery::GateRecord>, RrcError> {
+            if self.reads.fetch_add(1, Ordering::SeqCst) > 0 {
+                let saved = ReleaseLedger::open(&self.checkpoint_root, "repo")
+                    .unwrap()
+                    .load()
+                    .unwrap()
+                    .unwrap();
+                assert!(saved.mutation.remote_matrix_read_retries > 0);
+                assert!(saved.retry_budget.targeted_diagnostic_used > 0);
+                assert!(!saved.mutation.tag_pushed);
+            }
+            self.outcomes
+                .lock()
+                .unwrap()
+                .pop_front()
+                .expect("bounded matrix observations")?;
+            GreenGithub.matrix_for_sha(repository, sha)
+        }
+        fn job_log(&self, _: &str, _: u64) -> Result<String, RrcError> {
+            panic!("transport read is not a CI failure")
+        }
+        fn rerun_job(&self, _: &str, _: u64) -> Result<(), RrcError> {
+            panic!("no CI mutation")
+        }
+        fn rerun_failed(&self, _: &str, _: u64) -> Result<(), RrcError> {
+            panic!("no CI mutation")
+        }
+        fn rerun_workflow(&self, _: &str, _: u64) -> Result<(), RrcError> {
+            panic!("no CI mutation")
+        }
+    }
+    fn matrix_transport_error() -> RrcError {
+        RrcError::Invalid("GitHub API command failed with status exit status: 1: error connecting to api.github.com\ncheck your internet connection or https://githubstatus.com".into())
+    }
+    fn matrix_read_record() -> ReleaseRecoveryRecord {
+        let mut record =
+            crate::release_recovery::start_release("repo", "0.24.13", "main", "abcdef123456")
+                .unwrap();
+        record.state = ReleaseRecoveryState::WaitingForMatrix;
+        record.mutation.candidate_pushed = true;
+        record.mutation.final_candidate_commit = Some("abcdef123456".into());
+        record.required_gates = GreenGithub
+            .matrix_for_sha("owner/repo", "abcdef123456")
+            .unwrap();
+        for gate in &mut record.required_gates {
+            gate.run_state = Some(crate::release_recovery::JobState::InProgress);
+            for job in &mut gate.jobs {
+                job.state = crate::release_recovery::JobState::InProgress;
+            }
+        }
+        record
+    }
+    fn matrix_read_step(
+        record: &mut ReleaseRecoveryRecord,
+        root: &Path,
+        ledger: &ReleaseLedger,
+        github: &MatrixReadFixture,
+    ) -> Result<(), RrcError> {
+        advance_release(
+            record,
+            ReleaseAdvanceContext {
+                workspace: root,
+                repository: "owner/repo",
+                ledger,
+                executor: &FakeRelease,
+                github,
+                health: &HealthyStatus,
+                repair_factory: None,
+                cancelled: Arc::new(AtomicBool::new(false)),
+            },
+        )
+    }
+    #[test]
+    fn matrix_transport_read_recovers_without_rerunning_ci_or_inventing_green() {
+        let root = tempfile::tempdir().unwrap();
+        let ledger = ReleaseLedger::open(root.path(), "repo").unwrap();
+        let mut record = matrix_read_record();
+        let fixture = MatrixReadFixture {
+            outcomes: Mutex::new(VecDeque::from([Err(matrix_transport_error()), Ok(())])),
+            reads: Default::default(),
+            checkpoint_root: root.path().into(),
+        };
+        let result = matrix_read_step(&mut record, root.path(), &ledger, &fixture);
+        assert!(
+            result.is_ok(),
+            "identified read transport must recover: {result:?}"
+        );
+        assert_eq!(record.state, ReleaseRecoveryState::WaitingForMatrix);
+        assert!(!record.matrix_complete());
+        assert!(!record.mutation.tag_pushed);
+        assert!(!record.mutation.publication_verified);
+        assert!(record.failures.is_empty(), "no fabricated CI failure");
+        record = ledger.load().unwrap().unwrap();
+        matrix_read_step(&mut record, root.path(), &ledger, &fixture).unwrap();
+        assert_eq!(record.state, ReleaseRecoveryState::RemoteGatesGreen);
+        assert_eq!(fixture.reads.load(Ordering::SeqCst), 2);
+        assert_eq!(record.retry_budget.full_gate_used, 0);
+        assert_eq!(record.retry_budget.infrastructure_used, 0);
+    }
+
+    #[test]
+    fn matrix_transport_read_exhaustion_survives_reload_and_never_mutates_ci() {
+        let root = tempfile::tempdir().unwrap();
+        let ledger = ReleaseLedger::open(root.path(), "repo").unwrap();
+        let mut record = matrix_read_record();
+        let fixture = MatrixReadFixture {
+            outcomes: Mutex::new(VecDeque::from([
+                Err(matrix_transport_error()),
+                Err(matrix_transport_error()),
+                Err(matrix_transport_error()),
+            ])),
+            reads: Default::default(),
+            checkpoint_root: root.path().into(),
+        };
+        for attempt in 1..=2 {
+            matrix_read_step(&mut record, root.path(), &ledger, &fixture).unwrap();
+            record = ledger.load().unwrap().unwrap();
+            assert_eq!(record.mutation.remote_matrix_read_retries, attempt);
+            assert_eq!(record.retry_budget.targeted_diagnostic_used, attempt);
+            assert!(!record.matrix_complete());
+        }
+        assert!(matrix_read_step(&mut record, root.path(), &ledger, &fixture).is_err());
+        assert_eq!(fixture.reads.load(Ordering::SeqCst), 3);
+        assert_eq!(record.mutation.remote_matrix_read_retries, 2);
+        assert_eq!(record.retry_budget.full_gate_used, 0);
+        assert_eq!(record.retry_budget.infrastructure_used, 0);
+        assert!(!record.mutation.tag_pushed);
+        assert!(record.failures.is_empty());
+    }
+    #[test]
+    fn matrix_transport_read_refuses_authentication_cancellation_and_unsafe_states() {
+        for error in [
+            RrcError::Invalid("GitHub API command failed: HTTP 403 forbidden".into()),
+            RrcError::Invalid("GitHub API command failed: error connecting to api.github.com; certificate verification failed".into()),
+            RrcError::Invalid("GitHub API command failed: error connecting to api.github.com; bad credentials".into()),
+            RrcError::Invalid("GitHub response was not UTF-8".into()),
+            RrcError::AuthorizationBlocked("denied".into()),
+            RrcError::Cancelled,
+        ] {
+            let root = tempfile::tempdir().unwrap();
+            let ledger = ReleaseLedger::open(root.path(), "repo").unwrap();
+            let mut record = matrix_read_record();
+            let fixture = MatrixReadFixture { outcomes: Mutex::new(VecDeque::from([Err(error)])), reads: Default::default(), checkpoint_root: root.path().into() };
+            assert!(matrix_read_step(&mut record, root.path(), &ledger, &fixture).is_err());
+            assert_eq!(fixture.reads.load(Ordering::SeqCst), 1);
+            assert_eq!(record.mutation.remote_matrix_read_retries, 0);
+            assert_eq!(record.retry_budget.targeted_diagnostic_used, 0);
+        }
+        let root = tempfile::tempdir().unwrap();
+        let ledger = ReleaseLedger::open(root.path(), "repo").unwrap();
+        for boundary in 0..5 {
+            let mut record = matrix_read_record();
+            match boundary {
+                0 => record.mutation.tag_pushed = true,
+                1 => record.mutation.publication_verified = true,
+                2 => record.mutation.in_flight_operation = Some("uncertain write".into()),
+                3 => record.mutation.candidate_pushed = false,
+                _ => record.state = ReleaseRecoveryState::PostReleaseMainDegraded,
+            }
+            assert!(
+                !recover_remote_matrix_transport_read(
+                    &mut record,
+                    &ledger,
+                    &matrix_transport_error(),
+                    &AtomicBool::new(false)
+                )
+                .unwrap()
+            );
+            assert_eq!(record.mutation.remote_matrix_read_retries, 0);
+        }
+        let mut record = matrix_read_record();
+        assert!(
+            !recover_remote_matrix_transport_read(
+                &mut record,
+                &ledger,
+                &matrix_transport_error(),
+                &AtomicBool::new(true)
+            )
+            .unwrap()
+        );
+        assert_eq!(record.retry_budget.targeted_diagnostic_used, 0);
+    }
+    #[test]
+    fn matrix_transport_read_first_observation_and_shared_budget_are_durable() {
+        let root = tempfile::tempdir().unwrap();
+        let ledger = ReleaseLedger::open(root.path(), "repo").unwrap();
+        let mut record = matrix_read_record();
+        record.state = ReleaseRecoveryState::RemoteGateRunning;
+        record.retry_budget.targeted_diagnostic_used = 1;
+        let fixture = MatrixReadFixture {
+            outcomes: Mutex::new(VecDeque::from([
+                Err(matrix_transport_error()),
+                Err(matrix_transport_error()),
+            ])),
+            reads: Default::default(),
+            checkpoint_root: root.path().into(),
+        };
+        matrix_read_step(&mut record, root.path(), &ledger, &fixture).unwrap();
+        record = ledger.load().unwrap().unwrap();
+        assert_eq!(record.state, ReleaseRecoveryState::WaitingForMatrix);
+        assert_eq!(record.mutation.remote_matrix_read_retries, 1);
+        assert_eq!(record.retry_budget.targeted_diagnostic_used, 2);
+        assert!(matrix_read_step(&mut record, root.path(), &ledger, &fixture).is_err());
+        assert_eq!(record.mutation.remote_matrix_read_retries, 1);
+        let mut legacy =
+            serde_json::to_value(crate::release_recovery::ReleaseMutationRecord::default())
+                .unwrap();
+        legacy
+            .as_object_mut()
+            .unwrap()
+            .remove("remote_matrix_read_retries");
+        let loaded: crate::release_recovery::ReleaseMutationRecord =
+            serde_json::from_value(legacy).unwrap();
+        assert_eq!(loaded.remote_matrix_read_retries, 0);
     }
 
     struct ScriptedAudit {

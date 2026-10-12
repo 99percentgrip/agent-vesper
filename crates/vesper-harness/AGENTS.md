@@ -558,6 +558,13 @@ Z.ai and Playwright MCP server descriptors.
 
 ## Local Contracts
 
+- Exact-SHA pre-tag matrix connection failures may reserve at most two read-only
+  recoveries, additionally charged to the shared targeted-diagnostic budget.
+  Persist counters and causal evidence before the cancellable next poll; retain
+  the last real matrix. Never fabricate CI failure/green or replay a mutation.
+  Authentication/certificate/cancellation, uncertain writes and publication
+  boundaries remain ineligible; legacy counters default to zero.
+
 - The exact `advisories` / `cargo audit` gate may collect one read-only diagnostic
   after an identified advisory-database Git transport failure. Persist the
   per-epoch counter and targeted-diagnostic budget before dispatch, retain original

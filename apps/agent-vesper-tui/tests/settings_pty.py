@@ -116,7 +116,26 @@ class Host:
         if os.name == "nt":
             self.child.terminal.write(data.decode('utf-8'))
         else:
-            os.write(self.master, data)
+            # A small macOS PTY can fill while the child waits for its output
+            # to drain. Feed partial writes and read output on the same owner.
+            flags = fcntl.fcntl(self.master, fcntl.F_GETFL)
+            deadline = time.monotonic() + 10
+            remaining = memoryview(data)
+            fcntl.fcntl(self.master, fcntl.F_SETFL, flags | os.O_NONBLOCK)
+            try:
+                while remaining:
+                    if time.monotonic() >= deadline:
+                        raise TimeoutError('terminal input did not drain within 10 seconds')
+                    try:
+                        count = os.write(self.master, remaining)
+                    except BlockingIOError:
+                        self.pump(.01)
+                        continue
+                    if count <= 0:
+                        raise OSError('terminal input write made no progress')
+                    remaining = remaining[count:]
+            finally:
+                fcntl.fcntl(self.master, fcntl.F_SETFL, flags)
     def feed(self, text):
         self.pending += text
         while self.pending:
@@ -208,7 +227,11 @@ class Host:
         else:
             if self.child.poll() is None:
                 os.killpg(self.child.pid,signal.SIGTERM)
-                self.child.wait(timeout=10)
+                try:
+                    self.child.wait(timeout=10)
+                except subprocess.TimeoutExpired:
+                    os.killpg(self.child.pid, signal.SIGKILL)
+                    self.child.wait(timeout=5)
             os.close(self.master)
 
 

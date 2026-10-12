@@ -6,6 +6,8 @@ Own evidence and decisions that close the pre-workspace blockers identified by r
 
 ## Ownership
 
+- `2026-10-12-rrc-matrix-transport-read-recovery.md` owns the stopped exact-SHA matrix watcher, bounded shared connection-read recovery and superseded candidate evidence.
+
 - `2026-10-12-rrc-advisory-fetch-read-recovery.md` owns the measured release-blocking advisory transport failure, bounded shared read diagnostic and preserved release evidence.
 
 - `2026-10-12-tui-message-queue-paste-execution.md` and its verification receipts own the clean-source audit, queue/paste repairs and local-versus-live acceptance boundary.

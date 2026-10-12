@@ -703,6 +703,9 @@ pub struct ReleaseMutationRecord {
     /// At most one diagnostic re-read of an identified advisory-fetch transport failure.
     #[serde(default)]
     pub local_advisory_read_retries: u8,
+    /// Bounded diagnostic reads after identified GitHub matrix transport failures.
+    #[serde(default)]
+    pub remote_matrix_read_retries: u8,
     /// Measured active publication observation/wait time; excludes idle host time.
     #[serde(default)]
     pub publication_watch_millis: u64,

@@ -1,5 +1,7 @@
 # Foundation Evidence Index
 
+- [RRC exact-matrix transport read recovery](2026-10-12-rrc-matrix-transport-read-recovery.md).
+
 - [Native RRC advisory-fetch read recovery](2026-10-12-rrc-advisory-fetch-read-recovery.md) — measured release blocker, one persisted read diagnostic, retained causal evidence and pending final-source release verification.
 - [Reliable TUI message queue and pasted content](2026-10-12-tui-message-queue-paste-execution.md) — source-grounded audit, ordered composition, durable FIFO, interruption-safe recovery and reproduced native command-boundary correction; current verification and readiness remain in the report.
 

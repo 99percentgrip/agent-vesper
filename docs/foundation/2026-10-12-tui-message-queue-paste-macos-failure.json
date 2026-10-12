@@ -1,0 +1,29 @@
+{
+  "candidate_sha": "5a5882da5a8341c7f47c00c078dc79163c0d6a13",
+  "workflow_run": 38222050982,
+  "completed_matrix_conclusion": "cancelled",
+  "jobs": [
+    {
+      "job_id": 114720399950,
+      "platform": "macos-intel",
+      "conclusion": "cancelled",
+      "log": "/tmp/vesper-queue-old-macos-intel.log",
+      "log_sha256": "8c7776e4078bd267de2ba2280a584b615229049a7df7345cbde6d906636a4d3f",
+      "causal_excerpt": [
+        "2026-10-12T08:20:25.0074020Z test terminal_message_queue_and_paste_lifecycle has been running for over 60 seconds",
+        "2026-10-12T09:41:41.0846130Z ##[error]The operation was canceled."
+      ]
+    },
+    {
+      "job_id": 114720400162,
+      "platform": "macos-arm",
+      "conclusion": "cancelled",
+      "log": "/tmp/vesper-queue-old-macos-arm.log",
+      "log_sha256": "47c05193940e8ab831a9a73e60db6790ba7fbfc96692b0cb6412185695394284",
+      "causal_excerpt": [
+        "2026-10-12T08:17:42.2143140Z test terminal_message_queue_and_paste_lifecycle has been running for over 60 seconds",
+        "2026-10-12T09:41:52.5754360Z ##[error]The operation was canceled."
+      ]
+    }
+  ]
+}

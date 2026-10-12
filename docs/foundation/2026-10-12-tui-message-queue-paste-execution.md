@@ -22,13 +22,14 @@ Read root/apps/TUI DOX and documentation/foundation contracts. Traced `Event::Pa
 
 ## Status / readiness
 
-The final audit corrected native-command routing and the measured shared RRC
-advisory-fetch blocker. The current frozen source passed all seven mandatory
-gates and 39 scoped regressions, including real terminal interaction on both
-the current toolchain and Rust 1.88.
-**READY FOR LIVE ACCEPTANCE: YES.** Native publication remains pending.
-No task push, tag, publication or installation has occurred. Native Windows/macOS
-queue interaction and live-provider proofs remain explicitly unexecuted.
+The final audited source passed all seven mandatory gates and 44 scoped
+regressions, including the real terminal lifecycle test. Native-command routing
+and the two observed read blockers have production red/green evidence.
+**READY FOR LIVE ACCEPTANCE: YES.** Fresh native publication remains pending.
+The earlier v0.24.13 candidate was pushed but remains untagged and unpublished;
+its hosted evidence cannot certify the later matrix-read correction. Installation
+was not performed. Live Windows/macOS queue interaction and provider/delegated
+proofs remain explicitly unexecuted.
 
 ## Implementation and ownership
 
@@ -417,7 +418,7 @@ receipts only certify their earlier sources; the new receipt freezes all eleven
 production/test paths and records the current seven green gates.
 No release journal was cleared and no retry budget was reset.
 
-## Final advisory-read audit and readiness
+## Historical advisory-read audit and readiness
 
 | Final-source gate | Exit | Seconds |
 | --- | --- | --- |
@@ -438,7 +439,70 @@ diagnostic. Its durable counter and existing diagnostic budget are reserved
 before dispatch; successful fresh audit output is required. No external side
 effect is retried, security finding ignored or release budget reset.
 
-**READY_FOR_LIVE_ACCEPTANCE: YES.** Native release and live-only proofs remain
-distinct. Current canonical main is unchanged; the primary diff/status hashes
+**Advisory-read source READY_FOR_LIVE_ACCEPTANCE: YES**, superseded by the
+matrix-read correction below. At that audit, canonical main was unchanged; the primary diff/status hashes
 remain identical. Parent DOX ownership/indexes stay unchanged; nearest harness
 and foundation contracts and both owning PRDs are updated in this candidate.
+
+## Measured matrix-read blocker and current correction
+
+The [matrix-read report](2026-10-12-rrc-matrix-transport-read-recovery.md) owns
+the stopped native watcher and production red/green proof. The failed ledger
+is retained; the host exited after settlement. The isolated branch incorporated
+only its own controller-created version commit by fast-forward, preserving
+original ancestry and the dirty primary checkout. No tag or retry budget was
+reset. The same unused v0.24.13 target will be used after final verification;
+the earlier hosted matrix cannot certify the new repair.
+
+## Measured macOS fixture backpressure correction
+
+The [preserved macOS failure receipt](2026-10-12-tui-message-queue-paste-macos-failure.json)
+records the complete old-candidate five-target run `38222050982`, which ended cancelled:
+Windows and both Linux lanes passed; Intel and Apple Silicon macOS reached the
+new `terminal_message_queue_and_paste_lifecycle` test and exceeded the 90-minute
+job lifetime. Intel log `114720399950` identifies that test running for over
+60 seconds, then cancellation at 09:41:41 UTC. This is a failed platform gate,
+not successful native macOS acceptance. No tag was created.
+
+The shared fixture's blocking, single `os.write` could block against a small
+PTY while the native child waited for output draining; it also ignored partial
+writes. A bounded real-duplex reproducer and three deterministic tests fail on
+the old writer (two failures/two errors) and all four pass with nonblocking
+partial-write handling and output draining. The unchanged lifecycle assertions
+also pass in the real Linux terminal (41.95 seconds). Rust outer timeout and
+Python cleanup deadline prevent a fixture defect from occupying a runner for
+90 minutes. Timeout remains a test failure; no assertion or lane is excluded.
+
+The first matrix-fix ladder passed acceptance and workspace verification, then
+was stopped during incomplete MSRV when this distinct platform defect was
+confirmed. Its receipts are preserved as partial evidence, never represented as
+a complete green ladder. The corrected fixture and controller require a fresh
+complete ladder and fresh exact-SHA native matrix. No production message or
+provider semantics changed in this correction.
+
+## Final matrix-read audit and readiness
+
+| Final-source gate | Exit | Seconds |
+| --- | --- | --- |
+| `cargo xtask acceptance` | 0 | 207.97 |
+| `cargo xtask verify` | 0 | 950.3 |
+| `cargo xtask msrv` | 0 | 765.38 |
+| `cargo deny --all-features check` | 0 | 11.78 |
+| `cargo audit` | 0 | 2.98 |
+| `cargo fmt --all -- --check` | 0 | 1.76 |
+| `git diff --check` | 0 | 0.05 |
+
+The [current receipt](2026-10-12-rrc-matrix-transport-read-recovery-receipts.json)
+records all 44 scoped successes on thirteen frozen production/test files, red/green
+and recovered-read evidence, log hashes and existing ignored cases. The final
+lifecycle audit rechecked single body ownership, literal paste ordering,
+command/explicit-steering boundaries, durable queue admission and recovery,
+FIFO/approval/cancellation/error guards, and bounded ordinary rendering. Shared
+RRC recovery reserves durable limits before a new read, preserves the last real
+matrix and refuses permission, cancellation, malformed evidence and uncertain
+writes. No CI rerun, tag authority or external-effect replay is introduced.
+
+**READY_FOR_LIVE_ACCEPTANCE: YES.** The same unused v0.24.13 will enter native
+release gates from this corrected source. Parent boundaries and child indexes
+are unchanged; nearest owning DOX, PRDs and evidence accompany this candidate.
+Native publication and live-only proofs remain separate. No installation.
