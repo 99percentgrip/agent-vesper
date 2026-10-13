@@ -1,5 +1,6 @@
 # Foundation Evidence Index
 
+- [quinn-proto security remediation](2026-10-13-quinn-proto-security-remediation.md) — lockfile-only update from 0.11.16 to 0.11.18 for the five RustSec advisories on PR #42.
 - [MessageJournal final UX acceptance](2026-10-13-messagejournal-final-ux-acceptance.md) — live PTY proof for Show more, restart, copy, and FIFO. Detached worktree, no commit.
 - [MessageJournal UX reconciliation](2026-10-13-messagejournal-ux-reconciliation.md) — workflow prompts stay off the journal, clipboard EOF, LM Studio cancellation, immediate short-message body, collapsed large/paste projection with render-time Show more. Not a release.
 
