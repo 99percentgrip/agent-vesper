@@ -530,6 +530,8 @@ async fn run(resume_id: Option<String>) -> Result<(), String> {
         agent_task: None,
         agent_running: false,
         message_journal: Default::default(),
+        expanded_prompts: std::collections::BTreeSet::new(),
+        focused_prompt: None,
         paste_inspection: None,
         deferred_composer_restore: None,
         approval_command_backup: None,
@@ -997,6 +999,10 @@ struct TuiSession {
     /// Mid-turn FIFO: every submitted follow-up is retained and runs in
     /// order after the active turn. Tab submits to this FIFO while work runs.
     message_journal: agent_vesper_tui::messages::MessageJournal,
+    /// Show more state. Render-only; the journal body is the stored prompt.
+    expanded_prompts: std::collections::BTreeSet<String>,
+    /// Keyboard target for one expandable submitted prompt.
+    focused_prompt: Option<String>,
     paste_inspection: Option<PasteInspection>,
     approval_command_backup: Option<ApprovalCommandBackup>,
     deferred_composer_restore: Option<(
@@ -1307,6 +1313,45 @@ fn handle_mouse_click(
         };
         if let Some(url) = agent_vesper_tui::ui::bare_url_entry_at_row(&model, area, row) {
             open_url_in_browser(session, &url);
+            return MouseClickOutcome::Handled;
+        }
+        if let Some(control) = agent_vesper_tui::ui::prompt_control_at_row(&model, area, row) {
+            match control {
+                agent_vesper_tui::ui::PromptControl::Toggle(key) => {
+                    if !session.expanded_prompts.remove(&key) {
+                        session.expanded_prompts.insert(key.clone());
+                        session.state.status = Some(
+                            "Prompt expanded. Enter collapses it while the control is focused."
+                                .into(),
+                        );
+                    } else {
+                        session.state.status =
+                            Some("Prompt collapsed. The stored message is unchanged.".into());
+                    }
+                    session.focused_prompt = Some(key);
+                }
+                agent_vesper_tui::ui::PromptControl::Copy(key) => {
+                    let body = agent_vesper_tui::ui::prompt_body_for_key(
+                        &session.state.transcript,
+                        &journal_prompt_bodies(session),
+                        &key,
+                    );
+                    session.focused_prompt = Some(key);
+                    session.state.status = Some(match body {
+                        Some(body) => match checkpoints.clipboard.as_ref() {
+                            Some(clipboard) => match clipboard.copy(&body) {
+                                Ok(_) => format!(
+                                    "Copied {} characters of the original prompt.",
+                                    body.chars().count()
+                                ),
+                                Err(error) => format!("Copy failed: {error}"),
+                            },
+                            None => "Clipboard subsystem is unavailable.".into(),
+                        },
+                        None => "Prompt body is no longer in the transcript.".into(),
+                    });
+                }
+            }
             return MouseClickOutcome::Handled;
         }
     }
@@ -1864,7 +1909,7 @@ async fn drive_loop(
             );
             session.pending_images = draft_images;
             if !session.agent_running && session.pending_capability_switch.is_none() {
-                session.message_journal.settle(false);
+                settle_journal(session, false);
                 persist_message_transition(session);
             }
         }
@@ -1918,6 +1963,9 @@ async fn drive_loop(
                 background_task,
                 queued_prompt_count: session.message_journal.pending.len(),
                 queue_paused: session.message_journal.paused.is_some(),
+                expanded_prompts: session.expanded_prompts.clone(),
+                prompt_bodies: journal_prompt_bodies(session),
+                focused_prompt: session.focused_prompt.clone(),
                 composer_projection: agent_vesper_tui::messages::composer_projection(
                     &session.input,
                     &session.pending_text_pastes,
@@ -2517,6 +2565,16 @@ async fn drive_loop(
                 // Note: the tool-permission modal interceptor (above)
                 // handles Enter while `pending_approval` is set; this branch
                 // only fires when no modal is up.
+                // A focused Show more control consumes Enter so expanding a
+                // prompt cannot submit or queue another message.
+                if session.focused_prompt.is_some()
+                    && session.command_matches.is_empty()
+                    && session.input.trim().is_empty()
+                    && session.pending_text_pastes.is_empty()
+                {
+                    toggle_focused_prompt(session);
+                    continue;
+                }
                 if let Some(selected) = selected_command_completion(session) {
                     let typed = session.input.trim_end();
                     let selected_from_palette = typed != selected;
@@ -3189,6 +3247,7 @@ async fn drive_loop(
                     execute_message_command(operation, session);
                 }
                 let workflow_prompt = session.state.pending_prompt.take();
+                let workflow_command = workflow_prompt.is_some();
                 let mut prompt_to_spawn = workflow_prompt.or(prompt_text);
                 if let Some(objective) = prompt_to_spawn.as_deref()
                     && !matches!(
@@ -3230,7 +3289,25 @@ async fn drive_loop(
                         prompt_to_spawn = None;
                     }
                 }
-                if session.agent_running
+                if session.agent_running && workflow_command && prompt_to_spawn.is_some() {
+                    if session.state.transcript.len() > transcript_before_command {
+                        let added = session
+                            .state
+                            .transcript
+                            .split_off(transcript_before_command);
+                        session.state.transcript.extend(
+                            added
+                                .into_iter()
+                                .filter(|line| !line.starts_with("workflow:")),
+                        );
+                    }
+                    session.input = submitted_input.clone();
+                    session.state.preferences.composer_cursor = session.input.len();
+                    session.state.status = Some(
+                        "Workflow commands stay on the command path and are not added to the message queue during a turn. Draft kept."
+                            .into(),
+                    );
+                } else if session.agent_running
                     && let Some(text) = prompt_to_spawn.as_ref()
                 {
                     admit_plain_message(text.clone(), session);
@@ -3353,6 +3430,16 @@ async fn drive_loop(
                     Err(error) => session.state.status = Some(error),
                 }
             }
+            KeyCode::Tab
+                if session.input.trim().is_empty()
+                    && session.pending_text_pastes.is_empty()
+                    && session.command_matches.is_empty() =>
+            {
+                cycle_prompt_focus(session, true);
+            }
+            KeyCode::BackTab if session.command_matches.is_empty() => {
+                cycle_prompt_focus(session, false);
+            }
             KeyCode::Tab if !session.command_matches.is_empty() => {
                 if let Some(command) = selected_command_completion(session) {
                     session.input = command;
@@ -3370,6 +3457,14 @@ async fn drive_loop(
             KeyCode::Down if !session.command_matches.is_empty() => {
                 session.command_selected = (session.command_selected + 1)
                     .min(session.command_matches.len().saturating_sub(1));
+            }
+            KeyCode::Esc
+                if session.focused_prompt.is_some()
+                    && session.command_matches.is_empty()
+                    && !session.settings_menu_open =>
+            {
+                session.focused_prompt = None;
+                session.state.status = Some("Returned to the composer.".into());
             }
             KeyCode::Esc if session.settings_menu_open || !session.command_matches.is_empty() => {
                 if session.settings_menu_open && !session.input.trim().starts_with("/settings") {
@@ -3390,6 +3485,7 @@ async fn drive_loop(
                 }
             }
             KeyCode::Char(ch) => {
+                session.focused_prompt = None;
                 insert_composer_text(&ch.to_string(), session);
                 refresh_command_menu(session, registry_commands, surface);
             }
@@ -5625,15 +5721,39 @@ fn apply_keybinding_action(
             });
         }
         "copy_selection" => {
-            session.state.status = Some(if session.selected_text.is_empty() {
-                "No transcript text selected; drag over conversation rows first.".into()
+            let focused_body = if session.selected_text.is_empty() {
+                session.focused_prompt.as_ref().and_then(|key| {
+                    agent_vesper_tui::ui::prompt_body_for_key(
+                        &session.state.transcript,
+                        &journal_prompt_bodies(session),
+                        key,
+                    )
+                })
+            } else {
+                None
+            };
+            let copying_prompt = focused_body.is_some();
+            let value = if !session.selected_text.is_empty() {
+                session.selected_text.clone()
+            } else {
+                focused_body.unwrap_or_default()
+            };
+            session.state.status = Some(if value.is_empty() {
+                "No transcript text selected; drag over conversation rows or focus a prompt first."
+                    .into()
             } else {
                 match checkpoints.clipboard.as_ref() {
-                    Some(clipboard) => match clipboard.copy(&session.selected_text) {
-                        Ok(_) => format!(
-                            "Copied {} selected characters.",
-                            session.selected_text.len()
-                        ),
+                    Some(clipboard) => match clipboard.copy(&value) {
+                        Ok(_) => {
+                            if copying_prompt {
+                                format!(
+                                    "Copied {} characters of the original prompt.",
+                                    value.chars().count()
+                                )
+                            } else {
+                                format!("Copied {} selected characters.", value.len())
+                            }
+                        }
                         Err(error) => format!("Copy failed: {error}"),
                     },
                     None => "Clipboard subsystem is unavailable.".into(),
@@ -5683,7 +5803,7 @@ fn cancel_active_turn_preserving_partial(session: &mut TuiSession, cause: &str) 
     session.steering_tx = None;
     session.trajectory_rx = None;
     session.agent_running = false;
-    session.message_journal.settle(false);
+    settle_journal(session, false);
     let partial = std::mem::take(&mut session.live_response);
     if !partial.trim().is_empty() {
         session
@@ -6001,8 +6121,11 @@ fn admit_composer_message(
         return Err("Native commands cannot be queued; press Enter to use the command plane. Draft retained.".into());
     }
     message.images = session.pending_images.clone();
+    let transcript_len = session.state.transcript.len();
     let id = session.message_journal.admit(message)?;
+    show_journal_message(session, &id);
     if let Err(error) = persist_tui_conversation(session) {
+        session.state.transcript.truncate(transcript_len);
         session.message_journal.pending.pop_back();
         session.message_journal.messages.pop();
         return Err(format!(
@@ -6040,7 +6163,10 @@ fn admit_plain_message(text: String, session: &mut TuiSession) {
     message.images = session.pending_images.clone();
     match session.message_journal.admit(message) {
         Ok(id) => {
+            let transcript_len = session.state.transcript.len();
+            show_journal_message(session, &id);
             if let Err(error) = persist_tui_conversation(session) {
+                session.state.transcript.truncate(transcript_len);
                 session.message_journal.pending.pop_back();
                 if let Some(message) = session.message_journal.messages.pop()
                     && session.input.is_empty()
@@ -6060,6 +6186,154 @@ fn admit_plain_message(text: String, session: &mut TuiSession) {
             }
         }
         Err(error) => session.state.status = Some(error),
+    }
+}
+
+fn cycle_prompt_focus(session: &mut TuiSession, forward: bool) {
+    let bodies = journal_prompt_bodies(session);
+    let keys = session
+        .state
+        .transcript
+        .iter()
+        .filter(|line| line.starts_with("user:"))
+        .enumerate()
+        .filter_map(|(ordinal, line)| {
+            let stored = line
+                .strip_prefix("user: ")
+                .or_else(|| line.strip_prefix("user:"))
+                .unwrap_or(line);
+            let body = bodies.get(&ordinal).map(String::as_str).unwrap_or(stored);
+            agent_vesper_tui::messages::submitted_prompt_needs_collapse(body)
+                .then(|| agent_vesper_tui::messages::submitted_prompt_key(ordinal, body))
+        })
+        .collect::<Vec<_>>();
+    if keys.is_empty() {
+        session.focused_prompt = None;
+        session.state.status = Some("No expandable prompts in this conversation.".into());
+        return;
+    }
+    let next = match session
+        .focused_prompt
+        .as_ref()
+        .and_then(|key| keys.iter().position(|candidate| candidate == key))
+    {
+        Some(index) if forward => (index + 1) % keys.len(),
+        Some(0) => keys.len() - 1,
+        Some(index) => index - 1,
+        None => {
+            if forward {
+                0
+            } else {
+                keys.len() - 1
+            }
+        }
+    };
+    session.focused_prompt = Some(keys[next].clone());
+    session.state.status = Some(
+        "Show more is focused. Enter toggles it. Esc returns to the composer. Ctrl-Shift-C copies the full prompt."
+            .into(),
+    );
+}
+
+fn toggle_focused_prompt(session: &mut TuiSession) {
+    let Some(key) = session.focused_prompt.clone() else {
+        return;
+    };
+    if session.expanded_prompts.remove(&key) {
+        session.state.status = Some("Prompt collapsed. The stored message is unchanged.".into());
+    } else {
+        session.expanded_prompts.insert(key);
+        session.state.status = Some(
+            "Prompt expanded. Enter collapses it. Ctrl-Shift-C copies the full prompt.".into(),
+        );
+    }
+}
+
+fn projected_user_line(message: &agent_vesper_tui::messages::Message) -> String {
+    if !message.pastes.is_empty() {
+        format!("user: {} · /paste {}", message.preview(), message.id)
+    } else if agent_vesper_tui::messages::submitted_prompt_needs_collapse(&message.text) {
+        format!(
+            "user: {}",
+            agent_vesper_tui::messages::submitted_prompt_preview(&message.text)
+        )
+    } else {
+        format!("user: {}", message.text)
+    }
+}
+
+fn journal_prompt_bodies(session: &TuiSession) -> std::collections::BTreeMap<usize, String> {
+    let user_count = session
+        .state
+        .transcript
+        .iter()
+        .filter(|line| line.starts_with("user:"))
+        .count();
+    let mut bodies = std::collections::BTreeMap::new();
+    if user_count == session.message_journal.messages.len() {
+        for (ordinal, message) in session.message_journal.messages.iter().enumerate() {
+            bodies.insert(ordinal, message.text.clone());
+        }
+        return bodies;
+    }
+    let mut ordinal = 0usize;
+    for line in &session.state.transcript {
+        if !line.starts_with("user:") {
+            continue;
+        }
+        if let Some(id) = line.rsplit_once(" /paste ").map(|(_, id)| id.trim())
+            && let Some(message) = session.message_journal.get(id)
+        {
+            bodies.insert(ordinal, message.text.clone());
+        }
+        ordinal += 1;
+    }
+    bodies
+}
+
+fn show_journal_message(session: &mut TuiSession, id: &str) {
+    let Some(message) = session.message_journal.get(id) else {
+        return;
+    };
+    let state = message.state;
+    let committed = message.transcript_committed;
+    let user_line = projected_user_line(message);
+    let status = agent_vesper_tui::messages::journal_status_line(id, state);
+    let prefix = format!("journal-status\t{id}\t");
+    if let Some(line) = session
+        .state
+        .transcript
+        .iter_mut()
+        .find(|line| line.starts_with(&prefix))
+    {
+        *line = status;
+        return;
+    }
+    if !committed
+        && !session
+            .state
+            .transcript
+            .iter()
+            .any(|line| line == &user_line)
+    {
+        session.state.transcript.push(user_line);
+    }
+    session.state.transcript.push(status);
+    if let Some(message) = session
+        .message_journal
+        .messages
+        .iter_mut()
+        .find(|message| message.id == id)
+    {
+        message.transcript_committed = true;
+    }
+}
+
+fn settle_journal(session: &mut TuiSession, success: bool) {
+    let id = session.message_journal.active.clone();
+    session.message_journal.settle(success);
+    if let Some(id) = id {
+        show_journal_message(session, &id);
     }
 }
 
@@ -6089,23 +6363,7 @@ fn promote_pending_message(session: &mut TuiSession) -> Option<String> {
     let text = message.text.clone();
     let previously_displayed = message.transcript_committed;
     let transcript_length = session.state.transcript.len();
-    if !previously_displayed {
-        session.state.transcript.push(format!(
-            "user: {}",
-            if message.pastes.is_empty() {
-                message.text.clone()
-            } else {
-                format!("{} · /paste {id}", message.preview())
-            }
-        ));
-        session
-            .message_journal
-            .messages
-            .iter_mut()
-            .find(|message| message.id == id)
-            .expect("promoted message")
-            .transcript_committed = true;
-    }
+    show_journal_message(session, &id);
     // Persist Active before starting external work. A restart never replays it.
     if let Err(error) = persist_tui_conversation(session) {
         session.state.transcript.truncate(transcript_length);
@@ -6119,6 +6377,9 @@ fn promote_pending_message(session: &mut TuiSession) -> Option<String> {
             .expect("promoted message");
         message.state = agent_vesper_tui::messages::MessageState::Pending;
         message.transcript_committed = previously_displayed;
+        if previously_displayed {
+            show_journal_message(session, &id);
+        }
         session
             .message_journal
             .pause("Could not persist dispatch; /queue resume retries pending messages.");
@@ -9910,7 +10171,7 @@ fn drain_agent_event(session: &mut TuiSession) {
                 }
                 record_agent_event(session, &event);
                 apply_agent_event(event, &mut session.state);
-                session.message_journal.settle(queue_success);
+                settle_journal(session, queue_success);
                 persist_message_transition(session);
                 return;
             }
@@ -9933,7 +10194,7 @@ fn drain_agent_event(session: &mut TuiSession) {
                     .state
                     .transcript
                     .push("agent: task aborted (sender dropped).".into());
-                session.message_journal.settle(false);
+                settle_journal(session, false);
                 persist_message_transition(session);
                 return;
             }
@@ -10731,12 +10992,15 @@ fn load_tui_session(selected: &str, session: &mut TuiSession) -> Result<(), Stri
             }
             let id = journal.admit(archived)?;
             journal.pending.pop_back();
-            journal
+            let archived = journal
                 .messages
                 .iter_mut()
                 .find(|message| message.id == id)
-                .expect("legacy message")
-                .state = agent_vesper_tui::messages::MessageState::Settled;
+                .expect("legacy message");
+            archived.state = agent_vesper_tui::messages::MessageState::Settled;
+            // The historical transcript row is the visible projection. Do not
+            // append a second copy of the recovered body.
+            archived.transcript_committed = true;
         }
     }
     journal.validate()?;
@@ -10773,6 +11037,17 @@ fn load_tui_session(selected: &str, session: &mut TuiSession) -> Result<(), Stri
         .cloned()
         .and_then(|field| serde_json::from_value(field).ok())
         .unwrap_or(transcript);
+    let ids = session
+        .message_journal
+        .messages
+        .iter()
+        .map(|message| message.id.clone())
+        .collect::<Vec<_>>();
+    for id in ids {
+        show_journal_message(session, &id);
+    }
+    session.expanded_prompts.clear();
+    session.focused_prompt = None;
     if legacy
         && session
             .message_journal
@@ -19400,6 +19675,8 @@ mod tests {
             trajectory_rx: None,
             agent_task: None,
             message_journal: Default::default(),
+            expanded_prompts: std::collections::BTreeSet::new(),
+            focused_prompt: None,
             paste_inspection: None,
             deferred_composer_restore: None,
             approval_command_backup: None,
@@ -19485,6 +19762,8 @@ mod tests {
             trajectory_rx: None,
             agent_task: None,
             message_journal: Default::default(),
+            expanded_prompts: std::collections::BTreeSet::new(),
+            focused_prompt: None,
             paste_inspection: None,
             deferred_composer_restore: None,
             approval_command_backup: None,
@@ -19568,6 +19847,8 @@ mod tests {
             trajectory_rx: None,
             agent_task: None,
             message_journal: Default::default(),
+            expanded_prompts: std::collections::BTreeSet::new(),
+            focused_prompt: None,
             paste_inspection: None,
             deferred_composer_restore: None,
             approval_command_backup: None,
@@ -20790,6 +21071,8 @@ mod tests {
             trajectory_rx: None,
             agent_task: None,
             message_journal: Default::default(),
+            expanded_prompts: std::collections::BTreeSet::new(),
+            focused_prompt: None,
             paste_inspection: None,
             deferred_composer_restore: None,
             approval_command_backup: None,
@@ -22527,6 +22810,52 @@ mod message_queue_tests {
         assert_eq!(value["message_journal"]["pending"][0], "m1");
         assert_eq!(value["message_journal"]["messages"][0]["text"], "future");
         assert!(promote_pending_message(&mut s).is_none());
+        assert!(
+            s.state.transcript.iter().any(|line| line == "user: future"),
+            "the exact queued body must be visible immediately"
+        );
+        assert!(s.state.transcript.iter().any(|line| {
+            line.starts_with("journal-status\tm1\t") && line.contains("Queued —")
+        }));
+        assert!(
+            !s.state
+                .transcript
+                .iter()
+                .any(|line| line.contains("Settled —") || line.contains("delivered"))
+        );
+    }
+    #[test]
+    fn promotion_updates_the_same_visible_entry_without_a_duplicate() {
+        let mut s = session();
+        submit("active", &mut s);
+        submit("next", &mut s);
+        assert_eq!(promote_pending_message(&mut s).as_deref(), Some("active"));
+        assert_eq!(
+            s.state
+                .transcript
+                .iter()
+                .filter(|line| line.as_str() == "user: active")
+                .count(),
+            1
+        );
+        assert!(s.state.transcript.iter().any(|line| {
+            line.starts_with("journal-status\tm1\t") && line.contains("Processing —")
+        }));
+        terminal(&mut s, completion(false, true));
+        assert!(s.state.transcript.iter().any(|line| {
+            line.starts_with("journal-status\tm1\t") && line.contains("Settled —")
+        }));
+        assert!(s.state.transcript.iter().any(|line| {
+            line.starts_with("journal-status\tm2\t") && line.contains("Queued —")
+        }));
+        assert_eq!(
+            s.state
+                .transcript
+                .iter()
+                .filter(|line| line.as_str() == "user: next")
+                .count(),
+            1
+        );
     }
     #[test]
     fn native_release_command_stays_on_command_plane_during_an_active_turn() {
@@ -22887,7 +23216,24 @@ mod message_queue_tests {
             agent_vesper_tui::messages::compose(&s.input, &s.pending_text_pastes).unwrap();
         admit_composer_message(snapshot, &mut s).unwrap();
         promote_pending_message(&mut s);
-        assert!(!s.state.transcript.join("\n").contains("Unicode"));
+        let user_lines = s
+            .state
+            .transcript
+            .iter()
+            .filter(|line| line.starts_with("user:"))
+            .cloned()
+            .collect::<Vec<_>>();
+        assert_eq!(user_lines.len(), 1);
+        assert!(
+            user_lines[0].contains("/paste"),
+            "large paste stays collapsed in the durable transcript: {}",
+            user_lines[0]
+        );
+        assert!(
+            !user_lines[0].contains("Unicode"),
+            "durable transcript must not store the paste payload"
+        );
+        assert_eq!(s.message_journal.get("m1").unwrap().text, text);
         execute_message_command(MessageCommand::Paste("p1".into()), &mut s);
         assert!(
             s.paste_inspection

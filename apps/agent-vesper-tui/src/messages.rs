@@ -67,6 +67,69 @@ pub fn should_collapse(text: &str) -> bool {
     text.contains(['\r', '\n']) || text.chars().take(1000).count() >= 1000
 }
 
+/// Submitted conversation prompts at or above this size collapse in the
+/// renderer. The stored body is unchanged. Composer chips use
+/// [`should_collapse`] and are a separate threshold.
+pub const SUBMITTED_PROMPT_COLLAPSE_CHARS: usize = 256;
+/// Submitted prompts with more lines than this also start collapsed.
+pub const SUBMITTED_PROMPT_COLLAPSE_LINES: usize = 8;
+
+#[must_use]
+pub fn submitted_prompt_needs_collapse(body: &str) -> bool {
+    body.chars().count() >= SUBMITTED_PROMPT_COLLAPSE_CHARS
+        || body.lines().count() > SUBMITTED_PROMPT_COLLAPSE_LINES
+}
+
+/// Render-only prefix. Never stored and never a substitute for `body`.
+#[must_use]
+pub fn submitted_prompt_preview(body: &str) -> String {
+    const PREVIEW_CHARS: usize = 240;
+    const PREVIEW_LINES: usize = 3;
+    let mut out = String::new();
+    let mut used = 0usize;
+    let mut truncated = false;
+    for (index, line) in body.lines().enumerate() {
+        if index >= PREVIEW_LINES {
+            truncated = true;
+            break;
+        }
+        let remaining = PREVIEW_CHARS.saturating_sub(used);
+        if remaining == 0 {
+            truncated = true;
+            break;
+        }
+        let take = line.chars().take(remaining).collect::<String>();
+        if take.chars().count() < line.chars().count() {
+            truncated = true;
+        }
+        if index > 0 {
+            out.push('\n');
+        }
+        out.push_str(&take);
+        used += take.chars().count();
+        if truncated {
+            break;
+        }
+    }
+    if body.is_empty() {
+        return String::new();
+    }
+    if truncated || used < body.chars().count() {
+        out.push('…');
+    }
+    out
+}
+
+#[must_use]
+pub fn submitted_prompt_key(ordinal: usize, body: &str) -> String {
+    let mut hash = 0xcbf29ce484222325u64;
+    for byte in body.as_bytes() {
+        hash ^= u64::from(*byte);
+        hash = hash.wrapping_mul(0x100000001b3);
+    }
+    format!("{ordinal:04x}-{hash:016x}")
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ComposerPaste {
     pub offset: usize,
@@ -137,6 +200,47 @@ pub enum MessageState {
     Settled,
     Interrupted,
     Dropped,
+}
+
+#[must_use]
+pub fn journal_status_label(state: MessageState) -> &'static str {
+    match state {
+        MessageState::Pending => "Queued — will be processed after the current turn.",
+        MessageState::Active => "Processing — the runtime has this message.",
+        MessageState::Settled => {
+            "Settled — the turn finished. This does not by itself mean the requested task succeeded."
+        }
+        MessageState::Interrupted => {
+            "Interrupted — not running. /queue resume starts pending future turns."
+        }
+        MessageState::Dropped => "Dropped — removed from the queue.",
+    }
+}
+
+#[must_use]
+pub fn journal_status_line(id: &str, state: MessageState) -> String {
+    let token = match state {
+        MessageState::Pending => "pending",
+        MessageState::Active => "active",
+        MessageState::Settled => "settled",
+        MessageState::Interrupted => "interrupted",
+        MessageState::Dropped => "dropped",
+    };
+    format!(
+        "journal-status\t{id}\t{token}\t{}",
+        journal_status_label(state)
+    )
+}
+
+#[must_use]
+pub fn journal_status_label_from_line(line: &str) -> Option<&str> {
+    let mut parts = line.splitn(4, '\t');
+    if parts.next()? != "journal-status" {
+        return None;
+    }
+    let _id = parts.next()?;
+    let _token = parts.next()?;
+    Some(parts.next().unwrap_or(""))
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

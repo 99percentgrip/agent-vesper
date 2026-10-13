@@ -120,12 +120,33 @@ fn try_native_clipboard(value: &str) -> bool {
         Ok(child) => child,
         Err(_) => return false,
     };
-    if let Some(stdin) = child.stdin.as_mut() {
-        // Best-effort write — failure here just means the native clipboard
-        // did not get the value (the persistence strategy still did).
+    if let Some(mut stdin) = child.stdin.take() {
+        // Drop the pipe after the write. Waiting while stdin is open
+        // deadlocks tools such as wl-copy and xclip.
         let _ = stdin.write_all(value.as_bytes());
+        drop(stdin);
     }
-    // `child` drops here → subprocess resources are reaped.
+    matches!(child.wait(), Ok(status) if status.success())
+}
+
+#[cfg(test)]
+fn write_clipboard_command(program: &str, args: &[&str], value: &str) -> bool {
+    use std::io::Write;
+    use std::process::{Command, Stdio};
+    let mut child = match Command::new(program)
+        .args(args)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+    {
+        Ok(child) => child,
+        Err(_) => return false,
+    };
+    if let Some(mut stdin) = child.stdin.take() {
+        let _ = stdin.write_all(value.as_bytes());
+        drop(stdin);
+    }
     matches!(child.wait(), Ok(status) if status.success())
 }
 
@@ -166,6 +187,20 @@ mod tests {
         // The log file must contain the value.
         let log = fs::read_to_string(root.join("clipboard.log")).unwrap();
         assert!(log.contains("hello world"));
+    }
+
+    #[test]
+    fn native_clipboard_closes_stdin_before_waiting() {
+        let started = std::time::Instant::now();
+        let finished = std::thread::spawn(|| {
+            super::write_clipboard_command("sh", &["-c", "read line; exit 0"], "full prompt body")
+        });
+        let result = finished.join().expect("clipboard helper thread");
+        assert!(result, "helper must see EOF and exit");
+        assert!(
+            started.elapsed() < std::time::Duration::from_secs(2),
+            "open stdin would block read until the process is killed"
+        );
     }
 
     #[test]

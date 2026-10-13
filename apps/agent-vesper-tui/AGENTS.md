@@ -21,6 +21,17 @@ and composes the existing bounded atomic session writer.
   scheduling. It adds no host-neutral slash command or provider/runtime shortcut.
   The persisted transcript marker only suppresses duplicate user projections
   after preflight deferral; pending/active lifecycle alone authorizes dispatch.
+  Admission writes one `user:` row and one `journal-status` row. Short prompts
+  store the exact body. Pasted or long prompts store a collapsed projection;
+  the journal keeps the exact body. Promotion and settlement update that status
+  row and do not add another user row. Enter and Tab still queue. `/steer`
+  remains the only steering path. Workflow `pending_prompt` commands are not
+  admitted while a turn is running. Submitted prompts at 256 characters or 8
+  lines render Show more / Show less and Copy full prompt from the journal
+  body, without rewriting the stored row. Paragraph indentation is kept.
+  `tests/message_journal_ux_pty.py` is the live proof for expand, restore, copy, and FIFO. Tab still queues when the composer
+  is non-empty. Empty-composer Tab moves focus to those controls. Composer
+  paste chips are unchanged.
 
 
 - `src/landing.rs` owns the responsive theme-aware character-art welcome screen and

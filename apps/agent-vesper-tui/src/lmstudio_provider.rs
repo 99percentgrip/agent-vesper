@@ -39,6 +39,12 @@ fn pid() -> ProviderId {
     ProviderId::new(ID).expect("static provider id")
 }
 
+fn cancelled_err() -> ProviderError {
+    let mut error = err("LM Studio request cancelled");
+    error.info.category = ErrorCategory::Cancellation;
+    error
+}
+
 fn err(msg: impl Into<String>) -> ProviderError {
     let msg = msg.into();
     ProviderError {
@@ -287,7 +293,7 @@ impl ProviderSession for LmStudioSession {
     fn start<'a>(
         &'a self,
         request: ProviderRequest,
-        _cancellation: Arc<dyn CancellationSignal>,
+        cancellation: Arc<dyn CancellationSignal>,
     ) -> ProviderFuture<'a, Result<ProviderEventStream, ProviderError>> {
         let client = self.client.clone();
         let config = self.config.clone();
@@ -304,13 +310,22 @@ impl ProviderSession for LmStudioSession {
                 serde_json::from_str(&chat_req.body.unwrap_or_default()).unwrap_or_default();
             body_json["stream"] = serde_json::json!(true);
 
-            let resp = client
-                .post(&chat_req.url)
-                .headers(reqwest_header_map(&chat_req.headers))
-                .body(body_json.to_string())
-                .send()
-                .await
-                .map_err(|e| err(format!("HTTP send: {e}")))?;
+            let cancel_send = Arc::clone(&cancellation);
+            let resp = tokio::select! {
+                result = client
+                    .post(&chat_req.url)
+                    .headers(reqwest_header_map(&chat_req.headers))
+                    .body(body_json.to_string())
+                    .send() => result.map_err(|e| err(format!("HTTP send: {e}")))?,
+                _ = async {
+                    loop {
+                        if cancel_send.is_cancelled() {
+                            break;
+                        }
+                        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+                    }
+                } => return Err(cancelled_err()),
+            };
 
             if !resp.status().is_success() {
                 let status = resp.status();
@@ -333,7 +348,20 @@ impl ProviderSession for LmStudioSession {
                 }));
                 let mut byte_stream = resp.bytes_stream();
                 let mut buffer = String::new();
-                while let Some(chunk_result) = byte_stream.next().await {
+                loop {
+                    let chunk_result = tokio::select! {
+                        chunk = byte_stream.next() => chunk,
+                        _ = tokio::time::sleep(std::time::Duration::from_millis(50)) => {
+                            if cancellation.is_cancelled() {
+                                let _ = tx.send(Err(cancelled_err()));
+                                return;
+                            }
+                            continue;
+                        }
+                    };
+                    let Some(chunk_result) = chunk_result else {
+                        break;
+                    };
                     match chunk_result {
                         Ok(bytes) => {
                             buffer.push_str(&String::from_utf8_lossy(&bytes));
@@ -1299,5 +1327,103 @@ mod selected_model_wire_tests {
         let body = server.join().unwrap();
         assert!(result.is_ok(), "{result:?}");
         assert_eq!(body["model"], "picked-model");
+    }
+
+    #[tokio::test]
+    async fn outstanding_http_request_observes_cancellation() {
+        use std::io::Read;
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
+        listener.set_nonblocking(true).unwrap();
+        let server = std::thread::spawn(move || {
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(4);
+            while std::time::Instant::now() < deadline {
+                match listener.accept() {
+                    Ok((mut stream, _)) => {
+                        stream.set_nonblocking(false).ok();
+                        stream
+                            .set_read_timeout(Some(std::time::Duration::from_millis(300)))
+                            .ok();
+                        std::thread::spawn(move || {
+                            let mut buf = [0u8; 4096];
+                            let _ = stream.read(&mut buf);
+                            std::thread::sleep(std::time::Duration::from_secs(4));
+                        });
+                    }
+                    Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                        std::thread::sleep(std::time::Duration::from_millis(10));
+                    }
+                    Err(_) => break,
+                }
+            }
+        });
+        let factory = LmStudioFactory::new(
+            LmStudioConfig::new(format!("http://{address}/v1")).unwrap(),
+            "launch-model",
+        );
+        let registry = Arc::new(vesper_runtime::ProviderRegistry::new());
+        registry.register(factory).await.unwrap();
+        let config = vesper_agent::AgentLoopConfig {
+            provider_id: pid(),
+            provider_configuration: ProviderConfiguration {
+                provider_id: pid(),
+                values: vesper_domain::VersionedExtensionEnvelope {
+                    namespace: vesper_domain::ExtensionNamespace::new("provider.lmstudio").unwrap(),
+                    version: vesper_domain::SchemaVersion::new(1).unwrap(),
+                    values: Default::default(),
+                },
+            },
+            model: QualifiedModelId {
+                provider_id: pid(),
+                model_id: ModelId::new("picked-model").unwrap(),
+            },
+            context_window_tokens: 8192,
+            native_compaction: vesper_agent::NativeCompactionPolicy::Disabled,
+            hosted_tools: Vec::new(),
+            system_instructions: vec![],
+            workspace_roots: vec![],
+            max_tool_iterations: 1,
+            firewall: None,
+            sandbox: None,
+        };
+        let agent = vesper_agent::AgentLoop::new(
+            registry,
+            vesper_agent::ToolRegistry::parity_default(),
+            config,
+        );
+        let cancel = Arc::new(vesper_runtime::RuntimeCancellation::new());
+        let cancel_task = Arc::clone(&cancel);
+        tokio::spawn(async move {
+            tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+            cancel_task.cancel();
+        });
+        let started = std::time::Instant::now();
+        let result = tokio::time::timeout(
+            std::time::Duration::from_secs(2),
+            agent.run_prompt_with_history_with_cancellation(
+                vec![vesper_domain::ConversationMessage {
+                    id: vesper_domain::MessageId::new("fixture-user").unwrap(),
+                    role: MessageRole::User,
+                    content: vec![ContentPart::Text(ContentText::new("Say ok").unwrap())],
+                    extensions: Default::default(),
+                }],
+                vesper_domain::SessionOperatingMode::Code,
+                vesper_domain::SessionPermissionMode::ReadOnly,
+                cancel,
+            ),
+        )
+        .await;
+        drop(server);
+        let result = result.expect("cancellation must settle before the hung server responds");
+        let message = format!("{result:?}");
+        assert!(
+            started.elapsed() < std::time::Duration::from_millis(1500),
+            "hung LM Studio request was not cancelled in {:?}: {message}",
+            started.elapsed()
+        );
+        assert!(
+            message.contains("LM Studio request cancelled"),
+            "expected the adapter cancellation error, got {message}"
+        );
     }
 }
