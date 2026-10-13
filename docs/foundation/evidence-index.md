@@ -1,5 +1,8 @@
 # Foundation Evidence Index
 
+- [MessageJournal final UX acceptance](2026-10-13-messagejournal-final-ux-acceptance.md) — live PTY proof for Show more, restart, copy, and FIFO. Detached worktree, no commit.
+- [MessageJournal UX reconciliation](2026-10-13-messagejournal-ux-reconciliation.md) — workflow prompts stay off the journal, clipboard EOF, LM Studio cancellation, immediate short-message body, collapsed large/paste projection with render-time Show more. Not a release.
+
 - [RRC exact-matrix transport read recovery](2026-10-12-rrc-matrix-transport-read-recovery.md).
 
 - [Native RRC advisory-fetch read recovery](2026-10-12-rrc-advisory-fetch-read-recovery.md) — measured release blocker, one persisted read diagnostic, retained causal evidence and pending final-source release verification.

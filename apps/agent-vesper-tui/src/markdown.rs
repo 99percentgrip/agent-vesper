@@ -114,8 +114,9 @@ pub(crate) fn render_document(
             i += 1;
             continue;
         }
-        // Paragraph line — apply inline formatting.
-        out.push(Line::from(parse_inline(line.trim_start())));
+        // Paragraph line — keep leading spaces. Expanded prompts use this
+        // path, and trimming would hide submitted indentation.
+        out.push(Line::from(parse_inline(line)));
         i += 1;
     }
     let ink = crate::presentation::Ink::for_palette(palette);
@@ -603,6 +604,16 @@ mod tests {
                     .operator
             )
         );
+    }
+
+    #[test]
+    fn paragraph_keeps_leading_indentation() {
+        let lines = render_markdown("    indented-keep");
+        let text: String = lines
+            .iter()
+            .flat_map(|line| line.spans.iter().map(|span| span.content.as_ref()))
+            .collect();
+        assert!(text.contains("    indented-keep"), "{text}");
     }
 
     #[test]

@@ -253,6 +253,13 @@ pub struct ViewModel {
     pub queued_prompt_count: usize,
     pub content_inspection: Option<ContentInspection>,
     pub queue_paused: bool,
+    /// Render-only Show more keys. The transcript body stays intact.
+    pub expanded_prompts: std::collections::BTreeSet<String>,
+    /// Full journal bodies keyed by user-turn ordinal. Render-only.
+    /// The durable transcript keeps a collapsed projection.
+    pub prompt_bodies: std::collections::BTreeMap<usize, String>,
+    /// Keyboard target for one expandable prompt. `None` is the composer.
+    pub focused_prompt: Option<String>,
     pub composer_projection: Option<(String, u16)>,
     /// Typed live controls governing real agent turns.
     pub controls: SessionControls,
@@ -716,6 +723,9 @@ pub fn render_to_frame(frame: &mut Frame<'_>, model: &ViewModel) {
             inner_width,
             palette,
             model.animation_frame,
+            &model.expanded_prompts,
+            model.focused_prompt.as_deref(),
+            &model.prompt_bodies,
         );
         let estimate = estimated_wrapped_lines(&rendered, inner_width);
         (ratatui::text::Text::from(rendered), estimate)
@@ -1450,7 +1460,15 @@ fn render_transcript_lines_themed(
     inner_width: usize,
     palette: ThemePalette,
 ) -> Vec<Line<'static>> {
-    render_transcript_frame(transcript_lines, inner_width, palette, 0)
+    render_transcript_frame(
+        transcript_lines,
+        inner_width,
+        palette,
+        0,
+        &std::collections::BTreeSet::new(),
+        None,
+        &std::collections::BTreeMap::new(),
+    )
 }
 
 fn render_transcript_frame(
@@ -1458,20 +1476,39 @@ fn render_transcript_frame(
     inner_width: usize,
     palette: ThemePalette,
     animation_frame: u64,
+    expanded_prompts: &std::collections::BTreeSet<String>,
+    focused_prompt: Option<&str>,
+    prompt_bodies: &std::collections::BTreeMap<usize, String>,
 ) -> Vec<Line<'static>> {
-    render_transcript_projection(transcript_lines, inner_width, palette, animation_frame).0
+    render_transcript_projection(
+        transcript_lines,
+        inner_width,
+        palette,
+        animation_frame,
+        expanded_prompts,
+        focused_prompt,
+        prompt_bodies,
+    )
+    .0
 }
+
+type PromptToggleHits = Vec<(usize, String, &'static str)>;
 
 fn render_transcript_projection(
     transcript_lines: &[String],
     inner_width: usize,
     palette: ThemePalette,
     animation_frame: u64,
-) -> (Vec<Line<'static>>, Vec<(usize, usize)>) {
+    expanded_prompts: &std::collections::BTreeSet<String>,
+    focused_prompt: Option<&str>,
+    prompt_bodies: &std::collections::BTreeMap<usize, String>,
+) -> (Vec<Line<'static>>, Vec<(usize, usize)>, PromptToggleHits) {
     let mut rendered: Vec<Line<'static>> = Vec::new();
     let mut ranges = Vec::with_capacity(transcript_lines.len());
+    let mut toggles = Vec::new();
     let mut previous_was_secondary = false;
     let mut diff_language = String::new();
+    let mut user_ordinal = 0usize;
     for (idx, raw) in transcript_lines.iter().enumerate() {
         let entry_start = rendered.len();
         if raw.starts_with("tool:") || raw.starts_with("tool-output:") {
@@ -1518,6 +1555,7 @@ fn render_transcript_projection(
             || is_diff_ellipsis;
         let is_url_line =
             (raw.starts_with("http://") || raw.starts_with("https://")) && !raw.contains(' ');
+        let is_journal_status = raw.starts_with("journal-status\t");
 
         // Keep human turns comfortably separated, but render consecutive
         // thinking/tool events as one compact activity group. Treating every
@@ -1529,7 +1567,8 @@ fn render_transcript_projection(
             || is_notice
             || is_telemetry
             || is_url_line
-            || is_diff;
+            || is_diff
+            || is_journal_status;
         if is_user_turn {
             rendered.push(Line::from(Span::styled(
                 "─".repeat(inner_width.max(1)),
@@ -1541,10 +1580,45 @@ fn render_transcript_projection(
 
         // Strip internal role prefixes; the visible marker and text hierarchy
         // communicate the role without leaking transport labels.
-        let content = if is_user_turn {
-            raw.strip_prefix("user: ")
+        let user_key = if is_user_turn {
+            let stored = raw
+                .strip_prefix("user: ")
                 .or_else(|| raw.strip_prefix("user:"))
-                .unwrap_or(raw)
+                .unwrap_or(raw);
+            let body = prompt_bodies
+                .get(&user_ordinal)
+                .map(String::as_str)
+                .unwrap_or(stored);
+            let key = crate::messages::submitted_prompt_key(user_ordinal, body);
+            let chip_without_body =
+                stored.contains("[Pasted Content ·") && !prompt_bodies.contains_key(&user_ordinal);
+            user_ordinal += 1;
+            Some((key, body.to_owned(), chip_without_body))
+        } else {
+            None
+        };
+        let collapsed = user_key.as_ref().is_some_and(|(key, body, chip)| {
+            !chip
+                && crate::messages::submitted_prompt_needs_collapse(body)
+                && !expanded_prompts.contains(key)
+        });
+        let expanded_long = user_key.as_ref().is_some_and(|(key, body, chip)| {
+            !chip
+                && crate::messages::submitted_prompt_needs_collapse(body)
+                && expanded_prompts.contains(key)
+        });
+        let content = if is_user_turn {
+            let body = user_key
+                .as_ref()
+                .map(|(_, body, _)| body.as_str())
+                .unwrap_or(raw);
+            if collapsed {
+                // Owned preview is rendered below; leak via a thread-local is unnecessary.
+                // The preview is built into an owned String stored on the side.
+                body
+            } else {
+                body
+            }
         } else if is_assistant_turn {
             // Handles both "assistant: ..." and "assistant (streaming): ..."
             raw.find(": ").map(|i| &raw[i + 2..]).unwrap_or(raw)
@@ -1578,7 +1652,24 @@ fn render_transcript_projection(
         } else {
             inner_width
         };
-        let lines = crate::markdown::render_document(content, content_width.max(1), palette);
+        let owned_user = if collapsed {
+            user_key
+                .as_ref()
+                .map(|(_, body, _)| crate::messages::submitted_prompt_preview(body))
+        } else {
+            None
+        };
+        let journal_label = if is_journal_status {
+            crate::messages::journal_status_label_from_line(raw).map(str::to_owned)
+        } else {
+            None
+        };
+        let rendered_source = owned_user
+            .as_deref()
+            .or(journal_label.as_deref())
+            .unwrap_or(content);
+        let lines =
+            crate::markdown::render_document(rendered_source, content_width.max(1), palette);
 
         if is_user_turn {
             for (line_index, mut line) in lines.into_iter().enumerate() {
@@ -1599,6 +1690,36 @@ fn render_transcript_projection(
                 }
                 line.style = Style::default().bg(palette.raised);
                 rendered.push(line);
+            }
+            if let Some((key, _, _)) = user_key.as_ref().filter(|_| collapsed || expanded_long) {
+                let label = if collapsed { "Show more" } else { "Show less" };
+                let focused = focused_prompt == Some(key.as_str());
+                let style = if focused {
+                    Style::default()
+                        .fg(palette.selected_text)
+                        .bg(palette.accent)
+                        .add_modifier(Modifier::BOLD)
+                } else {
+                    Style::default()
+                        .fg(palette.accent)
+                        .add_modifier(Modifier::BOLD | Modifier::UNDERLINED)
+                };
+                rendered.push(Line::from(vec![
+                    Span::styled("  ", Style::default().bg(palette.raised)),
+                    Span::styled(label, style),
+                ]));
+                rendered.push(Line::from(vec![
+                    Span::styled("  ", Style::default().bg(palette.raised)),
+                    Span::styled("Copy full prompt", style),
+                ]));
+            }
+        } else if is_journal_status {
+            let style = Style::default()
+                .fg(palette.muted)
+                .add_modifier(Modifier::ITALIC);
+            for mut line in lines {
+                line.spans.insert(0, Span::styled("  ", style));
+                rendered.push(restyle_line(line, style));
             }
         } else if is_assistant_turn {
             for (line_index, mut line) in lines.into_iter().enumerate() {
@@ -1715,10 +1836,25 @@ fn render_transcript_projection(
                 .into_iter()
                 .flat_map(|line| crate::presentation::wrap(line, inner_width, 2)),
         );
+        if let Some((key, _, _)) = user_key.clone() {
+            for (row, line) in rendered.iter().enumerate().skip(entry_start) {
+                let row_text = line
+                    .spans
+                    .iter()
+                    .map(|span| span.content.as_ref())
+                    .collect::<String>();
+                if row_text.contains("Show more") || row_text.contains("Show less") {
+                    toggles.push((row, key.clone(), "toggle"));
+                }
+                if row_text.contains("Copy full prompt") {
+                    toggles.push((row, key.clone(), "copy"));
+                }
+            }
+        }
         ranges.push((entry_start, rendered.len()));
         previous_was_secondary = is_secondary;
     }
-    (rendered, ranges)
+    (rendered, ranges, toggles)
 }
 
 /// VRO-11.9 — best-effort inverse mapping of a clicked row inside the
@@ -1747,11 +1883,14 @@ pub fn bare_url_entry_at_row(model: &ViewModel, area: Rect, row: u16) -> Option<
     if lines.is_empty() {
         return None;
     }
-    let (rendered, spans) = render_transcript_projection(
+    let (rendered, spans, _) = render_transcript_projection(
         &lines,
         inner_width,
         theme_palette(&model.preferences.theme),
         model.animation_frame,
+        &model.expanded_prompts,
+        model.focused_prompt.as_deref(),
+        &model.prompt_bodies,
     );
     let total = rendered.len();
     let max_scroll = total.saturating_sub(visible).min(u16::MAX as usize) as u16;
@@ -1773,6 +1912,88 @@ pub fn bare_url_entry_at_row(model: &ViewModel, area: Rect, row: u16) -> Option<
         }
     }
     None
+}
+
+/// A click on a submitted prompt's Show more / Show less or Copy control.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PromptControl {
+    /// Toggle the collapsed preview. The stored body is not modified.
+    Toggle(String),
+    /// Copy the full stored prompt, not the preview.
+    Copy(String),
+}
+
+#[must_use]
+pub fn prompt_body_for_key(
+    lines: &[String],
+    prompt_bodies: &std::collections::BTreeMap<usize, String>,
+    key: &str,
+) -> Option<String> {
+    let mut ordinal = 0usize;
+    for line in lines {
+        if !line.starts_with("user:") {
+            continue;
+        }
+        let stored = line
+            .strip_prefix("user: ")
+            .or_else(|| line.strip_prefix("user:"))
+            .unwrap_or(line);
+        let body = prompt_bodies
+            .get(&ordinal)
+            .map(String::as_str)
+            .unwrap_or(stored);
+        let candidate = crate::messages::submitted_prompt_key(ordinal, body);
+        if candidate == key {
+            return Some(body.to_owned());
+        }
+        ordinal += 1;
+    }
+    None
+}
+
+#[must_use]
+pub fn prompt_control_at_row(model: &ViewModel, area: Rect, row: u16) -> Option<PromptControl> {
+    if area.height < 3 || area.width < 3 {
+        return None;
+    }
+    let inner_width = usize::from(area.width.saturating_sub(4));
+    let visible = usize::from(area.height.saturating_sub(2));
+    let top = area.y.saturating_add(1);
+    if !(top..top.saturating_add(visible as u16)).contains(&row) {
+        return None;
+    }
+    let lines = transcript_lines_for(model);
+    if lines.is_empty() {
+        return None;
+    }
+    let (rendered, _, toggles) = render_transcript_projection(
+        &lines,
+        inner_width,
+        theme_palette(&model.preferences.theme),
+        model.animation_frame,
+        &model.expanded_prompts,
+        model.focused_prompt.as_deref(),
+        &model.prompt_bodies,
+    );
+    let max_scroll = rendered
+        .len()
+        .saturating_sub(visible)
+        .min(u16::MAX as usize) as u16;
+    let manual = model
+        .conversation_manual_scroll
+        .unwrap_or(0)
+        .min(max_scroll);
+    let effective = max_scroll.saturating_sub(manual) as usize;
+    let row_in_content = usize::from(row - top) + effective;
+    toggles.into_iter().find_map(|(hit, key, kind)| {
+        (hit == row_in_content).then(|| {
+            if kind == "copy" {
+                PromptControl::Copy(key)
+            } else {
+                PromptControl::Toggle(key)
+            }
+        })
+    })
 }
 
 /// Re-styles every span of a rendered markdown line with `style`, keeping
@@ -2731,25 +2952,15 @@ fn compact_persisted_transcript(transcript: &[String]) -> Vec<String> {
 }
 
 fn compact_visible_prompt(line: String) -> String {
+    // Long prompts stay intact. Show more is a render-time control and must
+    // not replace the stored body. Existing paste chips are already compact.
     let Some(body) = line.strip_prefix("user:") else {
         return line;
     };
     if body.contains("[Pasted Content ·") || body.contains("[Submitted Content ·") {
         return line;
     }
-    let body = body.trim();
-    let count = body.chars().count();
-    if count < 1000 && !body.contains('\n') {
-        return line;
-    }
-    let lead = body
-        .lines()
-        .next()
-        .unwrap_or_default()
-        .chars()
-        .take(120)
-        .collect::<String>();
-    format!("user: {lead} [Submitted Content {count} chars]")
+    line
 }
 
 /// Compact projection of a verbose provider/tool event stream.
@@ -4195,9 +4406,9 @@ fn resumed_large_prompt_renders_as_a_compact_attachment_chip() {
     let count = body.trim().chars().count();
     let compact = compact_persisted_transcript(&[format!("user: {body}")]);
     assert_eq!(compact.len(), 1);
-    assert!(compact[0].contains("Please implement this request"));
-    assert!(compact[0].contains(&format!("[Submitted Content {count} chars]")));
-    assert!(!compact[0].contains("detailed context detailed context"));
+    assert_eq!(compact[0], format!("user: {body}"));
+    assert!(!compact[0].contains("[Submitted Content"));
+    let _ = count;
 }
 
 #[test]
@@ -4324,7 +4535,9 @@ fn visual_reference_frame_has_agent_cli_information_hierarchy() {
         frame_text.push_str(row.trim_end());
         frame_text.push('\n');
     }
-    assert!(frame_text.contains("[Submitted Content"));
+    assert!(frame_text.contains("Show more"));
+    assert!(frame_text.contains("Copy full prompt"));
+    assert!(!frame_text.contains(&"long specification ".repeat(15)));
     assert!(frame_text.contains("Ran 3 tools"));
     assert!(frame_text.contains("Edited 1 file (+1 -1)"));
     assert!(frame_text.contains("Implemented"));
@@ -4756,6 +4969,54 @@ fn voice_wait_is_visible_during_an_active_agent_turn() {
             .contains("waiting for speakable agent text"),
         "running voice stage must not be hidden by generic agent activity: {line}"
     );
+}
+
+#[test]
+fn show_more_expands_the_stored_prompt_without_rewriting_it() {
+    let body = format!(
+        "# Title\n\n```rust\nfn kept() {{}}\n```\n    indented-keep\n{}",
+        "detail-line ".repeat(20)
+    );
+    let stored = format!("user: {body}");
+    let collapsed = render_transcript_lines(std::slice::from_ref(&stored), 80);
+    let collapsed_text = collapsed
+        .iter()
+        .flat_map(|line| line.spans.iter().map(|span| span.content.clone()))
+        .collect::<Vec<_>>()
+        .join("");
+    assert!(collapsed_text.contains("Show more"));
+    assert!(collapsed_text.contains("Copy full prompt"));
+    assert!(collapsed_text.contains("Title"));
+    assert!(!collapsed_text.contains(&"detail-line ".repeat(10)));
+    let key = crate::messages::submitted_prompt_key(0, &body);
+    let mut expanded_prompts = std::collections::BTreeSet::new();
+    expanded_prompts.insert(key);
+    let expanded = render_transcript_frame(
+        std::slice::from_ref(&stored),
+        80,
+        theme_palette("chatgpt-black"),
+        0,
+        &expanded_prompts,
+        None,
+        &std::collections::BTreeMap::new(),
+    );
+    let expanded_text = expanded
+        .iter()
+        .flat_map(|line| line.spans.iter().map(|span| span.content.clone()))
+        .collect::<Vec<_>>()
+        .join("");
+    assert!(expanded_text.contains("Show less"));
+    assert!(expanded_text.contains("fn kept"));
+    assert!(
+        expanded_text.contains("    indented-keep"),
+        "{expanded_text}"
+    );
+    assert!(
+        expanded_text.matches("detail-line").count() >= 10,
+        "expanded {}",
+        expanded_text.matches("detail-line").count()
+    );
+    assert_eq!(stored, format!("user: {body}"));
 }
 
 #[cfg(test)]

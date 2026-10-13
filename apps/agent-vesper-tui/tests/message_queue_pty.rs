@@ -66,3 +66,8 @@ fn terminal_message_queue_and_paste_lifecycle() {
 fn terminal_writer_handles_backpressure_and_partial_writes() {
     run_fixture("test_terminal_writer.py", false);
 }
+
+#[test]
+fn terminal_show_more_restore_copy_and_queue_are_distinct() {
+    run_fixture("message_journal_ux_pty.py", true);
+}
