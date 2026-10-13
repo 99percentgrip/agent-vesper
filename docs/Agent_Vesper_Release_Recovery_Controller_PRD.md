@@ -1322,3 +1322,7 @@ and live-model effectiveness.
 [Native ConPTY cleanup repair](foundation/2026-10-11-native-conpty-cleanup-race-repair.md) records the complete failed capacity candidate, deterministic verified-cleanup repair and pending fresh native acceptance.
 
 [Native download and owner-release repair](foundation/2026-10-11-native-voice-download-and-owner-release-repair.md) records the complete failed ConPTY candidate, actual Windows recognition/reuse and corrective download/ownership/diagnosis proof; fresh platform acceptance remains required.
+
+[Security and MessageJournal release mission](foundation/2026-10-13-security-messagejournal-release-mission.md)
+records PR #42 remediation/integration and its current native release boundary;
+pending gates remain explicit.

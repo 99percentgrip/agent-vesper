@@ -6,6 +6,9 @@ Own evidence and decisions that close the pre-workspace blockers identified by r
 
 ## Ownership
 
+- `2026-10-13-security-messagejournal-release-mission.md` owns PR #42 dependency,
+  integration, exact-SHA CI and native RRC publication evidence for this mission.
+
 - `2026-10-12-rrc-matrix-transport-read-recovery.md` owns the stopped exact-SHA matrix watcher, bounded shared connection-read recovery and superseded candidate evidence.
 
 - `2026-10-12-rrc-advisory-fetch-read-recovery.md` owns the measured release-blocking advisory transport failure, bounded shared read diagnostic and preserved release evidence.
